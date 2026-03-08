@@ -81,6 +81,10 @@ func deriveCIStatus(checks []statusCheckEntry) string {
 	hasPending := false
 
 	for _, check := range checks {
+		// Skip ghost entries with no name (null checks from GitHub API).
+		if check.Name == "" {
+			continue
+		}
 		conclusion := strings.ToUpper(check.Conclusion)
 		status := strings.ToUpper(check.Status)
 

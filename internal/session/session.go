@@ -369,7 +369,9 @@ var (
 	}
 	// Patterns in recent lines that indicate Claude is idle at the prompt.
 	idlePatterns = []string{
-		"⏵⏵", // Claude Code permission mode bar (appears below the prompt)
+		"⏵⏵",            // Claude Code permission mode bar (appears below the prompt)
+		"esc to cancel",  // Claude Code text input prompt (commit message, etc.)
+		"tab to amend",   // Claude Code text input prompt
 	}
 )
 

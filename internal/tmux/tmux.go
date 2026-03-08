@@ -71,7 +71,7 @@ func ReconnectSession(tmuxName, displayName, workDir string) *Session {
 // Start creates a detached tmux session and runs the given command.
 func (s *Session) Start(command string) error {
 	// Create detached session.
-	args := []string{"new-session", "-d", "-s", s.Name, "-c", s.WorkDir, "-x", "200", "-y", "50"}
+	args := []string{"new-session", "-d", "-s", s.Name, "-c", s.WorkDir}
 	cmd := exec.Command("tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux new-session failed: %s: %w", string(output), err)

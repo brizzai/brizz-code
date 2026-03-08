@@ -70,6 +70,9 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 		return b.String()
 	}
 
+	// Strip OSC-8 hyperlinks to prevent dotted underlines in preview.
+	content = stripOSC8(content)
+
 	// Show last N lines that fit.
 	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 	start := len(lines) - contentHeight
@@ -113,38 +116,79 @@ func renderGitInfoLine(info *git.RepoInfo) string {
 		pr := info.PR
 		prText := fmt.Sprintf("PR #%d", pr.Number)
 		var details []string
-		if pr.ReviewDecision != "" {
-			switch pr.ReviewDecision {
-			case "APPROVED":
-				details = append(details, "approved")
-			case "CHANGES_REQUESTED":
-				details = append(details, "changes requested")
-			case "REVIEW_REQUIRED":
-				details = append(details, "review pending")
-			}
+		if pr.CIStatus == "FAILURE" {
+			details = append(details, "CI failing")
 		}
-		if pr.CIStatus != "" {
-			switch pr.CIStatus {
-			case "SUCCESS":
-				details = append(details, "CI passing")
-			case "FAILURE":
-				details = append(details, "CI failing")
-			case "PENDING":
-				details = append(details, "CI pending")
-			}
+		if pr.ReviewDecision == "CHANGES_REQUESTED" {
+			details = append(details, "changes requested")
+		}
+		if pr.ReviewDecision == "APPROVED" {
+			details = append(details, "approved")
+		}
+		if pr.CIStatus == "SUCCESS" && pr.ReviewDecision != "APPROVED" {
+			details = append(details, "CI passing")
+		}
+		if pr.CIStatus == "PENDING" {
+			details = append(details, "CI pending")
+		}
+		if pr.ReviewDecision == "REVIEW_REQUIRED" {
+			details = append(details, "review pending")
 		}
 		if len(details) > 0 {
 			prText += " (" + strings.Join(details, ", ") + ")"
 		}
 
-		style := PROpenStyle
-		if pr.ReviewDecision == "CHANGES_REQUESTED" || pr.CIStatus == "FAILURE" {
+		ciFail := pr.CIStatus == "FAILURE"
+		changesReq := pr.ReviewDecision == "CHANGES_REQUESTED"
+		approved := pr.ReviewDecision == "APPROVED"
+		ciPass := pr.CIStatus == "SUCCESS"
+
+		style := PRPendingStyle // default: yellow
+		if ciFail || changesReq {
 			style = PRFailStyle
-		} else if pr.CIStatus == "PENDING" || pr.ReviewDecision == "REVIEW_REQUIRED" {
-			style = PRPendingStyle
+		} else if approved && ciPass {
+			style = PROpenStyle
 		}
 		parts = append(parts, style.Render(prText))
 	}
 
 	return strings.Join(parts, "  ")
+}
+
+// stripOSC8 removes OSC-8 hyperlink sequences while preserving the visible link text.
+// OSC-8 format: ESC]8;params;uri ST ... visible text ... ESC]8;;ST
+// where ST is BEL (\x07) or ESC\ (\x1b\x5c).
+func stripOSC8(content string) string {
+	if !strings.Contains(content, "\x1b]8;") {
+		return content
+	}
+
+	var b strings.Builder
+	b.Grow(len(content))
+
+	i := 0
+	for i < len(content) {
+		// Look for ESC ] 8 ;
+		if i+3 < len(content) && content[i] == '\x1b' && content[i+1] == ']' && content[i+2] == '8' && content[i+3] == ';' {
+			// Skip until ST (BEL or ESC\).
+			j := i + 4
+			for j < len(content) {
+				if content[j] == '\x07' {
+					j++
+					break
+				}
+				if content[j] == '\x1b' && j+1 < len(content) && content[j+1] == '\\' {
+					j += 2
+					break
+				}
+				j++
+			}
+			i = j
+			continue
+		}
+		b.WriteByte(content[i])
+		i++
+	}
+
+	return b.String()
 }

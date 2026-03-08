@@ -281,25 +281,38 @@ func renderPRBadge(pr *github.PR, selected bool) string {
 
 	badge := fmt.Sprintf("#%d", pr.Number)
 
-	// Determine icon — prioritize failures over approvals.
-	icon := ""
-	style := PROpenStyle
-	switch {
-	case pr.CIStatus == "FAILURE" || pr.ReviewDecision == "CHANGES_REQUESTED":
-		icon = " ✕"
+	// Determine color from overall state, icons only for problems.
+	ciFail := pr.CIStatus == "FAILURE"
+	changesReq := pr.ReviewDecision == "CHANGES_REQUESTED"
+	approved := pr.ReviewDecision == "APPROVED"
+	ciPass := pr.CIStatus == "SUCCESS"
+
+	var icons string
+	style := PRPendingStyle // default: yellow (waiting)
+
+	if ciFail || changesReq {
+		// Red: something needs fixing. Icons explain what.
 		style = PRFailStyle
-	case pr.CIStatus == "PENDING" || pr.ReviewDecision == "REVIEW_REQUIRED":
-		icon = " ◌"
-		style = PRPendingStyle
-	case pr.ReviewDecision == "APPROVED" || pr.CIStatus == "SUCCESS":
-		icon = " ✓"
+		if ciFail {
+			icons += "✕"
+		}
+		if changesReq {
+			icons += "↩"
+		}
+	} else if approved && ciPass {
+		// Green: ready to merge.
 		style = PROpenStyle
 	}
 
-	if selected {
-		return SessionStatusSelStyle.Render(badge + icon)
+	result := badge
+	if icons != "" {
+		result += " " + icons
 	}
-	return style.Render(badge + icon)
+
+	if selected {
+		return SessionStatusSelStyle.Render(result)
+	}
+	return style.Render(result)
 }
 
 func renderSessionItem(s *session.Session, isLast bool, width int, selected bool) string {
