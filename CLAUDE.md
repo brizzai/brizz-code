@@ -24,6 +24,7 @@ internal/git/git.go          # Git operations (branch, dirty, worktree)
 internal/git/repo_info.go    # RepoInfo cache + refresh logic
 internal/github/pr.go        # GitHub PR info via gh CLI
 internal/hooks/              # Hook-based status detection (claude_hooks, hook_watcher, status_file)
+internal/debuglog/           # slog-based debug logging to ~/.config/brizz-code/debug.log
 internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, styles)
 ```
 
@@ -40,9 +41,10 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
 - Git info refreshes every 2s (branch/dirty), PR info every 60s via `gh` CLI
 - `gh` CLI optional — PR info hidden if not installed
-- Status detection: hook-based (primary) via Claude Code hooks + pane capture (fallback)
+- Status detection: hook-based (primary, no time expiry) via Claude Code hooks + pane capture (fallback, ANSI-stripped)
 - All blocking I/O (tmux, git, gh) runs in background worker goroutine, never in Bubble Tea Update()
 - Hook status files: `~/.config/brizz-code/hooks/{session_id}.json`
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
+- Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
 - Claude Code only, Mac only

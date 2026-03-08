@@ -96,12 +96,12 @@ func (s *Session) GetStatus() Status {
 	return s.Status
 }
 
-// SetStatus sets the status (thread-safe). Clears Acknowledged on Running.
+// SetStatus sets the status (thread-safe). Clears Acknowledged on active states.
 func (s *Session) SetStatus(status Status) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Status = status
-	if status == StatusRunning {
+	if status == StatusRunning || status == StatusWaiting {
 		s.Acknowledged = false
 	}
 }
@@ -237,6 +237,7 @@ func (s *Session) UpdateStatus() {
 			s.Acknowledged = false
 		case "waiting":
 			s.Status = StatusWaiting
+			s.Acknowledged = false
 		case "finished":
 			if s.Acknowledged {
 				s.Status = StatusIdle
@@ -275,6 +276,7 @@ func (s *Session) UpdateStatus() {
 		s.Acknowledged = false
 	case StatusWaiting:
 		s.Status = StatusWaiting
+		s.Acknowledged = false
 	case StatusFinished:
 		if s.Acknowledged {
 			s.Status = StatusIdle
