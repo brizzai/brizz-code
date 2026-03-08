@@ -11,6 +11,7 @@ type Config struct {
 	TickIntervalSec    int    `json:"tick_interval_sec,omitempty"`
 	DefaultProjectPath string `json:"default_project_path,omitempty"`
 	Editor             string `json:"editor,omitempty"`
+	Theme              string `json:"theme,omitempty"`
 }
 
 // DefaultConfigPath returns the default config file path.

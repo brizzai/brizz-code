@@ -259,11 +259,14 @@ func (d *RenameDialog) View() string {
 
 // ConfirmDialog handles confirmation prompts (e.g., delete session).
 type ConfirmDialog struct {
-	visible bool
-	message string
-	width   int
-	height  int
-	onYes   func() tea.Msg
+	visible    bool
+	width      int
+	height     int
+	onYes      func() tea.Msg
+	dialogType string   // "danger", "warning", "info"
+	title      string
+	subject    string
+	details    []string
 }
 
 // NewConfirmDialog creates a new confirmation dialog.
@@ -271,15 +274,32 @@ func NewConfirmDialog() *ConfirmDialog {
 	return &ConfirmDialog{}
 }
 
-func (d *ConfirmDialog) Show(message string, onYes func() tea.Msg) {
+// ShowDanger shows a danger-style confirmation dialog (red border).
+func (d *ConfirmDialog) ShowDanger(title, subject string, details []string, onYes func() tea.Msg) {
 	d.visible = true
-	d.message = message
+	d.dialogType = "danger"
+	d.title = title
+	d.subject = subject
+	d.details = details
 	d.onYes = onYes
 }
 
-func (d *ConfirmDialog) Hide()              { d.visible = false }
-func (d *ConfirmDialog) IsVisible() bool     { return d.visible }
-func (d *ConfirmDialog) SetSize(w, h int)    { d.width = w; d.height = h }
+// Show shows a basic info-style confirmation dialog (backward compatible).
+func (d *ConfirmDialog) Show(message string, onYes func() tea.Msg) {
+	d.visible = true
+	d.dialogType = "info"
+	d.title = message
+	d.subject = ""
+	d.details = nil
+	d.onYes = onYes
+}
+
+func (d *ConfirmDialog) Hide()           { d.visible = false }
+func (d *ConfirmDialog) IsVisible() bool { return d.visible }
+func (d *ConfirmDialog) SetSize(w, h int) {
+	d.width = w
+	d.height = h
+}
 
 func (d *ConfirmDialog) Update(msg tea.Msg) (*ConfirmDialog, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
@@ -298,11 +318,70 @@ func (d *ConfirmDialog) Update(msg tea.Msg) (*ConfirmDialog, tea.Cmd) {
 	return d, nil
 }
 
+func (d *ConfirmDialog) borderColor() lipgloss.Color {
+	switch d.dialogType {
+	case "danger":
+		return ColorRed
+	case "warning":
+		return ColorYellow
+	default:
+		return ColorAccent
+	}
+}
+
 func (d *ConfirmDialog) View() string {
-	content := fmt.Sprintf("%s\n\n%s",
-		d.message,
-		DimStyle.Render("y: confirm • n/esc: cancel"),
-	)
-	box := DialogStyle.Width(50).Render(content)
+	bc := d.borderColor()
+
+	var b strings.Builder
+
+	// Title with warning icon for danger.
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(bc)
+	if d.dialogType == "danger" {
+		b.WriteString(titleStyle.Render("⚠ " + d.title))
+	} else {
+		b.WriteString(titleStyle.Render(d.title))
+	}
+
+	// Subject (quoted session name).
+	if d.subject != "" {
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(ColorText).Render(fmt.Sprintf(`"%s"`, d.subject)))
+	}
+
+	// Detail bullets.
+	if len(d.details) > 0 {
+		b.WriteString("\n")
+		for _, detail := range d.details {
+			b.WriteString("\n")
+			b.WriteString(DimStyle.Render("  • " + detail))
+		}
+	}
+
+	// Buttons.
+	b.WriteString("\n\n")
+	actionLabel := "y Confirm"
+	if d.dialogType == "danger" {
+		actionLabel = "y Delete"
+	}
+	actionBtn := lipgloss.NewStyle().
+		Background(bc).
+		Foreground(ColorBg).
+		Bold(true).
+		Padding(0, 1).
+		Render(actionLabel)
+	cancelBtn := lipgloss.NewStyle().
+		Background(ColorBorder).
+		Foreground(ColorText).
+		Padding(0, 1).
+		Render("n Cancel")
+	b.WriteString(actionBtn + "  " + cancelBtn)
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(bc).
+		Padding(1, 2).
+		Width(50)
+
+	box := boxStyle.Render(b.String())
 	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, box)
 }

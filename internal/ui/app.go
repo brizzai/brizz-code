@@ -79,10 +79,11 @@ type Home struct {
 	err         error
 	errTime     time.Time
 
-	newDialog     *NewSessionDialog
-	confirmDialog *ConfirmDialog
-	renameDialog  *RenameDialog
-	helpOverlay   *HelpOverlay
+	newDialog      *NewSessionDialog
+	confirmDialog  *ConfirmDialog
+	renameDialog   *RenameDialog
+	helpOverlay    *HelpOverlay
+	settingsDialog *SettingsDialog
 
 	repoExpanded     map[string]bool // repo path -> expanded state
 	previewCache     map[string]string
@@ -120,6 +121,11 @@ func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 	fi.CharLimit = 64
 	fi.Width = 20
 
+	// Apply theme from config if set.
+	if cfg.Theme != "" {
+		ApplyPalette(PaletteByName(cfg.Theme))
+	}
+
 	return &Home{
 		storage:          storage,
 		sessionByID:      make(map[string]*session.Session),
@@ -128,6 +134,7 @@ func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 		confirmDialog:    NewConfirmDialog(),
 		renameDialog:     NewRenameDialog(),
 		helpOverlay:      NewHelpOverlay(),
+		settingsDialog:   NewSettingsDialog(cfg),
 		previewCache:     make(map[string]string),
 		previewCacheTime: make(map[string]time.Time),
 		gitInfoCache:     make(map[string]*git.RepoInfo),
@@ -157,6 +164,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.confirmDialog.SetSize(msg.Width, msg.Height)
 		h.renameDialog.SetSize(msg.Width, msg.Height)
 		h.helpOverlay.SetSize(msg.Width, msg.Height)
+		h.settingsDialog.SetSize(msg.Width, msg.Height)
 		h.syncViewport()
 		return h, nil
 
@@ -209,6 +217,10 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = h.storage.UpdateTitle(s.ID, msg.newTitle)
 			h.rebuildFlatItems()
 		}
+		return h, nil
+
+	case settingsClosedMsg:
+		// Re-read tick interval from config after settings change.
 		return h, nil
 
 	case openEditorMsg:
@@ -271,12 +283,15 @@ func (h *Home) View() string {
 		return ""
 	}
 	if h.width == 0 {
-		return "Loading..."
+		return lipgloss.NewStyle().Bold(true).Foreground(ColorAccent).Render("   brizz-code")
 	}
 
 	// Modals take priority.
 	if h.helpOverlay.IsVisible() {
 		return h.helpOverlay.View()
+	}
+	if h.settingsDialog.IsVisible() {
+		return h.settingsDialog.View()
 	}
 	if h.newDialog.IsVisible() {
 		return h.newDialog.View()
@@ -385,6 +400,11 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.helpOverlay = overlay
 		return h, cmd
 	}
+	if h.settingsDialog.IsVisible() {
+		dialog, cmd := h.settingsDialog.Update(msg)
+		h.settingsDialog = dialog
+		return h, cmd
+	}
 	if h.newDialog.IsVisible() {
 		dialog, cmd := h.newDialog.Update(msg)
 		h.newDialog = dialog
@@ -490,6 +510,9 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			h.syncViewport()
 			return h, nil
 		}
+		return h, nil
+	case "S":
+		h.settingsDialog.Show()
 		return h, nil
 	case "?":
 		h.helpOverlay.Show()
@@ -601,12 +624,12 @@ func (h *Home) confirmDeleteSelected() tea.Cmd {
 	}
 
 	id := s.ID
-	h.confirmDialog.Show(
-		fmt.Sprintf("Delete session '%s'?", s.Title),
-		func() tea.Msg {
-			return sessionDeleteMsg{id: id}
-		},
-	)
+	h.confirmDialog.ShowDanger("Delete Session?", s.Title, []string{
+		"tmux session terminated",
+		"Terminal history lost",
+	}, func() tea.Msg {
+		return sessionDeleteMsg{id: id}
+	})
 	return nil
 }
 
@@ -970,7 +993,10 @@ func (h *Home) renderHeader() string {
 		statusCounts[s.GetStatus()]++
 	}
 
-	title := TitleStyle.Render(" brizz-code ")
+	logo := lipgloss.NewStyle().Foreground(ColorAccent).Render("⟨") +
+		lipgloss.NewStyle().Bold(true).Foreground(ColorText).Render("bc") +
+		lipgloss.NewStyle().Foreground(ColorAccent).Render("⟩")
+	title := logo + " " + TitleStyle.Render("brizz-code") + " "
 
 	// Build status indicators — only show non-zero.
 	var indicators []string

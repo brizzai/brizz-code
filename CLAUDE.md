@@ -27,6 +27,9 @@ internal/hooks/              # Hook-based status detection (claude_hooks, hook_w
 internal/config/config.go    # JSON config (~/.config/brizz-code/config.json)
 internal/debuglog/           # slog-based debug logging to ~/.config/brizz-code/debug.log
 internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, styles)
+internal/ui/palette.go       # Theme palette definitions (5 built-in themes)
+internal/ui/settings.go      # Settings dialog (S key)
+internal/ui/keybindings.go   # Centralized keybinding definitions
 ```
 
 ## Conventions
@@ -36,7 +39,7 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space toggle group, a new, d delete, r restart, R rename, e editor, / filter, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space toggle group, a new, d delete, r restart, R rename, e editor, / filter, S settings, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
@@ -48,7 +51,9 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
 - Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
-- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor)
+- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme)
 - Claude session resume: captures Claude session_id from hooks, uses `claude --resume <id>` on restart
 - Editor: config.editor > $EDITOR > "code" (VS Code)
+- Themes: tokyo-night (default), catppuccin-mocha, rose-pine, nord, gruvbox — configurable via settings (S key)
+- Settings dialog: S key opens settings overlay, live theme preview, auto-saves on close
 - Claude Code only, Mac only

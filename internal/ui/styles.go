@@ -106,6 +106,66 @@ var (
 	PRPendingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
 )
 
+// ApplyPalette reassigns all color vars and rebuilds all style vars from the given palette.
+// Must be called on the main goroutine (Bubble Tea Update/View).
+func ApplyPalette(p Palette) {
+	// 1. Reassign color vars.
+	ColorBg = p.Bg
+	ColorSurface = p.Surface
+	ColorBorder = p.Border
+	ColorText = p.Text
+	ColorTextDim = p.TextDim
+	ColorAccent = p.Accent
+	ColorGreen = p.Green
+	ColorYellow = p.Yellow
+	ColorBlue = p.Blue
+	ColorRed = p.Red
+	ColorGray = p.Gray
+	ColorWhite = p.Text
+	ColorOrange = p.Orange
+
+	// 2. Rebuild all styles (lipgloss copies colors by value at construction).
+	TitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorAccent)
+	RepoHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorAccent)
+	SessionItemStyle = lipgloss.NewStyle().Foreground(ColorText)
+	SessionSelectedStyle = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+	PreviewHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorText)
+	PreviewContentStyle = lipgloss.NewStyle().Foreground(ColorTextDim)
+	HelpBarStyle = lipgloss.NewStyle().Foreground(ColorTextDim)
+	ErrorStyle = lipgloss.NewStyle().Foreground(ColorRed)
+	DimStyle = lipgloss.NewStyle().Foreground(ColorTextDim)
+	PanelStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorBorder)
+	DialogStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorAccent).Padding(1, 2)
+
+	StatusRunningStyle = lipgloss.NewStyle().Foreground(ColorGreen).Bold(true)
+	StatusWaitingStyle = lipgloss.NewStyle().Foreground(ColorYellow).Bold(true)
+	StatusFinishedStyle = lipgloss.NewStyle().Foreground(ColorBlue).Bold(true)
+	StatusIdleStyle = lipgloss.NewStyle().Foreground(ColorGray)
+	StatusErrorStyle = lipgloss.NewStyle().Foreground(ColorRed).Bold(true)
+	StatusStartingStyle = lipgloss.NewStyle().Foreground(ColorAccent)
+
+	ToolClaudeStyle = lipgloss.NewStyle().Foreground(ColorOrange)
+
+	SessionSelectionPrefix = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+	SessionTitleSelStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorBg).Background(ColorAccent)
+	SessionStatusSelStyle = lipgloss.NewStyle().Foreground(ColorBg).Background(ColorAccent)
+	TreeConnectorSelStyle = lipgloss.NewStyle().Foreground(ColorBg).Background(ColorAccent)
+	ToolBadgeSelStyle = lipgloss.NewStyle().Foreground(ColorBg).Background(ColorAccent)
+
+	PanelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorText)
+	HeaderBarStyle = lipgloss.NewStyle().Background(ColorSurface).Padding(0, 1)
+
+	HelpKeyStyle = lipgloss.NewStyle().Background(ColorAccent).Foreground(ColorBg).Bold(true).Padding(0, 1)
+	HelpDescStyle = lipgloss.NewStyle().Foreground(ColorText)
+	HelpSepStyle = lipgloss.NewStyle().Foreground(ColorBorder)
+
+	BranchStyle = lipgloss.NewStyle().Foreground(ColorBlue)
+	DirtyStyle = lipgloss.NewStyle().Foreground(ColorYellow).Bold(true)
+	PROpenStyle = lipgloss.NewStyle().Foreground(ColorGreen)
+	PRFailStyle = lipgloss.NewStyle().Foreground(ColorRed)
+	PRPendingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
+}
+
 // StatusSymbol returns a styled status indicator.
 func StatusSymbol(status session.Status) string {
 	switch status {

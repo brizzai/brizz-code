@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/yuvalhayke/brizz-code/internal/git"
 	"github.com/yuvalhayke/brizz-code/internal/github"
 	"github.com/yuvalhayke/brizz-code/internal/session"
@@ -103,8 +104,7 @@ func CollectGroupInfo(sessions []*session.Session, repoPath string) RepoGroupInf
 // RenderSidebar renders the session list with repo grouping and cursor.
 func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map[string]*git.RepoInfo, cursor, viewOffset, width, height int) string {
 	if len(items) == 0 {
-		msg := DimStyle.Render("  No sessions. Press 'a' to add one.")
-		return PanelTitleStyle.Render(" SESSIONS") + "\n" + msg
+		return renderEmptyState(width, height)
 	}
 
 	var b strings.Builder
@@ -118,9 +118,32 @@ func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
+
+	// Check if scroll indicators are needed.
+	showAbove := viewOffset > 0
+	showBelow := (viewOffset + visibleHeight) < len(items)
+
+	// Reduce visible height for scroll indicators.
+	if showAbove {
+		visibleHeight--
+	}
+	if showBelow {
+		visibleHeight--
+	}
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
 	visibleEnd := viewOffset + visibleHeight
 	if visibleEnd > len(items) {
 		visibleEnd = len(items)
+	}
+
+	// Top scroll indicator.
+	if showAbove {
+		above := viewOffset
+		b.WriteString(DimStyle.Render(fmt.Sprintf("  ⋮ +%d above", above)))
+		b.WriteString("\n")
 	}
 
 	for i := viewOffset; i < visibleEnd; i++ {
@@ -136,6 +159,50 @@ func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map
 			b.WriteString("\n")
 		}
 	}
+
+	// Bottom scroll indicator.
+	if showBelow {
+		below := len(items) - visibleEnd
+		b.WriteString("\n")
+		b.WriteString(DimStyle.Render(fmt.Sprintf("  ⋮ +%d below", below)))
+	}
+
+	return b.String()
+}
+
+// renderEmptyState renders the empty sessions placeholder.
+func renderEmptyState(width, height int) string {
+	var b strings.Builder
+	b.WriteString(PanelTitleStyle.Render(" SESSIONS"))
+	b.WriteString("\n")
+
+	if height < 8 {
+		b.WriteString(DimStyle.Render("  No sessions — 'a' to create"))
+		return b.String()
+	}
+
+	// Centered empty state.
+	icon := lipgloss.NewStyle().Foreground(ColorAccent).Render("⬡")
+	title := lipgloss.NewStyle().Bold(true).Foreground(ColorText).Render("No Sessions Yet")
+	hint1 := DimStyle.Render("Press 'a' to create one")
+	hint2 := DimStyle.Render("Press '?' for help")
+
+	// Center each line.
+	center := func(s string) string {
+		w := lipgloss.Width(s)
+		pad := (width - w) / 2
+		if pad < 0 {
+			pad = 0
+		}
+		return strings.Repeat(" ", pad) + s
+	}
+
+	b.WriteString("\n")
+	b.WriteString(center(icon) + "\n")
+	b.WriteString(center(title) + "\n")
+	b.WriteString("\n")
+	b.WriteString(center(hint1) + "\n")
+	b.WriteString(center(hint2))
 
 	return b.String()
 }

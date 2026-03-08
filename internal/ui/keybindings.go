@@ -31,6 +31,7 @@ var allKeyBindings = []KeyBinding{
 	{Key: "/", BarKey: "/", BarDesc: "Filter", Desc: "Filter sessions", Section: "session"},
 
 	// Global.
+	{Key: "S", BarKey: "S", BarDesc: "Set", Desc: "Open settings", Section: "global"},
 	{Key: "?", BarKey: "?", BarDesc: "Help", Desc: "Toggle help", Section: "global"},
 	{Key: "q", BarKey: "q", BarDesc: "Quit", Desc: "Quit", Section: "global"},
 
