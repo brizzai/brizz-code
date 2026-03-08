@@ -21,10 +21,19 @@ type SidebarItem struct {
 	RepoPath     string
 	Session      *session.Session
 	IsLast       bool // last session in its repo group
+	Expanded     bool // only for repo headers
+	SessionCount int  // only for repo headers: total sessions in group
+}
+
+// RepoGroupInfo holds session counts/statuses for a repo group (used when collapsed).
+type RepoGroupInfo struct {
+	SessionCount int
+	StatusCounts map[session.Status]int
 }
 
 // BuildFlatItems groups sessions by repo and flattens into a navigable list.
-func BuildFlatItems(sessions []*session.Session) []SidebarItem {
+// expanded maps repo path -> whether the group is expanded.
+func BuildFlatItems(sessions []*session.Session, expanded map[string]bool) []SidebarItem {
 	groups := session.GroupByRepo(sessions)
 
 	// Sort repo paths alphabetically.
@@ -36,24 +45,41 @@ func BuildFlatItems(sessions []*session.Session) []SidebarItem {
 
 	var items []SidebarItem
 	for _, repo := range repos {
+		groupSessions := groups[repo]
+		isExpanded := expanded[repo] // default false = collapsed
+
 		items = append(items, SidebarItem{
 			IsRepoHeader: true,
 			RepoPath:     repo,
+			Expanded:     isExpanded,
+			SessionCount: len(groupSessions),
 		})
 
-		groupSessions := groups[repo]
-		for i, s := range groupSessions {
-			items = append(items, SidebarItem{
-				Session: s,
-				IsLast:  i == len(groupSessions)-1,
-			})
+		if isExpanded {
+			for i, s := range groupSessions {
+				items = append(items, SidebarItem{
+					Session: s,
+					IsLast:  i == len(groupSessions)-1,
+				})
+			}
 		}
 	}
 	return items
 }
 
+// CollectGroupInfo gathers status counts for a repo group from all sessions.
+func CollectGroupInfo(sessions []*session.Session, repoPath string) RepoGroupInfo {
+	info := RepoGroupInfo{StatusCounts: make(map[session.Status]int)}
+	groups := session.GroupByRepo(sessions)
+	for _, s := range groups[repoPath] {
+		info.SessionCount++
+		info.StatusCounts[s.GetStatus()]++
+	}
+	return info
+}
+
 // RenderSidebar renders the session list with repo grouping and cursor.
-func RenderSidebar(items []SidebarItem, cursor, viewOffset, width, height int) string {
+func RenderSidebar(items []SidebarItem, sessions []*session.Session, cursor, viewOffset, width, height int) string {
 	if len(items) == 0 {
 		msg := DimStyle.Render("  No sessions. Press 'a' to add one.")
 		return PanelTitleStyle.Render(" SESSIONS") + "\n" + msg
@@ -78,7 +104,8 @@ func RenderSidebar(items []SidebarItem, cursor, viewOffset, width, height int) s
 	for i := viewOffset; i < visibleEnd; i++ {
 		item := items[i]
 		if item.IsRepoHeader {
-			b.WriteString(renderRepoHeader(item.RepoPath, items, i, width, i == cursor))
+			info := CollectGroupInfo(sessions, item.RepoPath)
+			b.WriteString(renderRepoHeader(item.RepoPath, item.Expanded, info, width, i == cursor))
 		} else {
 			b.WriteString(renderSessionItem(item.Session, item.IsLast, width, i == cursor))
 		}
@@ -90,44 +117,41 @@ func RenderSidebar(items []SidebarItem, cursor, viewOffset, width, height int) s
 	return b.String()
 }
 
-func renderRepoHeader(repoPath string, items []SidebarItem, headerIdx, width int, selected bool) string {
+func renderRepoHeader(repoPath string, expanded bool, info RepoGroupInfo, width int, selected bool) string {
 	name := filepath.Base(repoPath) + "/"
 
-	// Count sessions and collect status counts for this group.
-	var sessionCount int
-	statusCounts := make(map[session.Status]int)
-	for i := headerIdx + 1; i < len(items); i++ {
-		if items[i].IsRepoHeader {
-			break
-		}
-		if items[i].Session != nil {
-			sessionCount++
-			statusCounts[items[i].Session.GetStatus()]++
-		}
+	// Expand/collapse indicator.
+	expandIcon := "▸"
+	if expanded {
+		expandIcon = "▾"
 	}
 
 	// Build status indicators for the group.
 	var indicators []string
-	if n := statusCounts[session.StatusRunning] + statusCounts[session.StatusStarting]; n > 0 {
+	if n := info.StatusCounts[session.StatusRunning] + info.StatusCounts[session.StatusStarting]; n > 0 {
 		indicators = append(indicators, StatusRunningStyle.Render(fmt.Sprintf("● %d", n)))
 	}
-	if n := statusCounts[session.StatusWaiting]; n > 0 {
+	if n := info.StatusCounts[session.StatusWaiting]; n > 0 {
 		indicators = append(indicators, StatusWaitingStyle.Render(fmt.Sprintf("◐ %d", n)))
 	}
-	if n := statusCounts[session.StatusError]; n > 0 {
+	if n := info.StatusCounts[session.StatusError]; n > 0 {
 		indicators = append(indicators, StatusErrorStyle.Render(fmt.Sprintf("✕ %d", n)))
 	}
 
-	countStr := DimStyle.Render(fmt.Sprintf("(%d)", sessionCount))
+	countStr := DimStyle.Render(fmt.Sprintf("(%d)", info.SessionCount))
 	statsStr := ""
 	if len(indicators) > 0 {
 		statsStr = " " + strings.Join(indicators, " ")
 	}
 
 	if selected {
-		return SessionSelectedStyle.Render(fmt.Sprintf("  %s %s", name, countStr)) + statsStr
+		icon := SessionSelectionPrefix.Render(expandIcon)
+		styledName := SessionTitleSelStyle.Render(" " + name + " ")
+		styledCount := SessionStatusSelStyle.Render(fmt.Sprintf("(%d)", info.SessionCount))
+		return fmt.Sprintf(" %s %s%s", icon, styledName, styledCount) + statsStr
 	}
-	return RepoHeaderStyle.Render(fmt.Sprintf("  %s", name)) + " " + countStr + statsStr
+	icon := DimStyle.Render(expandIcon)
+	return fmt.Sprintf(" %s %s %s", icon, RepoHeaderStyle.Render(name), countStr) + statsStr
 }
 
 func renderSessionItem(s *session.Session, isLast bool, width int, selected bool) string {
@@ -150,42 +174,40 @@ func renderSessionItem(s *session.Session, isLast bool, width int, selected bool
 		title = title[:maxTitleLen-1] + "…"
 	}
 
+	// Selection prefix: ▶ when selected, space when not — both 1 char wide.
+	selPrefix := " "
+	treeStyle := DimStyle
+	var styledSymbol, styledTitle, styledBadge string
+
 	if selected {
-		// Inverted highlight for selected row.
-		prefix := SessionSelectionPrefix.Render("▶")
-		styledConnector := TreeConnectorSelStyle.Render(connector)
-		styledSymbol := SessionStatusSelStyle.Render(symbolRaw)
-		styledTitle := SessionTitleSelStyle.Render(" " + title + " ")
-		styledBadge := ToolBadgeSelStyle.Render("claude")
-		return fmt.Sprintf(" %s %s %s%s %s", prefix, styledConnector, styledSymbol, styledTitle, styledBadge)
+		selPrefix = SessionSelectionPrefix.Render("▶")
+		treeStyle = TreeConnectorSelStyle
+		styledSymbol = SessionStatusSelStyle.Render(symbolRaw)
+		styledTitle = SessionTitleSelStyle.Render(" " + title + " ")
+		styledBadge = ToolBadgeSelStyle.Render("claude")
+	} else {
+		styledSymbol = StatusSymbol(status)
+		styledTitle = TitleStyleForStatus(status).Render(title)
+		styledBadge = ToolClaudeStyle.Render("claude")
 	}
 
-	// Normal rendering.
-	styledConnector := DimStyle.Render(connector)
-	styledSymbol := StatusSymbol(status)
-	styledTitle := TitleStyleForStatus(status).Render(title)
-	styledBadge := ToolClaudeStyle.Render("claude")
-	return fmt.Sprintf("  %s %s %s %s", styledConnector, styledSymbol, styledTitle, styledBadge)
+	styledConnector := treeStyle.Render(connector)
+	return fmt.Sprintf(" %s%s %s %s %s", selPrefix, styledConnector, styledSymbol, styledTitle, styledBadge)
 }
 
-// NextSelectableItem finds the next non-header item index moving in the given direction.
+// NextSelectableItem finds the next item index (repo headers are now selectable).
 func NextSelectableItem(items []SidebarItem, current, direction int) int {
 	next := current + direction
-	for next >= 0 && next < len(items) {
-		if !items[next].IsRepoHeader {
-			return next
-		}
-		next += direction
+	if next >= 0 && next < len(items) {
+		return next
 	}
-	return current // Stay if nothing found.
+	return current // Stay if out of bounds.
 }
 
-// FirstSelectableItem returns the index of the first session item.
+// FirstSelectableItem returns the index of the first item.
 func FirstSelectableItem(items []SidebarItem) int {
-	for i, item := range items {
-		if !item.IsRepoHeader {
-			return i
-		}
+	if len(items) > 0 {
+		return 0
 	}
 	return 0
 }

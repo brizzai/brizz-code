@@ -38,7 +38,7 @@ func (h *HelpOverlay) View() string {
 	bindings := []struct{ key, desc string }{
 		{"j / ↓", "Move down"},
 		{"k / ↑", "Move up"},
-		{"Enter", "Attach to session"},
+		{"Enter", "Attach / toggle group"},
 		{"a / n", "New session"},
 		{"d", "Delete session"},
 		{"r", "Restart session"},

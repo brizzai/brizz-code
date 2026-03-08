@@ -66,6 +66,7 @@ type Home struct {
 	confirmDialog *ConfirmDialog
 	helpOverlay   *HelpOverlay
 
+	repoExpanded     map[string]bool // repo path -> expanded state
 	previewCache     map[string]string
 	previewCacheTime map[string]time.Time
 	statusRRIndex    int // round-robin index for status updates
@@ -76,6 +77,7 @@ func NewHome(storage *session.StateDB) *Home {
 	return &Home{
 		storage:          storage,
 		sessionByID:      make(map[string]*session.Session),
+		repoExpanded:     make(map[string]bool),
 		newDialog:        NewNewSessionDialog(),
 		confirmDialog:    NewConfirmDialog(),
 		helpOverlay:      NewHelpOverlay(),
@@ -153,6 +155,13 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		h.sessions = msg.sessions
 		h.rebuildSessionMap()
+		// Default all repos to expanded on first load.
+		groups := session.GroupByRepo(h.sessions)
+		for repo := range groups {
+			if _, exists := h.repoExpanded[repo]; !exists {
+				h.repoExpanded[repo] = true
+			}
+		}
 		h.rebuildFlatItems()
 		if len(h.flatItems) > 0 && h.cursor == 0 {
 			h.cursor = FirstSelectableItem(h.flatItems)
@@ -198,7 +207,7 @@ func (h *Home) View() string {
 
 	switch h.layoutMode() {
 	case "single":
-		sidebar := RenderSidebar(h.flatItems, h.cursor, h.viewOffset, h.width, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.cursor, h.viewOffset, h.width, contentHeight)
 		b.WriteString(sidebar)
 	case "stacked":
 		sidebarHeight := (contentHeight * 55) / 100
@@ -206,7 +215,7 @@ func (h *Home) View() string {
 			sidebarHeight = 3
 		}
 		previewHeight := contentHeight - sidebarHeight - 1 // 1 for separator
-		sidebar := RenderSidebar(h.flatItems, h.cursor, h.viewOffset, h.width, sidebarHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.cursor, h.viewOffset, h.width, sidebarHeight)
 		b.WriteString(sidebar)
 		b.WriteString("\n")
 		b.WriteString(DimStyle.Render(strings.Repeat("─", h.width)))
@@ -221,7 +230,7 @@ func (h *Home) View() string {
 		}
 		previewWidth := h.width - sidebarWidth - 3 // 3 for separator
 
-		sidebar := RenderSidebar(h.flatItems, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
 		s, content := h.selectedPreview()
 		preview := RenderPreview(s, content, previewWidth, contentHeight)
 
@@ -287,6 +296,21 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.syncViewport()
 		return h, nil
 	case "enter":
+		// Toggle repo group or attach session.
+		if h.cursor >= 0 && h.cursor < len(h.flatItems) && h.flatItems[h.cursor].IsRepoHeader {
+			repo := h.flatItems[h.cursor].RepoPath
+			h.repoExpanded[repo] = !h.repoExpanded[repo]
+			h.rebuildFlatItems()
+			// Keep cursor on the same repo header.
+			for i, item := range h.flatItems {
+				if item.IsRepoHeader && item.RepoPath == repo {
+					h.cursor = i
+					break
+				}
+			}
+			h.syncViewport()
+			return h, nil
+		}
 		return h, h.attachSelected()
 	case "a", "n":
 		h.newDialog.Show()
@@ -352,6 +376,9 @@ func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
 
 	h.sessions = append(h.sessions, s)
 	h.rebuildSessionMap()
+	// Ensure the repo group is expanded for the new session.
+	repo := session.GetRepoRoot(s.ProjectPath)
+	h.repoExpanded[repo] = true
 	h.rebuildFlatItems()
 
 	// Save to storage.
@@ -626,7 +653,7 @@ func (h *Home) selectedPreview() (*session.Session, string) {
 // --- Internal helpers ---
 
 func (h *Home) rebuildFlatItems() {
-	h.flatItems = BuildFlatItems(h.sessions)
+	h.flatItems = BuildFlatItems(h.sessions, h.repoExpanded)
 }
 
 func (h *Home) rebuildSessionMap() {
