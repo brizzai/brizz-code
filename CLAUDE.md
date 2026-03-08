@@ -15,10 +15,13 @@ make fmt      # go fmt
 
 ## Package Structure
 ```
-cmd/brizz-code/main.go     # CLI entry point
-internal/tmux/tmux.go       # Tmux abstraction (create, attach, kill, capture)
+cmd/brizz-code/main.go      # CLI entry point
+internal/tmux/tmux.go        # Tmux abstraction (create, attach, kill, capture)
 internal/session/session.go  # Session model, status detection
 internal/session/storage.go  # SQLite persistence
+internal/git/git.go          # Git operations (branch, dirty, worktree)
+internal/git/repo_info.go    # RepoInfo cache + refresh logic
+internal/github/pr.go        # GitHub PR info via gh CLI
 internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, styles)
 ```
 
@@ -32,4 +35,7 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 - Keybindings: j/k nav, Enter attach, a new, d delete, r restart, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
+- Repo headers show branch name (📍), dirty indicator (*), and PR badge (#N)
+- Git info refreshes every 2s (branch/dirty), PR info every 60s via `gh` CLI
+- `gh` CLI optional — PR info hidden if not installed
 - Claude Code only, Mac only

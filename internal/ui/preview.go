@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/yuvalhayke/brizz-code/internal/git"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 )
 
 // RenderPreview renders the preview pane for the selected session.
-func RenderPreview(s *session.Session, content string, width, height int) string {
+func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, width, height int) string {
 	if s == nil {
 		return PanelTitleStyle.Render(" PREVIEW") + "\n" + DimStyle.Render("  No session selected")
 	}
@@ -32,6 +33,14 @@ func RenderPreview(s *session.Session, content string, width, height int) string
 	b.WriteString(DimStyle.Render(fmt.Sprintf("  %s", s.ProjectPath)))
 	b.WriteString("\n")
 
+	// Git info line.
+	usedLines := 4 // panel title + header + path + separator
+	if gitLine := renderGitInfoLine(repoInfo); gitLine != "" {
+		b.WriteString("  " + gitLine)
+		b.WriteString("\n")
+		usedLines++
+	}
+
 	// Separator.
 	sep := strings.Repeat("─", width-2)
 	if len(sep) > 0 {
@@ -40,7 +49,6 @@ func RenderPreview(s *session.Session, content string, width, height int) string
 	}
 
 	// Terminal content.
-	usedLines := 4 // panel title + header + path + separator
 	contentHeight := height - usedLines
 	if contentHeight < 1 {
 		contentHeight = 1
@@ -75,4 +83,61 @@ func RenderPreview(s *session.Session, content string, width, height int) string
 	}
 
 	return b.String()
+}
+
+// renderGitInfoLine renders a line with branch, dirty status, and PR info.
+func renderGitInfoLine(info *git.RepoInfo) string {
+	if info == nil || info.Branch == "" {
+		return ""
+	}
+
+	var parts []string
+
+	// Branch.
+	parts = append(parts, BranchStyle.Render("📍 "+info.Branch))
+
+	// Dirty indicator.
+	if info.IsDirty {
+		parts = append(parts, DirtyStyle.Render("* uncommitted"))
+	}
+
+	// PR info.
+	if info.PR != nil {
+		pr := info.PR
+		prText := fmt.Sprintf("PR #%d", pr.Number)
+		var details []string
+		if pr.ReviewDecision != "" {
+			switch pr.ReviewDecision {
+			case "APPROVED":
+				details = append(details, "approved")
+			case "CHANGES_REQUESTED":
+				details = append(details, "changes requested")
+			case "REVIEW_REQUIRED":
+				details = append(details, "review pending")
+			}
+		}
+		if pr.CIStatus != "" {
+			switch pr.CIStatus {
+			case "SUCCESS":
+				details = append(details, "CI passing")
+			case "FAILURE":
+				details = append(details, "CI failing")
+			case "PENDING":
+				details = append(details, "CI pending")
+			}
+		}
+		if len(details) > 0 {
+			prText += " (" + strings.Join(details, ", ") + ")"
+		}
+
+		style := PROpenStyle
+		if pr.ReviewDecision == "CHANGES_REQUESTED" || pr.CIStatus == "FAILURE" {
+			style = PRFailStyle
+		} else if pr.CIStatus == "PENDING" || pr.ReviewDecision == "REVIEW_REQUIRED" {
+			style = PRPendingStyle
+		}
+		parts = append(parts, style.Render(prText))
+	}
+
+	return strings.Join(parts, "  ")
 }

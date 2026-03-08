@@ -10,6 +10,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/yuvalhayke/brizz-code/internal/git"
+	"github.com/yuvalhayke/brizz-code/internal/github"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 	"github.com/yuvalhayke/brizz-code/internal/tmux"
 )
@@ -70,6 +72,10 @@ type Home struct {
 	previewCache     map[string]string
 	previewCacheTime map[string]time.Time
 	statusRRIndex    int // round-robin index for status updates
+
+	gitInfoCache map[string]*git.RepoInfo // repo root path -> git info
+	gitRRIndex   int                      // round-robin index for git refresh
+	ghAvailable  bool                     // cached gh CLI availability
 }
 
 // NewHome creates the main TUI model.
@@ -83,6 +89,7 @@ func NewHome(storage *session.StateDB) *Home {
 		helpOverlay:      NewHelpOverlay(),
 		previewCache:     make(map[string]string),
 		previewCacheTime: make(map[string]time.Time),
+		gitInfoCache:     make(map[string]*git.RepoInfo),
 	}
 }
 
@@ -162,6 +169,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				h.repoExpanded[repo] = true
 			}
 		}
+		h.ghAvailable = github.IsGHAvailable()
 		h.rebuildFlatItems()
 		if len(h.flatItems) > 0 && h.cursor == 0 {
 			h.cursor = FirstSelectableItem(h.flatItems)
@@ -207,7 +215,7 @@ func (h *Home) View() string {
 
 	switch h.layoutMode() {
 	case "single":
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.cursor, h.viewOffset, h.width, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, h.width, contentHeight)
 		b.WriteString(sidebar)
 	case "stacked":
 		sidebarHeight := (contentHeight * 55) / 100
@@ -215,13 +223,13 @@ func (h *Home) View() string {
 			sidebarHeight = 3
 		}
 		previewHeight := contentHeight - sidebarHeight - 1 // 1 for separator
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.cursor, h.viewOffset, h.width, sidebarHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, h.width, sidebarHeight)
 		b.WriteString(sidebar)
 		b.WriteString("\n")
 		b.WriteString(DimStyle.Render(strings.Repeat("─", h.width)))
 		b.WriteString("\n")
 		s, content := h.selectedPreview()
-		preview := RenderPreview(s, content, h.width, previewHeight)
+		preview := RenderPreview(s, content, h.selectedRepoInfo(), h.width, previewHeight)
 		b.WriteString(preview)
 	default: // dual
 		sidebarWidth := h.width * 35 / 100
@@ -230,9 +238,9 @@ func (h *Home) View() string {
 		}
 		previewWidth := h.width - sidebarWidth - 3 // 3 for separator
 
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
 		s, content := h.selectedPreview()
-		preview := RenderPreview(s, content, previewWidth, contentHeight)
+		preview := RenderPreview(s, content, h.selectedRepoInfo(), previewWidth, contentHeight)
 
 		// Side by side with separator.
 		sidebarBox := lipgloss.NewStyle().Width(sidebarWidth).Height(contentHeight).Render(sidebar)
@@ -508,6 +516,24 @@ func (h *Home) handleTick() (tea.Model, tea.Cmd) {
 		h.statusRRIndex = (h.statusRRIndex + count) % len(h.sessions)
 	}
 
+	// Git info refresh: 1 repo per tick (round-robin).
+	repos := h.uniqueRepoPaths()
+	if len(repos) > 0 {
+		idx := h.gitRRIndex % len(repos)
+		repo := repos[idx]
+		info := git.RefreshGitInfo(repo)
+		// Preserve PR data unless TTL expired.
+		if old, ok := h.gitInfoCache[repo]; ok && old.PR != nil {
+			info.PR = old.PR
+			info.LastPRRefresh = old.LastPRRefresh
+		}
+		if h.ghAvailable && (info.LastPRRefresh.IsZero() || time.Since(info.LastPRRefresh) > 60*time.Second) {
+			git.RefreshPRInfo(info, repo)
+		}
+		h.gitInfoCache[repo] = info
+		h.gitRRIndex++
+	}
+
 	// Fetch preview for selected session.
 	var previewCmd tea.Cmd
 	if sel := h.selectedSession(); sel != nil && sel.IsAlive() {
@@ -650,6 +676,15 @@ func (h *Home) selectedPreview() (*session.Session, string) {
 	return s, content
 }
 
+func (h *Home) selectedRepoInfo() *git.RepoInfo {
+	s := h.selectedSession()
+	if s == nil {
+		return nil
+	}
+	repo := session.GetRepoRoot(s.ProjectPath)
+	return h.gitInfoCache[repo]
+}
+
 // --- Internal helpers ---
 
 func (h *Home) rebuildFlatItems() {
@@ -704,4 +739,18 @@ func (h *Home) loadSessions() tea.Msg {
 func (h *Home) setError(err error) {
 	h.err = err
 	h.errTime = time.Now()
+}
+
+// uniqueRepoPaths returns distinct repo root paths from all sessions.
+func (h *Home) uniqueRepoPaths() []string {
+	seen := make(map[string]bool)
+	var repos []string
+	for _, s := range h.sessions {
+		root := session.GetRepoRoot(s.ProjectPath)
+		if !seen[root] {
+			seen[root] = true
+			repos = append(repos, root)
+		}
+	}
+	return repos
 }

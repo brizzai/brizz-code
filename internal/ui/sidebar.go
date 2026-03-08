@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/yuvalhayke/brizz-code/internal/git"
+	"github.com/yuvalhayke/brizz-code/internal/github"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 )
 
@@ -79,7 +81,7 @@ func CollectGroupInfo(sessions []*session.Session, repoPath string) RepoGroupInf
 }
 
 // RenderSidebar renders the session list with repo grouping and cursor.
-func RenderSidebar(items []SidebarItem, sessions []*session.Session, cursor, viewOffset, width, height int) string {
+func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map[string]*git.RepoInfo, cursor, viewOffset, width, height int) string {
 	if len(items) == 0 {
 		msg := DimStyle.Render("  No sessions. Press 'a' to add one.")
 		return PanelTitleStyle.Render(" SESSIONS") + "\n" + msg
@@ -105,7 +107,8 @@ func RenderSidebar(items []SidebarItem, sessions []*session.Session, cursor, vie
 		item := items[i]
 		if item.IsRepoHeader {
 			info := CollectGroupInfo(sessions, item.RepoPath)
-			b.WriteString(renderRepoHeader(item.RepoPath, item.Expanded, info, width, i == cursor))
+			repoInfo := gitInfo[item.RepoPath]
+			b.WriteString(renderRepoHeader(item.RepoPath, item.Expanded, info, repoInfo, width, i == cursor))
 		} else {
 			b.WriteString(renderSessionItem(item.Session, item.IsLast, width, i == cursor))
 		}
@@ -117,13 +120,37 @@ func RenderSidebar(items []SidebarItem, sessions []*session.Session, cursor, vie
 	return b.String()
 }
 
-func renderRepoHeader(repoPath string, expanded bool, info RepoGroupInfo, width int, selected bool) string {
+func renderRepoHeader(repoPath string, expanded bool, info RepoGroupInfo, repoInfo *git.RepoInfo, width int, selected bool) string {
 	name := filepath.Base(repoPath) + "/"
 
 	// Expand/collapse indicator.
 	expandIcon := "▸"
 	if expanded {
 		expandIcon = "▾"
+	}
+
+	// Git branch + dirty indicator.
+	branchStr := ""
+	dirtyStr := ""
+	if repoInfo != nil {
+		if repoInfo.Branch != "" {
+			branch := repoInfo.Branch
+			if len(branch) > 15 {
+				branch = branch[:12] + "..."
+			}
+			if selected {
+				branchStr = " " + SessionStatusSelStyle.Render("📍"+branch)
+			} else {
+				branchStr = " " + BranchStyle.Render("📍"+branch)
+			}
+		}
+		if repoInfo.IsDirty {
+			if selected {
+				dirtyStr = SessionStatusSelStyle.Render("*")
+			} else {
+				dirtyStr = DirtyStyle.Render("*")
+			}
+		}
 	}
 
 	// Build status indicators for the group.
@@ -144,14 +171,48 @@ func renderRepoHeader(repoPath string, expanded bool, info RepoGroupInfo, width 
 		statsStr = " " + strings.Join(indicators, " ")
 	}
 
+	// PR badge.
+	prStr := ""
+	if repoInfo != nil && repoInfo.PR != nil {
+		prStr = " " + renderPRBadge(repoInfo.PR, selected)
+	}
+
 	if selected {
 		icon := SessionSelectionPrefix.Render(expandIcon)
 		styledName := SessionTitleSelStyle.Render(" " + name + " ")
 		styledCount := SessionStatusSelStyle.Render(fmt.Sprintf("(%d)", info.SessionCount))
-		return fmt.Sprintf(" %s %s%s", icon, styledName, styledCount) + statsStr
+		return fmt.Sprintf(" %s %s%s%s %s", icon, styledName, branchStr, dirtyStr, styledCount) + statsStr + prStr
 	}
 	icon := DimStyle.Render(expandIcon)
-	return fmt.Sprintf(" %s %s %s", icon, RepoHeaderStyle.Render(name), countStr) + statsStr
+	return fmt.Sprintf(" %s %s%s%s %s", icon, RepoHeaderStyle.Render(name), branchStr, dirtyStr, countStr) + statsStr + prStr
+}
+
+func renderPRBadge(pr *github.PR, selected bool) string {
+	if pr == nil {
+		return ""
+	}
+
+	badge := fmt.Sprintf("#%d", pr.Number)
+
+	// Determine icon based on review decision and CI status.
+	icon := ""
+	style := PROpenStyle
+	switch {
+	case pr.ReviewDecision == "APPROVED" || pr.CIStatus == "SUCCESS":
+		icon = " ✓"
+		style = PROpenStyle
+	case pr.ReviewDecision == "CHANGES_REQUESTED" || pr.CIStatus == "FAILURE":
+		icon = " ✕"
+		style = PRFailStyle
+	case pr.CIStatus == "PENDING" || pr.ReviewDecision == "REVIEW_REQUIRED":
+		icon = " ⏳"
+		style = PRPendingStyle
+	}
+
+	if selected {
+		return SessionStatusSelStyle.Render(badge + icon)
+	}
+	return style.Render(badge + icon)
 }
 
 func renderSessionItem(s *session.Session, isLast bool, width int, selected bool) string {
