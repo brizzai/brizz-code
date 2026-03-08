@@ -52,6 +52,7 @@ type WorkspacePickerDialog struct {
 	canCreate     bool
 	provider      workspace.Provider
 	repoPath      string
+	frame         int
 }
 
 // NewWorkspacePickerDialog creates a new workspace picker.
@@ -94,6 +95,7 @@ func (d *WorkspacePickerDialog) ShowLoading() {
 	d.visible = true
 	d.loading = true
 	d.err = ""
+	d.frame = 0
 }
 
 // ShowError shows an error in the picker.
@@ -210,7 +212,8 @@ func (d *WorkspacePickerDialog) View() string {
 	b.WriteString("\n\n")
 
 	if d.loading {
-		b.WriteString(DimStyle.Render("  Loading workspaces..."))
+		spinner := spinnerFrames[d.frame%len(spinnerFrames)]
+		b.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render("  "+spinner) + DimStyle.Render(" Loading workspaces..."))
 		b.WriteString("\n\n")
 		b.WriteString(DimStyle.Render("esc: cancel"))
 		return d.wrapDialog(b.String())

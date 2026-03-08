@@ -183,11 +183,26 @@ func (p *ShellProvider) Create(repoPath, name, branch string) (*WorkspaceInfo, e
 		return nil, fmt.Errorf("create command failed: %w", err)
 	}
 
+	// Try parsing output as JSON first.
 	var info WorkspaceInfo
-	if err := json.Unmarshal(out, &info); err != nil {
-		return nil, fmt.Errorf("parse create output: %w", err)
+	if err := json.Unmarshal(out, &info); err == nil {
+		return &info, nil
 	}
-	return &info, nil
+
+	// Output wasn't JSON — look up the new workspace via list command.
+	if p.ListCmd != "" {
+		workspaces, listErr := p.List(repoPath)
+		if listErr == nil {
+			for _, ws := range workspaces {
+				if ws.Name == name {
+					return &ws, nil
+				}
+			}
+		}
+	}
+
+	// Fall back to name-only info.
+	return &WorkspaceInfo{Name: name, Branch: branch}, nil
 }
 
 func (p *ShellProvider) Destroy(repoPath, name string) error {

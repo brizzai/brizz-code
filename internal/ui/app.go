@@ -62,8 +62,14 @@ type (
 		warning     string
 		err         error
 	}
-	openEditorMsg struct{ err error }
+	openEditorMsg  struct{ err error }
+	spinnerTickMsg struct{}
 )
+
+func spinnerTickCmd() tea.Msg {
+	time.Sleep(100 * time.Millisecond)
+	return spinnerTickMsg{}
+}
 
 // Home is the main Bubble Tea model.
 type Home struct {
@@ -295,7 +301,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-fetch workspace list for the same repo.
 		if msg.repoPath != "" {
 			h.workspacePicker.ShowLoading()
-			return h, h.fetchWorkspaceListForRepo(msg.repoPath)
+			return h, tea.Batch(h.fetchWorkspaceListForRepo(msg.repoPath), spinnerTickCmd)
 		}
 		return h, nil
 
@@ -305,10 +311,10 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		repoPath := msg.repoPath
 		name := msg.name
 		branch := msg.branch
-		return h, func() tea.Msg {
+		return h, tea.Batch(func() tea.Msg {
 			info, err := provider.Create(repoPath, name, branch)
 			return workspaceCreateResultMsg{info: info, err: err}
-		}
+		}, spinnerTickCmd)
 
 	case workspaceCreateResultMsg:
 		if msg.err != nil {
@@ -325,6 +331,18 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workspaceDestroyResultMsg:
 		if msg.err != nil {
 			h.setError(fmt.Errorf("workspace destroy: %w", msg.err))
+		}
+		return h, nil
+
+	case spinnerTickMsg:
+		// Advance spinner in whichever dialog is active.
+		if h.workspacePicker.IsVisible() && h.workspacePicker.loading {
+			h.workspacePicker.frame++
+			return h, spinnerTickCmd
+		}
+		if h.createWorkspaceDialog.IsVisible() && h.createWorkspaceDialog.creating {
+			h.createWorkspaceDialog.frame++
+			return h, spinnerTickCmd
 		}
 		return h, nil
 
@@ -605,7 +623,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return h, nil
 		}
 		h.workspacePicker.ShowLoading()
-		return h, h.fetchWorkspaceListForRepo(repoPath)
+		return h, tea.Batch(h.fetchWorkspaceListForRepo(repoPath), spinnerTickCmd)
 	case "d":
 		return h, h.confirmDeleteSelected()
 	case "r":

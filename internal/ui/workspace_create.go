@@ -9,6 +9,8 @@ import (
 	"github.com/yuvalhayke/brizz-code/internal/workspace"
 )
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
 // Messages for workspace creation flow.
 type (
 	workspaceCreateMsg struct {
@@ -36,6 +38,7 @@ type CreateWorkspaceDialog struct {
 	focusIndex  int // 0=name/branch, 1=branch (custom mode only)
 	creating    bool
 	err         string
+	frame       int
 	isNative    bool // true for git worktree (single field), false for custom shell
 	repoPath    string
 	provider    workspace.Provider
@@ -102,6 +105,7 @@ func (d *CreateWorkspaceDialog) SetSize(w, h int) {
 // SetCreating sets the creating state (shows spinner).
 func (d *CreateWorkspaceDialog) SetCreating(creating bool) {
 	d.creating = creating
+	d.frame = 0
 }
 
 // SetError sets an error message and re-enables inputs.
@@ -213,12 +217,13 @@ func (d *CreateWorkspaceDialog) View() string {
 		if !d.isNative {
 			name = d.nameInput.Value()
 		}
-		b.WriteString(lipgloss.NewStyle().Foreground(ColorText).Render("  Creating \"" + name + "\"..."))
+		spinner := spinnerFrames[d.frame%len(spinnerFrames)]
+		b.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render("  "+spinner) + " " + lipgloss.NewStyle().Foreground(ColorText).Render("Creating \""+name+"\"..."))
 		b.WriteString("\n")
 		if d.isNative {
-			b.WriteString(DimStyle.Render("  Running git worktree add"))
+			b.WriteString(DimStyle.Render("    Running git worktree add"))
 		} else {
-			b.WriteString(DimStyle.Render("  Running provider command"))
+			b.WriteString(DimStyle.Render("    Running provider command"))
 		}
 		b.WriteString("\n\n")
 		b.WriteString(DimStyle.Render("esc: cancel"))

@@ -289,7 +289,7 @@ func renderPRBadge(pr *github.PR, selected bool) string {
 		icon = " ✕"
 		style = PRFailStyle
 	case pr.CIStatus == "PENDING" || pr.ReviewDecision == "REVIEW_REQUIRED":
-		icon = " ⏳"
+		icon = " ◌"
 		style = PRPendingStyle
 	case pr.ReviewDecision == "APPROVED" || pr.CIStatus == "SUCCESS":
 		icon = " ✓"
