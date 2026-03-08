@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/hooks"
 )
 
@@ -43,9 +44,13 @@ func mapEventToStatus(event string) string {
 // Reads JSON from stdin, maps the event to a status, and writes a status file.
 // Always exits 0 to avoid blocking Claude Code.
 func handleHookHandler() {
+	debuglog.Init()
+	defer debuglog.Close()
+	log := debuglog.Logger
+
 	defer func() {
 		if r := recover(); r != nil {
-			// Never panic — always exit cleanly.
+			log.Error("hook-handler panic", "recover", r)
 		}
 	}()
 
@@ -61,6 +66,7 @@ func handleHookHandler() {
 
 	var payload hookPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
+		log.Warn("hook-handler: bad JSON", "err", err)
 		return
 	}
 
@@ -77,8 +83,16 @@ func handleHookHandler() {
 	}
 
 	if status == "" {
+		log.Debug("hook-handler: unmapped event", "event", payload.HookEventName, "instance", instanceID)
 		return
 	}
+
+	log.Info("hook-handler: writing status",
+		"instance", instanceID,
+		"event", payload.HookEventName,
+		"status", status,
+		"claudeSession", payload.SessionID,
+	)
 
 	sf := &hooks.StatusFile{
 		Status:    status,
@@ -88,7 +102,9 @@ func handleHookHandler() {
 	}
 
 	hooksDir := hooks.GetHooksDir()
-	_ = hooks.WriteStatusFile(hooksDir, instanceID, sf)
+	if err := hooks.WriteStatusFile(hooksDir, instanceID, sf); err != nil {
+		log.Error("hook-handler: write failed", "err", err)
+	}
 
 	// Opportunistic cleanup of stale files.
 	cleanStaleHookFiles(hooksDir)

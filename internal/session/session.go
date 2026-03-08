@@ -3,12 +3,14 @@ package session
 import (
 	"crypto/rand"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/tmux"
 )
 
@@ -200,29 +202,33 @@ func (s *Session) RespawnClaude() error {
 	return nil
 }
 
-// hookFreshnessWindow is how long hook data is considered fresh.
-const hookFreshnessWindow = 2 * time.Minute
-
 // UpdateStatus detects the session status from pane content.
 func (s *Session) UpdateStatus() {
+	log := debuglog.Logger.With("session", s.ID, "title", s.Title)
+	oldStatus := s.GetStatus()
+
 	if !s.IsAlive() {
 		s.SetStatus(StatusError)
+		log.Debug("status: not alive", "old", oldStatus, "new", StatusError)
 		return
 	}
 
 	// Check if the pane's process has died (tmux alive but process crashed).
 	if s.tmuxSession.IsPaneDead() {
 		s.SetStatus(StatusError)
+		log.Debug("status: pane dead", "old", oldStatus, "new", StatusError)
 		return
 	}
 
-	// Hook fast path: if fresh hook data exists, use it instead of pane capture.
+	// Hook fast path: hooks are authoritative as long as the session is alive.
+	// No time-based expiry — IsAlive/IsPaneDead above handle stale scenarios.
 	s.mu.RLock()
 	hookStatus := s.hookStatus
-	hookFresh := !s.hookUpdatedAt.IsZero() && time.Since(s.hookUpdatedAt) < hookFreshnessWindow
+	hookAge := time.Since(s.hookUpdatedAt)
+	hasHook := hookStatus != "" && !s.hookUpdatedAt.IsZero()
 	s.mu.RUnlock()
 
-	if hookStatus != "" && hookFresh {
+	if hasHook {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		switch hookStatus {
@@ -240,16 +246,25 @@ func (s *Session) UpdateStatus() {
 		case "dead":
 			s.Status = StatusError
 		}
+		if s.Status != oldStatus {
+			log.Info("status changed (hook)", "old", oldStatus, "new", s.Status, "hookStatus", hookStatus, "hookAge", hookAge.Round(time.Millisecond))
+		}
 		return
 	}
 
-	// Pane capture fallback.
+	// Pane capture fallback (no hook data available).
+	log.Debug("no hook data, falling back to pane capture")
+
 	content, err := s.tmuxSession.CapturePane()
 	if err != nil {
+		log.Warn("pane capture failed", "err", err)
 		return // Keep previous status on capture failure.
 	}
 
-	status := detectStatus(content)
+	// Strip ANSI escape codes for reliable pattern matching.
+	content = stripANSI(content)
+
+	status := detectStatus(content, log)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -267,8 +282,12 @@ func (s *Session) UpdateStatus() {
 			s.Status = StatusFinished
 		}
 	default:
-		// Default: if alive and no pattern matched, assume running.
-		s.Status = StatusRunning
+		// No pattern matched — keep previous status instead of assuming running.
+		log.Debug("no pattern matched, keeping previous status", "status", s.Status)
+	}
+
+	if s.Status != oldStatus {
+		log.Info("status changed (pane)", "old", oldStatus, "new", s.Status, "detected", status)
 	}
 }
 
@@ -292,11 +311,7 @@ func (s *Session) ToRow() *SessionRow {
 func FromRow(row *SessionRow) *Session {
 	ts := tmux.ReconnectSession(row.TmuxSession, row.Title, row.ProjectPath)
 	status := Status(row.Status)
-
-	// If tmux session is dead, mark as error.
-	if !ts.Exists() {
-		status = StatusError
-	}
+	// Don't check ts.Exists() here — let background worker detect dead sessions.
 
 	return &Session{
 		ID:              row.ID,
@@ -331,11 +346,16 @@ var (
 		"Do you trust the files",
 		"Allow this MCP server",
 	}
+	// Patterns in recent lines that indicate Claude is idle at the prompt.
+	idlePatterns = []string{
+		"⏵⏵", // Claude Code permission mode bar (appears below the prompt)
+	}
 )
 
-func detectStatus(content string) Status {
+func detectStatus(content string, log *slog.Logger) Status {
 	if content == "" {
-		return StatusRunning
+		log.Debug("detectStatus: empty content")
+		return ""
 	}
 
 	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
@@ -354,6 +374,7 @@ func detectStatus(content string) Status {
 	// Check busy indicators first (highest priority).
 	for _, pattern := range busyPatterns {
 		if strings.Contains(lowerContent, pattern) {
+			log.Debug("detectStatus: matched busy pattern", "pattern", pattern)
 			return StatusRunning
 		}
 	}
@@ -362,6 +383,7 @@ func detectStatus(content string) Status {
 	for _, line := range recentLines {
 		for _, sc := range spinnerChars {
 			if strings.Contains(line, sc) {
+				log.Debug("detectStatus: matched spinner char", "char", sc, "line", line)
 				return StatusRunning
 			}
 		}
@@ -370,6 +392,7 @@ func detectStatus(content string) Status {
 	// Check approval/permission prompts.
 	for _, pattern := range approvalPatterns {
 		if strings.Contains(recentContent, pattern) {
+			log.Debug("detectStatus: matched approval pattern", "pattern", pattern)
 			return StatusWaiting
 		}
 	}
@@ -378,11 +401,90 @@ func detectStatus(content string) Status {
 	if len(recentLines) > 0 {
 		lastLine := strings.TrimSpace(recentLines[0]) // recentLines is reversed.
 		if lastLine == ">" || lastLine == "❯" || strings.HasPrefix(lastLine, "> ") || strings.HasPrefix(lastLine, "❯ ") {
+			log.Debug("detectStatus: matched prompt", "lastLine", lastLine)
 			return StatusFinished
+		}
+
+		// Check idle patterns anywhere in recent lines (e.g. permission mode bar).
+		for _, pattern := range idlePatterns {
+			if strings.Contains(recentContent, pattern) {
+				log.Debug("detectStatus: matched idle pattern", "pattern", pattern)
+				return StatusFinished
+			}
+		}
+
+		log.Debug("detectStatus: no pattern matched",
+			"lastLine", lastLine,
+			"lastLineHex", fmt.Sprintf("%x", lastLine),
+			"recentLineCount", len(recentLines),
+		)
+	} else {
+		log.Debug("detectStatus: no recent lines found")
+	}
+
+	return "" // No match — caller keeps previous status.
+}
+
+// stripANSI removes ANSI escape sequences from content.
+// Uses O(n) single-pass algorithm to avoid regex backtracking issues.
+func stripANSI(content string) string {
+	// Fast path: no escape chars.
+	if !strings.ContainsRune(content, '\x1b') && !strings.ContainsRune(content, '\x9B') {
+		return content
+	}
+
+	var b strings.Builder
+	b.Grow(len(content))
+
+	i := 0
+	for i < len(content) {
+		if content[i] == '\x1b' {
+			i++
+			if i < len(content) && content[i] == '[' {
+				// CSI sequence: skip until final byte (0x40-0x7E).
+				i++
+				for i < len(content) && content[i] >= 0x20 && content[i] <= 0x3F {
+					i++ // parameter bytes
+				}
+				if i < len(content) && content[i] >= 0x40 && content[i] <= 0x7E {
+					i++ // final byte
+				}
+			} else if i < len(content) && content[i] == ']' {
+				// OSC sequence: skip until ST (ESC \ or BEL).
+				i++
+				for i < len(content) {
+					if content[i] == '\x07' {
+						i++
+						break
+					}
+					if content[i] == '\x1b' && i+1 < len(content) && content[i+1] == '\\' {
+						i += 2
+						break
+					}
+					i++
+				}
+			} else {
+				// Other escape: skip one byte after ESC.
+				if i < len(content) {
+					i++
+				}
+			}
+		} else if content[i] == '\x9B' {
+			// C1 CSI: skip until final byte.
+			i++
+			for i < len(content) && content[i] >= 0x20 && content[i] <= 0x3F {
+				i++
+			}
+			if i < len(content) && content[i] >= 0x40 && content[i] <= 0x7E {
+				i++
+			}
+		} else {
+			b.WriteByte(content[i])
+			i++
 		}
 	}
 
-	return StatusRunning
+	return b.String()
 }
 
 // --- Repo grouping ---

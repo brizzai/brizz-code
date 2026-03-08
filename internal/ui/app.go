@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/git"
 	"github.com/yuvalhayke/brizz-code/internal/github"
 	"github.com/yuvalhayke/brizz-code/internal/hooks"
@@ -40,13 +42,18 @@ type (
 		id  string
 		err error
 	}
+	sessionCreateResultMsg struct {
+		session *session.Session
+		err     error
+	}
 	previewMsg struct {
 		sessionID string
 		content   string
 	}
 	loadSessionsMsg struct {
-		sessions []*session.Session
-		err      error
+		sessions    []*session.Session
+		ghAvailable bool
+		err         error
 	}
 )
 
@@ -81,10 +88,18 @@ type Home struct {
 	ghAvailable  bool                     // cached gh CLI availability
 
 	hookWatcher *hooks.HookWatcher
+
+	// Background worker for async status/git/PR updates.
+	statusTrigger chan struct{} // buffered(1), triggers worker
+	workerMu      sync.Mutex   // protects sessions/gitInfoCache from concurrent worker access
+	ctx           context.Context
+	cancel        context.CancelFunc
+	workerStarted bool
 }
 
 // NewHome creates the main TUI model.
 func NewHome(storage *session.StateDB) *Home {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Home{
 		storage:          storage,
 		sessionByID:      make(map[string]*session.Session),
@@ -95,6 +110,9 @@ func NewHome(storage *session.StateDB) *Home {
 		previewCache:     make(map[string]string),
 		previewCacheTime: make(map[string]time.Time),
 		gitInfoCache:     make(map[string]*git.RepoInfo),
+		statusTrigger:    make(chan struct{}, 1),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 }
 
@@ -127,13 +145,19 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusUpdateMsg:
 		// Returned after detaching from session.
 		h.isAttaching.Store(false)
-		tmux.RefreshSessionCache()
-		h.updateAllStatuses()
+		// Trigger immediate background refresh.
+		select {
+		case h.statusTrigger <- struct{}{}:
+		default:
+		}
 		h.rebuildFlatItems()
 		return h, nil
 
 	case sessionCreateMsg:
 		return h.handleSessionCreate(msg)
+
+	case sessionCreateResultMsg:
+		return h.handleSessionCreateResult(msg)
 
 	case sessionDeleteMsg:
 		if msg.err != nil {
@@ -174,15 +198,11 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				h.repoExpanded[repo] = true
 			}
 		}
-		h.ghAvailable = github.IsGHAvailable()
+		h.ghAvailable = msg.ghAvailable
 		h.rebuildFlatItems()
 		if len(h.flatItems) > 0 && h.cursor == 0 {
 			h.cursor = FirstSelectableItem(h.flatItems)
 		}
-
-		// Install Claude Code hooks (idempotent, best-effort).
-		configDir := hooks.GetClaudeConfigDir()
-		hooks.InjectClaudeHooks(configDir)
 
 		// Start hook watcher.
 		if h.hookWatcher == nil {
@@ -190,6 +210,12 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				h.hookWatcher = watcher
 				go watcher.Start()
 			}
+		}
+
+		// Start background status worker (once).
+		if !h.workerStarted {
+			h.workerStarted = true
+			go h.statusWorker()
 		}
 
 		return h, nil
@@ -349,6 +375,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.helpOverlay.Show()
 		return h, nil
 	case "q", "ctrl+c":
+		h.cancel() // stops background worker
 		if h.hookWatcher != nil {
 			h.hookWatcher.Stop()
 		}
@@ -398,13 +425,26 @@ func (a attachCmd) SetStderr(w io.Writer) {}
 
 func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
 	s := session.NewSession(msg.title, msg.path)
-	if err := s.Start(); err != nil {
-		h.setError(fmt.Errorf("failed to start session: %w", err))
+	return h, func() tea.Msg {
+		if err := s.Start(); err != nil {
+			return sessionCreateResultMsg{err: err}
+		}
+		return sessionCreateResultMsg{session: s}
+	}
+}
+
+func (h *Home) handleSessionCreateResult(msg sessionCreateResultMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		h.setError(fmt.Errorf("failed to start session: %w", msg.err))
 		return h, nil
 	}
 
+	s := msg.session
+	h.workerMu.Lock()
 	h.sessions = append(h.sessions, s)
 	h.rebuildSessionMap()
+	h.workerMu.Unlock()
+
 	// Ensure the repo group is expanded for the new session.
 	repo := session.GetRepoRoot(s.ProjectPath)
 	h.repoExpanded[repo] = true
@@ -518,68 +558,24 @@ func (h *Home) tick() tea.Cmd {
 }
 
 func (h *Home) handleTick() (tea.Model, tea.Cmd) {
-	tmux.RefreshSessionCache()
-
-	// Sync hook status to all sessions (fast: in-memory map lookups).
-	if h.hookWatcher != nil {
-		for _, s := range h.sessions {
-			hs := h.hookWatcher.GetStatus(s.ID)
-			if hs != nil {
-				s.UpdateHookStatus(&session.HookStatus{
-					Status:    hs.Status,
-					UpdatedAt: hs.UpdatedAt,
-				})
-			}
-		}
+	// Trigger background worker (non-blocking).
+	select {
+	case h.statusTrigger <- struct{}{}:
+	default: // worker busy, skip
 	}
 
-	// Round-robin status updates.
-	if len(h.sessions) > 0 {
-		count := statusRoundRobin
-		if count > len(h.sessions) {
-			count = len(h.sessions)
-		}
-		for i := 0; i < count; i++ {
-			idx := (h.statusRRIndex + i) % len(h.sessions)
-			s := h.sessions[idx]
-			oldStatus := s.GetStatus()
-			s.UpdateStatus()
-			newStatus := s.GetStatus()
-			// Persist status changes.
-			if oldStatus != newStatus {
-				_ = h.storage.UpdateStatus(s.ID, string(newStatus))
-			}
-		}
-		h.statusRRIndex = (h.statusRRIndex + count) % len(h.sessions)
-	}
+	// Read worker results under lock and rebuild.
+	h.workerMu.Lock()
+	h.rebuildFlatItems()
+	h.workerMu.Unlock()
 
-	// Git info refresh: 1 repo per tick (round-robin).
-	repos := h.uniqueRepoPaths()
-	if len(repos) > 0 {
-		idx := h.gitRRIndex % len(repos)
-		repo := repos[idx]
-		info := git.RefreshGitInfo(repo)
-		// Preserve PR data unless TTL expired.
-		if old, ok := h.gitInfoCache[repo]; ok && old.PR != nil {
-			info.PR = old.PR
-			info.LastPRRefresh = old.LastPRRefresh
-		}
-		if h.ghAvailable && (info.LastPRRefresh.IsZero() || time.Since(info.LastPRRefresh) > 60*time.Second) {
-			git.RefreshPRInfo(info, repo)
-		}
-		h.gitInfoCache[repo] = info
-		h.gitRRIndex++
-	}
-
-	// Fetch preview for selected session.
+	// Fetch preview for selected session (already async via tea.Cmd).
 	var previewCmd tea.Cmd
 	if sel := h.selectedSession(); sel != nil && sel.IsAlive() {
 		if _, ok := h.previewCacheTime[sel.ID]; !ok || time.Since(h.previewCacheTime[sel.ID]) > previewCacheTTL {
 			previewCmd = h.fetchPreview(sel)
 		}
 	}
-
-	h.rebuildFlatItems()
 
 	cmds := []tea.Cmd{h.tick()}
 	if previewCmd != nil {
@@ -588,8 +584,68 @@ func (h *Home) handleTick() (tea.Model, tea.Cmd) {
 	return h, tea.Batch(cmds...)
 }
 
-func (h *Home) updateAllStatuses() {
-	for _, s := range h.sessions {
+// statusWorker runs in its own goroutine, performing all blocking I/O
+// (tmux, git, gh) outside the Bubble Tea Update() loop.
+func (h *Home) statusWorker() {
+	ticker := time.NewTicker(tickInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-h.ctx.Done():
+			return
+		case <-h.statusTrigger:
+		case <-ticker.C:
+		}
+
+		h.statusWorkerCycle()
+	}
+}
+
+func (h *Home) statusWorkerCycle() {
+	// Recover from panics to keep the worker alive.
+	defer func() {
+		if r := recover(); r != nil {
+			_ = r // Swallow panic, worker continues next cycle.
+		}
+	}()
+
+	// 1. Refresh tmux session cache (blocking but in background).
+	tmux.RefreshSessionCache()
+
+	// 2. Take a snapshot of sessions under lock.
+	h.workerMu.Lock()
+	sessions := make([]*session.Session, len(h.sessions))
+	copy(sessions, h.sessions)
+	h.workerMu.Unlock()
+
+	if len(sessions) == 0 {
+		return
+	}
+
+	// 3. Sync hook status (fast: in-memory map lookups).
+	if h.hookWatcher != nil {
+		for _, s := range sessions {
+			hs := h.hookWatcher.GetStatus(s.ID)
+			if hs != nil {
+				s.UpdateHookStatus(&session.HookStatus{
+					Status:    hs.Status,
+					UpdatedAt: hs.UpdatedAt,
+				})
+			} else {
+				debuglog.Logger.Debug("worker: no hook data for session", "session", s.ID)
+			}
+		}
+	}
+
+	// 4. Round-robin status updates (pane capture — blocking).
+	count := statusRoundRobin
+	if count > len(sessions) {
+		count = len(sessions)
+	}
+	for i := 0; i < count; i++ {
+		idx := (h.statusRRIndex + i) % len(sessions)
+		s := sessions[idx]
 		oldStatus := s.GetStatus()
 		s.UpdateStatus()
 		newStatus := s.GetStatus()
@@ -597,6 +653,48 @@ func (h *Home) updateAllStatuses() {
 			_ = h.storage.UpdateStatus(s.ID, string(newStatus))
 		}
 	}
+	h.statusRRIndex = (h.statusRRIndex + count) % len(sessions)
+
+	// 5. Git info refresh: 1 repo per cycle (round-robin).
+	repos := h.uniqueRepoPathsFromSessions(sessions)
+	if len(repos) > 0 {
+		idx := h.gitRRIndex % len(repos)
+		repo := repos[idx]
+
+		info := git.RefreshGitInfo(repo)
+
+		// Preserve PR data unless TTL expired.
+		h.workerMu.Lock()
+		if old, ok := h.gitInfoCache[repo]; ok && old.PR != nil {
+			info.PR = old.PR
+			info.LastPRRefresh = old.LastPRRefresh
+		}
+		h.workerMu.Unlock()
+
+		if h.ghAvailable && (info.LastPRRefresh.IsZero() || time.Since(info.LastPRRefresh) > 60*time.Second) {
+			git.RefreshPRInfo(info, repo)
+		}
+
+		h.workerMu.Lock()
+		h.gitInfoCache[repo] = info
+		h.workerMu.Unlock()
+
+		h.gitRRIndex++
+	}
+}
+
+// uniqueRepoPathsFromSessions returns distinct repo root paths from the given sessions.
+func (h *Home) uniqueRepoPathsFromSessions(sessions []*session.Session) []string {
+	seen := make(map[string]bool)
+	var repos []string
+	for _, s := range sessions {
+		root := session.GetRepoRoot(s.ProjectPath)
+		if !seen[root] {
+			seen[root] = true
+			repos = append(repos, root)
+		}
+	}
+	return repos
 }
 
 func (h *Home) fetchPreview(s *session.Session) tea.Cmd {
@@ -770,7 +868,13 @@ func (h *Home) loadSessions() tea.Msg {
 	for _, row := range rows {
 		sessions = append(sessions, session.FromRow(row))
 	}
-	return loadSessionsMsg{sessions: sessions}
+
+	// These block but run in the tea.Cmd goroutine, not Update().
+	configDir := hooks.GetClaudeConfigDir()
+	hooks.InjectClaudeHooks(configDir)
+	ghAvailable := github.IsGHAvailable()
+
+	return loadSessionsMsg{sessions: sessions, ghAvailable: ghAvailable}
 }
 
 func (h *Home) setError(err error) {
@@ -778,16 +882,3 @@ func (h *Home) setError(err error) {
 	h.errTime = time.Now()
 }
 
-// uniqueRepoPaths returns distinct repo root paths from all sessions.
-func (h *Home) uniqueRepoPaths() []string {
-	seen := make(map[string]bool)
-	var repos []string
-	for _, s := range h.sessions {
-		root := session.GetRepoRoot(s.ProjectPath)
-		if !seen[root] {
-			seen[root] = true
-			repos = append(repos, root)
-		}
-	}
-	return repos
-}

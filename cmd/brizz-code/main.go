@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 	"github.com/yuvalhayke/brizz-code/internal/tmux"
 	"github.com/yuvalhayke/brizz-code/internal/ui"
@@ -50,6 +51,10 @@ func main() {
 }
 
 func runTUI() {
+	debuglog.Init()
+	defer debuglog.Close()
+	debuglog.Logger.Info("brizz-code TUI starting")
+
 	if err := tmux.IsTmuxAvailable(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -11,10 +11,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-const (
-	hookDebounce        = 100 * time.Millisecond
-	HookFreshnessWindow = 2 * time.Minute
-)
+const hookDebounce = 100 * time.Millisecond
 
 // HookStatus holds the decoded status from a hook status file.
 type HookStatus struct {

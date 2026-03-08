@@ -41,6 +41,7 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 - Git info refreshes every 2s (branch/dirty), PR info every 60s via `gh` CLI
 - `gh` CLI optional — PR info hidden if not installed
 - Status detection: hook-based (primary) via Claude Code hooks + pane capture (fallback)
+- All blocking I/O (tmux, git, gh) runs in background worker goroutine, never in Bubble Tea Update()
 - Hook status files: `~/.config/brizz-code/hooks/{session_id}.json`
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
