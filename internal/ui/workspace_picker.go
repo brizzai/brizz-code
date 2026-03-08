@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -15,14 +16,21 @@ import (
 type (
 	workspaceListMsg struct {
 		workspaces []workspace.WorkspaceInfo
+		provider   workspace.Provider
+		repoPath   string
 		err        error
 	}
 	workspaceSelectedMsg struct {
 		info workspace.WorkspaceInfo
 	}
-	showCreateWorkspaceMsg struct{}
+	showCreateWorkspaceMsg struct {
+		provider workspace.Provider
+		repoPath string
+	}
 	showCustomPathMsg      struct{}
-	showWorkspacePickerMsg struct{}
+	showWorkspacePickerMsg struct {
+		repoPath string
+	}
 )
 
 type pickerItem struct {
@@ -42,6 +50,8 @@ type WorkspacePickerDialog struct {
 	err           string
 	sessionCounts map[string]int // projectPath -> count of existing sessions
 	canCreate     bool
+	provider      workspace.Provider
+	repoPath      string
 }
 
 // NewWorkspacePickerDialog creates a new workspace picker.
@@ -58,10 +68,12 @@ func NewWorkspacePickerDialog() *WorkspacePickerDialog {
 }
 
 // Show populates and shows the picker.
-func (d *WorkspacePickerDialog) Show(workspaces []workspace.WorkspaceInfo, sessions []*session.Session, canCreate bool) {
+func (d *WorkspacePickerDialog) Show(workspaces []workspace.WorkspaceInfo, sessions []*session.Session, provider workspace.Provider, repoPath string) {
 	d.visible = true
 	d.workspaces = workspaces
-	d.canCreate = canCreate
+	d.provider = provider
+	d.repoPath = repoPath
+	d.canCreate = provider.CanCreate()
 	d.cursor = 0
 	d.err = ""
 	d.loading = false
@@ -169,7 +181,9 @@ func (d *WorkspacePickerDialog) Update(msg tea.Msg) (*WorkspacePickerDialog, tea
 		}
 		switch item.action {
 		case "create":
-			return d, func() tea.Msg { return showCreateWorkspaceMsg{} }
+			provider := d.provider
+			repoPath := d.repoPath
+			return d, func() tea.Msg { return showCreateWorkspaceMsg{provider: provider, repoPath: repoPath} }
 		case "custom":
 			return d, func() tea.Msg { return showCustomPathMsg{} }
 		}
@@ -187,7 +201,12 @@ func (d *WorkspacePickerDialog) Update(msg tea.Msg) (*WorkspacePickerDialog, tea
 func (d *WorkspacePickerDialog) View() string {
 	var b strings.Builder
 
-	b.WriteString(TitleStyle.Render("New Session"))
+	// Title with repo name.
+	title := "New Session"
+	if d.repoPath != "" {
+		title += " — " + filepath.Base(d.repoPath)
+	}
+	b.WriteString(TitleStyle.Render(title))
 	b.WriteString("\n\n")
 
 	if d.loading {
@@ -198,7 +217,7 @@ func (d *WorkspacePickerDialog) View() string {
 	}
 
 	if d.err != "" {
-		b.WriteString(ErrorStyle.Render("  "+d.err))
+		b.WriteString(ErrorStyle.Render("  " + d.err))
 		b.WriteString("\n\n")
 		b.WriteString(DimStyle.Render("esc: cancel"))
 		return d.wrapDialog(b.String())

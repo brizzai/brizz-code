@@ -24,7 +24,8 @@ internal/git/git.go          # Git operations (branch, dirty, worktree)
 internal/git/repo_info.go    # RepoInfo cache + refresh logic
 internal/github/pr.go        # GitHub PR info via gh CLI
 internal/hooks/              # Hook-based status detection (claude_hooks, hook_watcher, status_file)
-internal/workspace/provider.go # Pluggable workspace provider (list/create/destroy via CLI)
+internal/workspace/provider.go     # Provider interface + GitWorktreeProvider + ShellProvider
+internal/workspace/repo_config.go  # Per-repo .bc.json loading + ResolveProvider
 internal/config/config.go    # JSON config (~/.config/brizz-code/config.json)
 internal/debuglog/           # slog-based debug logging to ~/.config/brizz-code/debug.log
 internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, styles)
@@ -42,7 +43,7 @@ internal/ui/workspace_create.go  # Create workspace sub-dialog
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space toggle group, a new (workspace picker if provider configured), d delete (Y to also destroy workspace), r restart, R rename, e editor, / filter, S settings, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space toggle group, a new (repo-scoped workspace picker), d delete (Y to also destroy workspace), r restart, R rename, e editor, / filter, S settings, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
@@ -54,9 +55,9 @@ internal/ui/workspace_create.go  # Create workspace sub-dialog
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
 - Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
-- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, workspace)
-- Workspace provider: optional pluggable CLI integration for workspace tools (list/create/destroy via shell commands)
-- Workspace config: `{"workspace": {"list": "cmd", "create": "cmd {{name}} {{branch}}", "destroy": "cmd {{name}}"}}`
+- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme)
+- Workspace: built-in git worktree support (zero config), per-repo `.bc.json` overrides with custom shell commands
+- `.bc.json` / `.bc.local.json` in repo root: `{"workspace": {"list": "cmd", "create": "cmd {{name}} {{branch}}", "destroy": "cmd {{name}}"}}`
 - Claude session resume: captures Claude session_id from hooks, uses `claude --resume <id>` on restart
 - Editor: config.editor > $EDITOR > "code" (VS Code)
 - Themes: tokyo-night (default), catppuccin-mocha, rose-pine, nord, gruvbox — configurable via settings (S key)

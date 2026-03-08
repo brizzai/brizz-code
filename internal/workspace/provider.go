@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -17,29 +18,119 @@ type WorkspaceInfo struct {
 	Status string `json:"status,omitempty"`
 }
 
-// Provider wraps external workspace management commands.
-type Provider struct {
-	ListCmd    string // shell command, returns JSON array of WorkspaceInfo
-	CreateCmd  string // shell command with {{name}}, {{branch}} placeholders
-	DestroyCmd string // shell command with {{name}} placeholder
+// Provider is the interface for workspace operations.
+type Provider interface {
+	List(repoPath string) ([]WorkspaceInfo, error)
+	Create(repoPath, name, branch string) (*WorkspaceInfo, error)
+	Destroy(repoPath, name string) error
+	CanCreate() bool
+	CanDestroy() bool
+	IsCustom() bool
 }
 
-// IsConfigured returns true if any command is set.
-func (p *Provider) IsConfigured() bool {
-	return p.ListCmd != "" || p.CreateCmd != "" || p.DestroyCmd != ""
+// --- GitWorktreeProvider (built-in default) ---
+
+// GitWorktreeProvider uses git worktree commands for workspace management.
+type GitWorktreeProvider struct{}
+
+func (g *GitWorktreeProvider) List(repoPath string) ([]WorkspaceInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "list", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("git worktree list: %s", strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return nil, fmt.Errorf("git worktree list: %w", err)
+	}
+
+	all := parseWorktreePorcelain(string(out))
+
+	// Filter out the main worktree (where path == repoPath).
+	absRepo, _ := filepath.Abs(repoPath)
+	var result []WorkspaceInfo
+	for _, ws := range all {
+		absWS, _ := filepath.Abs(ws.Path)
+		if absWS == absRepo {
+			continue
+		}
+		result = append(result, ws)
+	}
+	return result, nil
 }
 
-// CanList returns true if the list command is configured.
-func (p *Provider) CanList() bool { return p.ListCmd != "" }
+func (g *GitWorktreeProvider) Create(repoPath, name, branch string) (*WorkspaceInfo, error) {
+	path := deriveWorktreePath(repoPath, name)
 
-// CanCreate returns true if the create command is configured.
-func (p *Provider) CanCreate() bool { return p.CreateCmd != "" }
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 
-// CanDestroy returns true if the destroy command is configured.
-func (p *Provider) CanDestroy() bool { return p.DestroyCmd != "" }
+	// Try creating with new branch first.
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "add", path, "-b", branch)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		// Branch might already exist — retry without -b.
+		cmd2 := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "add", path, branch)
+		if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
+			// Return the more informative error.
+			errMsg := strings.TrimSpace(string(out))
+			if errMsg == "" {
+				errMsg = strings.TrimSpace(string(out2))
+			}
+			return nil, fmt.Errorf("git worktree add: %s", errMsg)
+		}
+	}
 
-// List runs the list command and returns discovered workspaces.
-func (p *Provider) List() ([]WorkspaceInfo, error) {
+	return &WorkspaceInfo{
+		Name:   name,
+		Path:   path,
+		Branch: branch,
+	}, nil
+}
+
+func (g *GitWorktreeProvider) Destroy(repoPath, name string) error {
+	// Find worktree path by name.
+	workspaces, err := g.List(repoPath)
+	if err != nil {
+		return fmt.Errorf("find worktree: %w", err)
+	}
+
+	var wtPath string
+	for _, ws := range workspaces {
+		if ws.Name == name {
+			wtPath = ws.Path
+			break
+		}
+	}
+	if wtPath == "" {
+		return fmt.Errorf("worktree %q not found", name)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "remove", wtPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git worktree remove: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func (g *GitWorktreeProvider) CanCreate() bool  { return true }
+func (g *GitWorktreeProvider) CanDestroy() bool { return true }
+func (g *GitWorktreeProvider) IsCustom() bool   { return false }
+
+// --- ShellProvider (from .bc.json) ---
+
+// ShellProvider wraps external shell commands for workspace management.
+type ShellProvider struct {
+	ListCmd    string
+	CreateCmd  string
+	DestroyCmd string
+}
+
+func (p *ShellProvider) List(repoPath string) ([]WorkspaceInfo, error) {
 	if p.ListCmd == "" {
 		return nil, fmt.Errorf("list command not configured")
 	}
@@ -48,6 +139,7 @@ func (p *Provider) List() ([]WorkspaceInfo, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", p.ListCmd)
+	cmd.Dir = repoPath
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -63,19 +155,26 @@ func (p *Provider) List() ([]WorkspaceInfo, error) {
 	return workspaces, nil
 }
 
-// Create runs the create command with the given name and branch.
-func (p *Provider) Create(name, branch string) (*WorkspaceInfo, error) {
+func (p *ShellProvider) Create(repoPath, name, branch string) (*WorkspaceInfo, error) {
 	if p.CreateCmd == "" {
 		return nil, fmt.Errorf("create command not configured")
 	}
 
 	cmdStr := strings.ReplaceAll(p.CreateCmd, "{{name}}", name)
-	cmdStr = strings.ReplaceAll(cmdStr, "{{branch}}", branch)
+	if branch == "" {
+		// Strip --branch {{branch}} / -b {{branch}} patterns when branch is empty.
+		cmdStr = strings.ReplaceAll(cmdStr, "--branch {{branch}}", "")
+		cmdStr = strings.ReplaceAll(cmdStr, "-b {{branch}}", "")
+		cmdStr = strings.ReplaceAll(cmdStr, "{{branch}}", "")
+	} else {
+		cmdStr = strings.ReplaceAll(cmdStr, "{{branch}}", branch)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	cmd.Dir = repoPath
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -91,8 +190,7 @@ func (p *Provider) Create(name, branch string) (*WorkspaceInfo, error) {
 	return &info, nil
 }
 
-// Destroy runs the destroy command for the given workspace name.
-func (p *Provider) Destroy(name string) error {
+func (p *ShellProvider) Destroy(repoPath, name string) error {
 	if p.DestroyCmd == "" {
 		return fmt.Errorf("destroy command not configured")
 	}
@@ -103,8 +201,68 @@ func (p *Provider) Destroy(name string) error {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	cmd.Dir = repoPath
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("destroy command failed: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func (p *ShellProvider) CanCreate() bool  { return p.CreateCmd != "" }
+func (p *ShellProvider) CanDestroy() bool { return p.DestroyCmd != "" }
+func (p *ShellProvider) IsCustom() bool   { return true }
+
+// --- Helper functions ---
+
+// parseWorktreePorcelain parses git worktree list --porcelain output.
+func parseWorktreePorcelain(output string) []WorkspaceInfo {
+	var result []WorkspaceInfo
+	var current WorkspaceInfo
+	hasWorktree := false
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.HasPrefix(line, "worktree ") {
+			if hasWorktree {
+				result = append(result, current)
+			}
+			path := strings.TrimPrefix(line, "worktree ")
+			current = WorkspaceInfo{
+				Path: path,
+				Name: filepath.Base(path),
+			}
+			hasWorktree = true
+		} else if strings.HasPrefix(line, "branch refs/heads/") {
+			current.Branch = strings.TrimPrefix(line, "branch refs/heads/")
+		}
+	}
+	if hasWorktree {
+		result = append(result, current)
+	}
+	return result
+}
+
+// SanitizeBranchName converts a branch name to a safe directory name.
+// e.g. "feature/login" -> "feature-login"
+func SanitizeBranchName(branch string) string {
+	s := strings.ReplaceAll(branch, "/", "-")
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "..", "-")
+	return s
+}
+
+// deriveWorktreePath computes the sibling worktree path.
+// e.g. repoPath="/code/myrepo", name="feature-login" -> "/code/myrepo-feature-login"
+func deriveWorktreePath(repoPath, name string) string {
+	absRepo, _ := filepath.Abs(repoPath)
+	parent := filepath.Dir(absRepo)
+	base := filepath.Base(absRepo)
+	return filepath.Join(parent, base+"-"+name)
+}
+
+// DeriveWorktreePathPreview returns a display-friendly relative path preview.
+func DeriveWorktreePathPreview(repoPath, name string) string {
+	absRepo, _ := filepath.Abs(repoPath)
+	base := filepath.Base(absRepo)
+	return "../" + base + "-" + name
 }

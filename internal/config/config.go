@@ -6,20 +6,12 @@ import (
 	"path/filepath"
 )
 
-// WorkspaceConfig holds workspace provider command configuration.
-type WorkspaceConfig struct {
-	List    string `json:"list,omitempty"`
-	Create  string `json:"create,omitempty"`
-	Destroy string `json:"destroy,omitempty"`
-}
-
 // Config holds user-configurable settings.
 type Config struct {
-	TickIntervalSec    int             `json:"tick_interval_sec,omitempty"`
-	DefaultProjectPath string          `json:"default_project_path,omitempty"`
-	Editor             string          `json:"editor,omitempty"`
-	Theme              string          `json:"theme,omitempty"`
-	Workspace          WorkspaceConfig `json:"workspace,omitempty"`
+	TickIntervalSec    int    `json:"tick_interval_sec,omitempty"`
+	DefaultProjectPath string `json:"default_project_path,omitempty"`
+	Editor             string `json:"editor,omitempty"`
+	Theme              string `json:"theme,omitempty"`
 }
 
 // DefaultConfigPath returns the default config file path.

@@ -89,7 +89,6 @@ type Home struct {
 	settingsDialog        *SettingsDialog
 	workspacePicker       *WorkspacePickerDialog
 	createWorkspaceDialog *CreateWorkspaceDialog
-	workspaceProvider     *workspace.Provider
 
 	repoExpanded     map[string]bool // repo path -> expanded state
 	previewCache     map[string]string
@@ -132,36 +131,25 @@ func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 		ApplyPalette(PaletteByName(cfg.Theme))
 	}
 
-	// Initialize workspace provider from config.
-	var wp *workspace.Provider
-	if cfg.Workspace.List != "" || cfg.Workspace.Create != "" || cfg.Workspace.Destroy != "" {
-		wp = &workspace.Provider{
-			ListCmd:    cfg.Workspace.List,
-			CreateCmd:  cfg.Workspace.Create,
-			DestroyCmd: cfg.Workspace.Destroy,
-		}
-	}
-
 	return &Home{
-		storage:          storage,
-		sessionByID:      make(map[string]*session.Session),
-		repoExpanded:     make(map[string]bool),
-		newDialog:        NewNewSessionDialog(),
-		confirmDialog:    NewConfirmDialog(),
-		renameDialog:     NewRenameDialog(),
+		storage:               storage,
+		sessionByID:           make(map[string]*session.Session),
+		repoExpanded:          make(map[string]bool),
+		newDialog:             NewNewSessionDialog(),
+		confirmDialog:         NewConfirmDialog(),
+		renameDialog:          NewRenameDialog(),
 		helpOverlay:           NewHelpOverlay(),
 		settingsDialog:        NewSettingsDialog(cfg),
 		workspacePicker:       NewWorkspacePickerDialog(),
 		createWorkspaceDialog: NewCreateWorkspaceDialog(),
-		workspaceProvider:     wp,
-		previewCache:     make(map[string]string),
-		previewCacheTime: make(map[string]time.Time),
-		gitInfoCache:     make(map[string]*git.RepoInfo),
-		filterInput:      fi,
-		cfg:              cfg,
-		statusTrigger:    make(chan struct{}, 1),
-		ctx:              ctx,
-		cancel:           cancel,
+		previewCache:          make(map[string]string),
+		previewCacheTime:      make(map[string]time.Time),
+		gitInfoCache:          make(map[string]*git.RepoInfo),
+		filterInput:           fi,
+		cfg:                   cfg,
+		statusTrigger:         make(chan struct{}, 1),
+		ctx:                   ctx,
+		cancel:                cancel,
 	}
 }
 
@@ -216,14 +204,23 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			h.setError(msg.err)
 		} else {
+			// Resolve provider before deleting session (need project path).
+			var destroyProvider workspace.Provider
+			var destroyRepoPath string
+			if msg.destroyWorkspace && msg.workspaceName != "" {
+				if s, ok := h.sessionByID[msg.id]; ok {
+					destroyRepoPath = session.GetRepoRoot(s.ProjectPath)
+					destroyProvider = workspace.ResolveProvider(destroyRepoPath)
+				}
+			}
 			h.deleteSession(msg.id)
 			// If workspace destroy requested, do it async.
-			if msg.destroyWorkspace && msg.workspaceName != "" && h.workspaceProvider != nil && h.workspaceProvider.CanDestroy() {
-				provider := h.workspaceProvider
+			if destroyProvider != nil && destroyProvider.CanDestroy() {
 				wsName := msg.workspaceName
+				repoPath := destroyRepoPath
 				sid := msg.id
 				return h, func() tea.Msg {
-					err := provider.Destroy(wsName)
+					err := destroyProvider.Destroy(repoPath, wsName)
 					return workspaceDestroyResultMsg{sessionID: sid, err: err}
 				}
 			}
@@ -273,7 +270,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			h.newDialog.Show()
 			return h, nil
 		}
-		h.workspacePicker.Show(msg.workspaces, h.sessions, h.workspaceProvider != nil && h.workspaceProvider.CanCreate())
+		h.workspacePicker.Show(msg.workspaces, h.sessions, msg.provider, msg.repoPath)
 		return h, nil
 
 	case workspaceSelectedMsg:
@@ -285,7 +282,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case showCreateWorkspaceMsg:
 		h.workspacePicker.Hide()
-		h.createWorkspaceDialog.Show()
+		h.createWorkspaceDialog.Show(msg.provider, msg.repoPath)
 		return h, nil
 
 	case showCustomPathMsg:
@@ -295,18 +292,21 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case showWorkspacePickerMsg:
 		h.createWorkspaceDialog.Hide()
-		// Re-fetch workspace list.
-		if h.workspaceProvider != nil && h.workspaceProvider.CanList() {
+		// Re-fetch workspace list for the same repo.
+		if msg.repoPath != "" {
 			h.workspacePicker.ShowLoading()
-			return h, h.fetchWorkspaceList()
+			return h, h.fetchWorkspaceListForRepo(msg.repoPath)
 		}
 		return h, nil
 
 	case workspaceCreateMsg:
 		h.createWorkspaceDialog.SetCreating(true)
-		provider := h.workspaceProvider
+		provider := msg.provider
+		repoPath := msg.repoPath
+		name := msg.name
+		branch := msg.branch
 		return h, func() tea.Msg {
-			info, err := provider.Create(msg.name, msg.branch)
+			info, err := provider.Create(repoPath, name, branch)
 			return workspaceCreateResultMsg{info: info, err: err}
 		}
 
@@ -599,12 +599,13 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.expandRepoAtCursor()
 		return h, nil
 	case "a", "n":
-		if h.workspaceProvider != nil && h.workspaceProvider.CanList() {
-			h.workspacePicker.ShowLoading()
-			return h, h.fetchWorkspaceList()
+		repoPath := h.resolveCurrentRepo()
+		if repoPath == "" {
+			h.newDialog.Show()
+			return h, nil
 		}
-		h.newDialog.Show()
-		return h, nil
+		h.workspacePicker.ShowLoading()
+		return h, h.fetchWorkspaceListForRepo(repoPath)
 	case "d":
 		return h, h.confirmDeleteSelected()
 	case "r":
@@ -746,23 +747,27 @@ func (h *Home) confirmDeleteSelected() tea.Cmd {
 	id := s.ID
 	wsName := s.WorkspaceName
 
-	if wsName != "" && h.workspaceProvider != nil && h.workspaceProvider.CanDestroy() {
-		h.confirmDialog.ShowDangerWithWorkspace("Delete Session?", s.Title, []string{
-			"tmux session terminated",
-			"Terminal history lost",
-		}, wsName, func() tea.Msg {
-			return sessionDeleteMsg{id: id}
-		}, func() tea.Msg {
-			return sessionDeleteMsg{id: id, destroyWorkspace: true, workspaceName: wsName}
-		})
-	} else {
-		h.confirmDialog.ShowDanger("Delete Session?", s.Title, []string{
-			"tmux session terminated",
-			"Terminal history lost",
-		}, func() tea.Msg {
-			return sessionDeleteMsg{id: id}
-		})
+	if wsName != "" {
+		repoPath := session.GetRepoRoot(s.ProjectPath)
+		provider := workspace.ResolveProvider(repoPath)
+		if provider.CanDestroy() {
+			h.confirmDialog.ShowDangerWithWorkspace("Delete Session?", s.Title, []string{
+				"tmux session terminated",
+				"Terminal history lost",
+			}, wsName, func() tea.Msg {
+				return sessionDeleteMsg{id: id}
+			}, func() tea.Msg {
+				return sessionDeleteMsg{id: id, destroyWorkspace: true, workspaceName: wsName}
+			})
+			return nil
+		}
 	}
+	h.confirmDialog.ShowDanger("Delete Session?", s.Title, []string{
+		"tmux session terminated",
+		"Terminal history lost",
+	}, func() tea.Msg {
+		return sessionDeleteMsg{id: id}
+	})
 	return nil
 }
 
@@ -1109,11 +1114,25 @@ func (h *Home) uniqueRepoPathsFromSessions(sessions []*session.Session) []string
 	return repos
 }
 
-func (h *Home) fetchWorkspaceList() tea.Cmd {
-	provider := h.workspaceProvider
+func (h *Home) resolveCurrentRepo() string {
+	if h.cursor < 0 || h.cursor >= len(h.flatItems) {
+		return ""
+	}
+	item := h.flatItems[h.cursor]
+	if item.IsRepoHeader {
+		return item.RepoPath
+	}
+	if item.Session != nil {
+		return session.GetRepoRoot(item.Session.ProjectPath)
+	}
+	return ""
+}
+
+func (h *Home) fetchWorkspaceListForRepo(repoPath string) tea.Cmd {
 	return func() tea.Msg {
-		workspaces, err := provider.List()
-		return workspaceListMsg{workspaces: workspaces, err: err}
+		provider := workspace.ResolveProvider(repoPath)
+		workspaces, err := provider.List(repoPath)
+		return workspaceListMsg{workspaces: workspaces, provider: provider, repoPath: repoPath, err: err}
 	}
 }
 

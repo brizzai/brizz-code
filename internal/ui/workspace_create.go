@@ -13,6 +13,8 @@ import (
 type (
 	workspaceCreateMsg struct {
 		name, branch string
+		repoPath     string
+		provider     workspace.Provider
 	}
 	workspaceCreateResultMsg struct {
 		info *workspace.WorkspaceInfo
@@ -31,9 +33,12 @@ type CreateWorkspaceDialog struct {
 	height      int
 	nameInput   textinput.Model
 	branchInput textinput.Model
-	focusIndex  int // 0=name, 1=branch
+	focusIndex  int // 0=name/branch, 1=branch (custom mode only)
 	creating    bool
 	err         string
+	isNative    bool // true for git worktree (single field), false for custom shell
+	repoPath    string
+	provider    workspace.Provider
 }
 
 // NewCreateWorkspaceDialog creates a new create workspace dialog.
@@ -45,7 +50,7 @@ func NewCreateWorkspaceDialog() *CreateWorkspaceDialog {
 	ni.Focus()
 
 	bi := textinput.New()
-	bi.Placeholder = "branch (optional)"
+	bi.Placeholder = "branch name"
 	bi.CharLimit = 128
 	bi.Width = 40
 
@@ -55,15 +60,30 @@ func NewCreateWorkspaceDialog() *CreateWorkspaceDialog {
 	}
 }
 
-func (d *CreateWorkspaceDialog) Show() {
+func (d *CreateWorkspaceDialog) Show(provider workspace.Provider, repoPath string) {
 	d.visible = true
 	d.creating = false
 	d.err = ""
-	d.focusIndex = 0
-	d.nameInput.SetValue("")
-	d.branchInput.SetValue("")
-	d.nameInput.Focus()
-	d.branchInput.Blur()
+	d.provider = provider
+	d.repoPath = repoPath
+	d.isNative = !provider.IsCustom()
+
+	if d.isNative {
+		// Native git mode: single branch input.
+		d.focusIndex = 0
+		d.branchInput.SetValue("")
+		d.branchInput.Placeholder = "branch name (e.g. feature/login)"
+		d.branchInput.Focus()
+		d.nameInput.Blur()
+	} else {
+		// Custom shell mode: name + branch inputs.
+		d.focusIndex = 0
+		d.nameInput.SetValue("")
+		d.branchInput.SetValue("")
+		d.branchInput.Placeholder = "branch (optional)"
+		d.nameInput.Focus()
+		d.branchInput.Blur()
+	}
 }
 
 func (d *CreateWorkspaceDialog) Hide() {
@@ -91,6 +111,12 @@ func (d *CreateWorkspaceDialog) SetError(err string) {
 }
 
 func (d *CreateWorkspaceDialog) updateFocus() {
+	if d.isNative {
+		// Native mode only has branch input.
+		d.branchInput.Focus()
+		d.nameInput.Blur()
+		return
+	}
 	if d.focusIndex == 0 {
 		d.nameInput.Focus()
 		d.branchInput.Blur()
@@ -118,16 +144,37 @@ func (d *CreateWorkspaceDialog) Update(msg tea.Msg) (*CreateWorkspaceDialog, tea
 	switch keyMsg.String() {
 	case "esc":
 		d.Hide()
-		return d, func() tea.Msg { return showWorkspacePickerMsg{} }
+		repoPath := d.repoPath
+		return d, func() tea.Msg { return showWorkspacePickerMsg{repoPath: repoPath} }
 	case "tab", "down":
-		d.focusIndex = (d.focusIndex + 1) % 2
-		d.updateFocus()
+		if !d.isNative {
+			d.focusIndex = (d.focusIndex + 1) % 2
+			d.updateFocus()
+		}
 		return d, nil
 	case "shift+tab", "up":
-		d.focusIndex = (d.focusIndex + 1) % 2
-		d.updateFocus()
+		if !d.isNative {
+			d.focusIndex = (d.focusIndex + 1) % 2
+			d.updateFocus()
+		}
 		return d, nil
 	case "enter":
+		if d.isNative {
+			// Native git mode: branch is the only input.
+			branch := strings.TrimSpace(d.branchInput.Value())
+			if branch == "" {
+				d.err = "Branch cannot be empty"
+				return d, nil
+			}
+			d.err = ""
+			name := workspace.SanitizeBranchName(branch)
+			provider := d.provider
+			repoPath := d.repoPath
+			return d, func() tea.Msg {
+				return workspaceCreateMsg{name: name, branch: branch, repoPath: repoPath, provider: provider}
+			}
+		}
+		// Custom shell mode.
 		name := strings.TrimSpace(d.nameInput.Value())
 		if name == "" {
 			d.err = "Name cannot be empty"
@@ -135,12 +182,18 @@ func (d *CreateWorkspaceDialog) Update(msg tea.Msg) (*CreateWorkspaceDialog, tea
 		}
 		d.err = ""
 		branch := strings.TrimSpace(d.branchInput.Value())
-		return d, func() tea.Msg { return workspaceCreateMsg{name: name, branch: branch} }
+		provider := d.provider
+		repoPath := d.repoPath
+		return d, func() tea.Msg {
+			return workspaceCreateMsg{name: name, branch: branch, repoPath: repoPath, provider: provider}
+		}
 	}
 
 	// Route to focused input.
 	var cmd tea.Cmd
-	if d.focusIndex == 0 {
+	if d.isNative {
+		d.branchInput, cmd = d.branchInput.Update(msg)
+	} else if d.focusIndex == 0 {
 		d.nameInput, cmd = d.nameInput.Update(msg)
 	} else {
 		d.branchInput, cmd = d.branchInput.Update(msg)
@@ -156,24 +209,49 @@ func (d *CreateWorkspaceDialog) View() string {
 	b.WriteString("\n\n")
 
 	if d.creating {
-		name := d.nameInput.Value()
+		name := d.branchInput.Value()
+		if !d.isNative {
+			name = d.nameInput.Value()
+		}
 		b.WriteString(lipgloss.NewStyle().Foreground(ColorText).Render("  Creating \"" + name + "\"..."))
 		b.WriteString("\n")
-		b.WriteString(DimStyle.Render("  Running provider command"))
+		if d.isNative {
+			b.WriteString(DimStyle.Render("  Running git worktree add"))
+		} else {
+			b.WriteString(DimStyle.Render("  Running provider command"))
+		}
 		b.WriteString("\n\n")
 		b.WriteString(DimStyle.Render("esc: cancel"))
 		return d.wrapDialog(b.String())
 	}
 
-	b.WriteString(DimStyle.Render("Name:"))
-	b.WriteString("\n")
-	b.WriteString(d.nameInput.View())
-	b.WriteString("\n\n")
+	if d.isNative {
+		// Native git mode: single branch input with path preview.
+		b.WriteString(DimStyle.Render("Branch:"))
+		b.WriteString("\n")
+		b.WriteString(d.branchInput.View())
+		b.WriteString("\n")
 
-	b.WriteString(DimStyle.Render("Branch (optional):"))
-	b.WriteString("\n")
-	b.WriteString(d.branchInput.View())
-	b.WriteString("\n")
+		// Path preview.
+		branch := strings.TrimSpace(d.branchInput.Value())
+		if branch != "" {
+			name := workspace.SanitizeBranchName(branch)
+			preview := workspace.DeriveWorktreePathPreview(d.repoPath, name)
+			b.WriteString(DimStyle.Render("  → " + preview))
+			b.WriteString("\n")
+		}
+	} else {
+		// Custom shell mode: name + branch inputs.
+		b.WriteString(DimStyle.Render("Name:"))
+		b.WriteString("\n")
+		b.WriteString(d.nameInput.View())
+		b.WriteString("\n\n")
+
+		b.WriteString(DimStyle.Render("Branch (optional):"))
+		b.WriteString("\n")
+		b.WriteString(d.branchInput.View())
+		b.WriteString("\n")
+	}
 
 	if d.err != "" {
 		b.WriteString("\n")
@@ -182,7 +260,11 @@ func (d *CreateWorkspaceDialog) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(DimStyle.Render("enter: create  tab: next  esc: back"))
+	if d.isNative {
+		b.WriteString(DimStyle.Render("enter: create  esc: back"))
+	} else {
+		b.WriteString(DimStyle.Render("enter: create  tab: next  esc: back"))
+	}
 
 	return d.wrapDialog(b.String())
 }
