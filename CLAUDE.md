@@ -35,7 +35,7 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 - Keybindings: j/k nav, Enter attach, a new, d delete, r restart, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
-- Repo headers show branch name (📍), dirty indicator (*), and PR badge (#N)
+- Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
 - Git info refreshes every 2s (branch/dirty), PR info every 60s via `gh` CLI
 - `gh` CLI optional — PR info hidden if not installed
 - Claude Code only, Mac only

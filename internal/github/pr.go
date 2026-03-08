@@ -46,7 +46,6 @@ func GetPRForBranch(repoPath, branch string) (*PR, error) {
 
 	cmd := exec.Command("gh", "pr", "view",
 		"--json", "number,title,url,state,reviewDecision,statusCheckRollup",
-		"-R", repoPath,
 	)
 	cmd.Dir = repoPath
 	output, err := cmd.Output()

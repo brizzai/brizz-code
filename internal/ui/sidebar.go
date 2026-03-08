@@ -15,6 +15,7 @@ import (
 const (
 	treeBranch = "├─"
 	treeLast   = "└─"
+	branchIcon = ""
 )
 
 // SidebarItem represents a flattened item for cursor navigation.
@@ -139,9 +140,9 @@ func renderRepoHeader(repoPath string, expanded bool, info RepoGroupInfo, repoIn
 				branch = branch[:12] + "..."
 			}
 			if selected {
-				branchStr = " " + SessionStatusSelStyle.Render("📍"+branch)
+				branchStr = " " + SessionStatusSelStyle.Render(branchIcon+" "+branch)
 			} else {
-				branchStr = " " + BranchStyle.Render("📍"+branch)
+				branchStr = " " + BranchStyle.Render(branchIcon+" "+branch)
 			}
 		}
 		if repoInfo.IsDirty {
@@ -194,19 +195,19 @@ func renderPRBadge(pr *github.PR, selected bool) string {
 
 	badge := fmt.Sprintf("#%d", pr.Number)
 
-	// Determine icon based on review decision and CI status.
+	// Determine icon — prioritize failures over approvals.
 	icon := ""
 	style := PROpenStyle
 	switch {
-	case pr.ReviewDecision == "APPROVED" || pr.CIStatus == "SUCCESS":
-		icon = " ✓"
-		style = PROpenStyle
-	case pr.ReviewDecision == "CHANGES_REQUESTED" || pr.CIStatus == "FAILURE":
+	case pr.CIStatus == "FAILURE" || pr.ReviewDecision == "CHANGES_REQUESTED":
 		icon = " ✕"
 		style = PRFailStyle
 	case pr.CIStatus == "PENDING" || pr.ReviewDecision == "REVIEW_REQUIRED":
 		icon = " ⏳"
 		style = PRPendingStyle
+	case pr.ReviewDecision == "APPROVED" || pr.CIStatus == "SUCCESS":
+		icon = " ✓"
+		style = PROpenStyle
 	}
 
 	if selected {
