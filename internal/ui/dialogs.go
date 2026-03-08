@@ -1,0 +1,206 @@
+package ui
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// sessionCreateMsg is sent when the user confirms creating a new session.
+type sessionCreateMsg struct {
+	path  string
+	title string
+}
+
+// NewSessionDialog handles the new session creation flow.
+type NewSessionDialog struct {
+	pathInput textinput.Model
+	visible   bool
+	width     int
+	height    int
+	err       string
+}
+
+// NewNewSessionDialog creates a new session dialog.
+func NewNewSessionDialog() *NewSessionDialog {
+	ti := textinput.New()
+	ti.Placeholder = "~/code/my-project"
+	ti.CharLimit = 256
+	ti.Width = 40
+	ti.Focus()
+
+	return &NewSessionDialog{
+		pathInput: ti,
+	}
+}
+
+// Show makes the dialog visible.
+func (d *NewSessionDialog) Show() {
+	d.visible = true
+	d.pathInput.SetValue("")
+	d.err = ""
+	d.pathInput.Focus()
+}
+
+// Hide hides the dialog.
+func (d *NewSessionDialog) Hide() {
+	d.visible = false
+	d.pathInput.Blur()
+}
+
+// IsVisible returns whether the dialog is shown.
+func (d *NewSessionDialog) IsVisible() bool {
+	return d.visible
+}
+
+// SetSize updates the dialog dimensions.
+func (d *NewSessionDialog) SetSize(width, height int) {
+	d.width = width
+	d.height = height
+	inputWidth := width - 10
+	if inputWidth > 60 {
+		inputWidth = 60
+	}
+	if inputWidth < 20 {
+		inputWidth = 20
+	}
+	d.pathInput.Width = inputWidth
+}
+
+// Update handles input events for the dialog.
+func (d *NewSessionDialog) Update(msg tea.Msg) (*NewSessionDialog, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			path := d.expandPath(d.pathInput.Value())
+			if path == "" {
+				d.err = "Path cannot be empty"
+				return d, nil
+			}
+
+			info, err := os.Stat(path)
+			if err != nil || !info.IsDir() {
+				d.err = "Directory does not exist"
+				return d, nil
+			}
+
+			title := filepath.Base(path)
+			d.Hide()
+			return d, func() tea.Msg {
+				return sessionCreateMsg{path: path, title: title}
+			}
+
+		case "esc":
+			d.Hide()
+			return d, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	d.pathInput, cmd = d.pathInput.Update(msg)
+	return d, cmd
+}
+
+// View renders the dialog.
+func (d *NewSessionDialog) View() string {
+	var b strings.Builder
+
+	b.WriteString(TitleStyle.Render("New Session"))
+	b.WriteString("\n\n")
+	b.WriteString(DimStyle.Render("Project directory:"))
+	b.WriteString("\n")
+	b.WriteString(d.pathInput.View())
+	b.WriteString("\n")
+
+	if d.err != "" {
+		b.WriteString("\n")
+		b.WriteString(ErrorStyle.Render("  " + d.err))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(DimStyle.Render("enter: create • esc: cancel"))
+
+	// Center the dialog.
+	dialogWidth := d.width - 4
+	if dialogWidth > 64 {
+		dialogWidth = 64
+	}
+	if dialogWidth < 30 {
+		dialogWidth = 30
+	}
+
+	box := DialogStyle.Width(dialogWidth).Render(b.String())
+
+	// Center vertically and horizontally.
+	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func (d *NewSessionDialog) expandPath(path string) string {
+	path = strings.TrimSpace(path)
+	if strings.HasPrefix(path, "~/") {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, path[2:])
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return abs
+}
+
+// ConfirmDialog handles confirmation prompts (e.g., delete session).
+type ConfirmDialog struct {
+	visible bool
+	message string
+	width   int
+	height  int
+	onYes   func() tea.Msg
+}
+
+// NewConfirmDialog creates a new confirmation dialog.
+func NewConfirmDialog() *ConfirmDialog {
+	return &ConfirmDialog{}
+}
+
+func (d *ConfirmDialog) Show(message string, onYes func() tea.Msg) {
+	d.visible = true
+	d.message = message
+	d.onYes = onYes
+}
+
+func (d *ConfirmDialog) Hide()              { d.visible = false }
+func (d *ConfirmDialog) IsVisible() bool     { return d.visible }
+func (d *ConfirmDialog) SetSize(w, h int)    { d.width = w; d.height = h }
+
+func (d *ConfirmDialog) Update(msg tea.Msg) (*ConfirmDialog, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "y", "Y", "enter":
+			d.Hide()
+			if d.onYes != nil {
+				return d, func() tea.Msg { return d.onYes() }
+			}
+			return d, nil
+		case "n", "N", "esc":
+			d.Hide()
+			return d, nil
+		}
+	}
+	return d, nil
+}
+
+func (d *ConfirmDialog) View() string {
+	content := fmt.Sprintf("%s\n\n%s",
+		d.message,
+		DimStyle.Render("y: confirm • n/esc: cancel"),
+	)
+	box := DialogStyle.Width(50).Render(content)
+	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, box)
+}
