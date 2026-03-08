@@ -36,7 +36,8 @@ type RepoGroupInfo struct {
 
 // BuildFlatItems groups sessions by repo and flattens into a navigable list.
 // expanded maps repo path -> whether the group is expanded.
-func BuildFlatItems(sessions []*session.Session, expanded map[string]bool) []SidebarItem {
+// filter, when non-empty, only includes sessions whose title contains the filter string.
+func BuildFlatItems(sessions []*session.Session, expanded map[string]bool, filter string) []SidebarItem {
 	groups := session.GroupByRepo(sessions)
 
 	// Sort repo paths alphabetically.
@@ -46,23 +47,41 @@ func BuildFlatItems(sessions []*session.Session, expanded map[string]bool) []Sid
 	}
 	sort.Strings(repos)
 
+	lowerFilter := strings.ToLower(filter)
+
 	var items []SidebarItem
 	for _, repo := range repos {
 		groupSessions := groups[repo]
+
+		// Apply filter: only include matching sessions.
+		var filtered []*session.Session
+		if lowerFilter != "" {
+			for _, s := range groupSessions {
+				if strings.Contains(strings.ToLower(s.Title), lowerFilter) {
+					filtered = append(filtered, s)
+				}
+			}
+			if len(filtered) == 0 {
+				continue // Skip repo groups with no matching sessions.
+			}
+		} else {
+			filtered = groupSessions
+		}
+
 		isExpanded := expanded[repo] // default false = collapsed
 
 		items = append(items, SidebarItem{
 			IsRepoHeader: true,
 			RepoPath:     repo,
 			Expanded:     isExpanded,
-			SessionCount: len(groupSessions),
+			SessionCount: len(groupSessions), // Always show total count.
 		})
 
 		if isExpanded {
-			for i, s := range groupSessions {
+			for i, s := range filtered {
 				items = append(items, SidebarItem{
 					Session: s,
-					IsLast:  i == len(groupSessions)-1,
+					IsLast:  i == len(filtered)-1,
 				})
 			}
 		}

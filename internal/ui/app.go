@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/yuvalhayke/brizz-code/internal/config"
 	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/git"
 	"github.com/yuvalhayke/brizz-code/internal/github"
@@ -53,8 +56,10 @@ type (
 	loadSessionsMsg struct {
 		sessions    []*session.Session
 		ghAvailable bool
+		warning     string
 		err         error
 	}
+	openEditorMsg struct{ err error }
 )
 
 // Home is the main Bubble Tea model.
@@ -76,6 +81,7 @@ type Home struct {
 
 	newDialog     *NewSessionDialog
 	confirmDialog *ConfirmDialog
+	renameDialog  *RenameDialog
 	helpOverlay   *HelpOverlay
 
 	repoExpanded     map[string]bool // repo path -> expanded state
@@ -89,6 +95,14 @@ type Home struct {
 
 	hookWatcher *hooks.HookWatcher
 
+	// Filter.
+	filterInput  textinput.Model
+	filterActive bool
+	filterText   string
+
+	// Config.
+	cfg *config.Config
+
 	// Background worker for async status/git/PR updates.
 	statusTrigger chan struct{} // buffered(1), triggers worker
 	workerMu      sync.Mutex   // protects sessions/gitInfoCache from concurrent worker access
@@ -98,18 +112,27 @@ type Home struct {
 }
 
 // NewHome creates the main TUI model.
-func NewHome(storage *session.StateDB) *Home {
+func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	fi := textinput.New()
+	fi.Placeholder = "filter..."
+	fi.CharLimit = 64
+	fi.Width = 20
+
 	return &Home{
 		storage:          storage,
 		sessionByID:      make(map[string]*session.Session),
 		repoExpanded:     make(map[string]bool),
 		newDialog:        NewNewSessionDialog(),
 		confirmDialog:    NewConfirmDialog(),
+		renameDialog:     NewRenameDialog(),
 		helpOverlay:      NewHelpOverlay(),
 		previewCache:     make(map[string]string),
 		previewCacheTime: make(map[string]time.Time),
 		gitInfoCache:     make(map[string]*git.RepoInfo),
+		filterInput:      fi,
+		cfg:              cfg,
 		statusTrigger:    make(chan struct{}, 1),
 		ctx:              ctx,
 		cancel:           cancel,
@@ -132,6 +155,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.height = msg.Height
 		h.newDialog.SetSize(msg.Width, msg.Height)
 		h.confirmDialog.SetSize(msg.Width, msg.Height)
+		h.renameDialog.SetSize(msg.Width, msg.Height)
 		h.helpOverlay.SetSize(msg.Width, msg.Height)
 		h.syncViewport()
 		return h, nil
@@ -179,6 +203,20 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.rebuildFlatItems()
 		return h, nil
 
+	case sessionRenameMsg:
+		if s, ok := h.sessionByID[msg.id]; ok {
+			s.Title = msg.newTitle
+			_ = h.storage.UpdateTitle(s.ID, msg.newTitle)
+			h.rebuildFlatItems()
+		}
+		return h, nil
+
+	case openEditorMsg:
+		if msg.err != nil {
+			h.setError(fmt.Errorf("editor: %w", msg.err))
+		}
+		return h, nil
+
 	case previewMsg:
 		h.previewCache[msg.sessionID] = msg.content
 		h.previewCacheTime[msg.sessionID] = time.Now()
@@ -188,6 +226,9 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			h.setError(msg.err)
 			return h, nil
+		}
+		if msg.warning != "" {
+			h.setError(fmt.Errorf("%s", msg.warning))
 		}
 		h.sessions = msg.sessions
 		h.rebuildSessionMap()
@@ -242,6 +283,9 @@ func (h *Home) View() string {
 	}
 	if h.confirmDialog.IsVisible() {
 		return h.confirmDialog.View()
+	}
+	if h.renameDialog.IsVisible() {
+		return h.renameDialog.View()
 	}
 
 	var b strings.Builder
@@ -305,9 +349,23 @@ func (h *Home) View() string {
 		lines++
 	}
 
-	// Help bar.
-	b.WriteString("\n")
-	b.WriteString(h.renderHelpBar())
+	// Filter bar (when active, replaces help bar).
+	if h.filterActive {
+		border := lipgloss.NewStyle().Foreground(ColorBorder).Render(strings.Repeat("─", h.width))
+		b.WriteString("\n")
+		b.WriteString(border + "\n")
+		b.WriteString(" " + HelpKeyStyle.Render("/") + " " + h.filterInput.View())
+	} else if h.filterText != "" {
+		// Show active filter indicator even when not typing.
+		border := lipgloss.NewStyle().Foreground(ColorBorder).Render(strings.Repeat("─", h.width))
+		b.WriteString("\n")
+		b.WriteString(border + "\n")
+		b.WriteString(" " + HelpKeyStyle.Render("/") + " " + DimStyle.Render(h.filterText) + "  " + DimStyle.Render("(/ to edit, esc to clear)"))
+	} else {
+		// Help bar.
+		b.WriteString("\n")
+		b.WriteString(h.renderHelpBar())
+	}
 
 	// Error message (overwrites last line if present).
 	if h.err != nil && time.Since(h.errTime) < 5*time.Second {
@@ -337,6 +395,47 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.confirmDialog = dialog
 		return h, cmd
 	}
+	if h.renameDialog.IsVisible() {
+		dialog, cmd := h.renameDialog.Update(msg)
+		h.renameDialog = dialog
+		return h, cmd
+	}
+
+	// Filter mode: route keys to filter input.
+	if h.filterActive {
+		switch msg.String() {
+		case "esc":
+			h.filterActive = false
+			h.filterText = ""
+			h.filterInput.SetValue("")
+			h.filterInput.Blur()
+			h.rebuildFlatItems()
+			// Reset cursor to first item.
+			if len(h.flatItems) > 0 {
+				h.cursor = FirstSelectableItem(h.flatItems)
+			}
+			h.syncViewport()
+			return h, nil
+		case "enter":
+			// Accept filter and exit filter mode.
+			h.filterActive = false
+			h.filterInput.Blur()
+			return h, nil
+		default:
+			var cmd tea.Cmd
+			h.filterInput, cmd = h.filterInput.Update(msg)
+			h.filterText = h.filterInput.Value()
+			h.rebuildFlatItems()
+			// Reset cursor when filter changes.
+			if len(h.flatItems) > 0 {
+				h.cursor = FirstSelectableItem(h.flatItems)
+			} else {
+				h.cursor = 0
+			}
+			h.syncViewport()
+			return h, cmd
+		}
+	}
 
 	switch msg.String() {
 	case "j", "down":
@@ -350,20 +449,20 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		// Toggle repo group or attach session.
 		if h.cursor >= 0 && h.cursor < len(h.flatItems) && h.flatItems[h.cursor].IsRepoHeader {
-			repo := h.flatItems[h.cursor].RepoPath
-			h.repoExpanded[repo] = !h.repoExpanded[repo]
-			h.rebuildFlatItems()
-			// Keep cursor on the same repo header.
-			for i, item := range h.flatItems {
-				if item.IsRepoHeader && item.RepoPath == repo {
-					h.cursor = i
-					break
-				}
-			}
-			h.syncViewport()
+			h.toggleRepoGroup()
 			return h, nil
 		}
 		return h, h.attachSelected()
+	case " ":
+		// Toggle repo group (on repo header or on session under that repo).
+		h.toggleRepoGroupAtCursor()
+		return h, nil
+	case "left", "h":
+		h.collapseRepoAtCursor()
+		return h, nil
+	case "right", "l":
+		h.expandRepoAtCursor()
+		return h, nil
 	case "a", "n":
 		h.newDialog.Show()
 		return h, nil
@@ -371,6 +470,27 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, h.confirmDeleteSelected()
 	case "r":
 		return h, h.restartSelected()
+	case "R":
+		return h, h.renameSelected()
+	case "e":
+		return h, h.openEditorSelected()
+	case "/":
+		h.filterActive = true
+		h.filterInput.Focus()
+		return h, nil
+	case "esc":
+		// Clear active filter.
+		if h.filterText != "" {
+			h.filterText = ""
+			h.filterInput.SetValue("")
+			h.rebuildFlatItems()
+			if len(h.flatItems) > 0 {
+				h.cursor = FirstSelectableItem(h.flatItems)
+			}
+			h.syncViewport()
+			return h, nil
+		}
+		return h, nil
 	case "?":
 		h.helpOverlay.Show()
 		return h, nil
@@ -424,6 +544,10 @@ func (a attachCmd) SetStdout(w io.Writer) {}
 func (a attachCmd) SetStderr(w io.Writer) {}
 
 func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		h.setError(fmt.Errorf("claude CLI not found — install Claude Code to create sessions"))
+		return h, nil
+	}
 	s := session.NewSession(msg.title, msg.path)
 	return h, func() tea.Msg {
 		if err := s.Start(); err != nil {
@@ -509,6 +633,128 @@ func (h *Home) restartSelected() tea.Cmd {
 	}
 }
 
+func (h *Home) toggleRepoGroup() {
+	if h.cursor < 0 || h.cursor >= len(h.flatItems) || !h.flatItems[h.cursor].IsRepoHeader {
+		return
+	}
+	repo := h.flatItems[h.cursor].RepoPath
+	h.repoExpanded[repo] = !h.repoExpanded[repo]
+	h.rebuildFlatItems()
+	// Keep cursor on the same repo header.
+	for i, item := range h.flatItems {
+		if item.IsRepoHeader && item.RepoPath == repo {
+			h.cursor = i
+			break
+		}
+	}
+	h.syncViewport()
+}
+
+func (h *Home) expandRepoAtCursor() {
+	if h.cursor < 0 || h.cursor >= len(h.flatItems) {
+		return
+	}
+	item := h.flatItems[h.cursor]
+	var repo string
+	if item.IsRepoHeader {
+		repo = item.RepoPath
+	} else if item.Session != nil {
+		repo = session.GetRepoRoot(item.Session.ProjectPath)
+	} else {
+		return
+	}
+	if h.repoExpanded[repo] {
+		return // Already expanded.
+	}
+	h.repoExpanded[repo] = true
+	h.rebuildFlatItems()
+	h.syncViewport()
+}
+
+func (h *Home) collapseRepoAtCursor() {
+	if h.cursor < 0 || h.cursor >= len(h.flatItems) {
+		return
+	}
+	item := h.flatItems[h.cursor]
+	var repo string
+	if item.IsRepoHeader {
+		repo = item.RepoPath
+	} else if item.Session != nil {
+		repo = session.GetRepoRoot(item.Session.ProjectPath)
+	} else {
+		return
+	}
+	if !h.repoExpanded[repo] {
+		return // Already collapsed.
+	}
+	h.repoExpanded[repo] = false
+	h.rebuildFlatItems()
+	// Move cursor to the repo header.
+	for i, fi := range h.flatItems {
+		if fi.IsRepoHeader && fi.RepoPath == repo {
+			h.cursor = i
+			break
+		}
+	}
+	h.syncViewport()
+}
+
+func (h *Home) toggleRepoGroupAtCursor() {
+	if h.cursor < 0 || h.cursor >= len(h.flatItems) {
+		return
+	}
+	item := h.flatItems[h.cursor]
+	if item.IsRepoHeader {
+		h.toggleRepoGroup()
+		return
+	}
+	// Find the repo header for this session.
+	if item.Session != nil {
+		repo := session.GetRepoRoot(item.Session.ProjectPath)
+		h.repoExpanded[repo] = !h.repoExpanded[repo]
+		h.rebuildFlatItems()
+		// Move cursor to repo header if group collapsed.
+		if !h.repoExpanded[repo] {
+			for i, fi := range h.flatItems {
+				if fi.IsRepoHeader && fi.RepoPath == repo {
+					h.cursor = i
+					break
+				}
+			}
+		}
+		h.syncViewport()
+	}
+}
+
+func (h *Home) renameSelected() tea.Cmd {
+	if h.cursor < 0 || h.cursor >= len(h.flatItems) || h.flatItems[h.cursor].IsRepoHeader {
+		return nil
+	}
+	s := h.flatItems[h.cursor].Session
+	if s == nil {
+		return nil
+	}
+	h.renameDialog.Show(s.ID, s.Title)
+	return nil
+}
+
+func (h *Home) openEditorSelected() tea.Cmd {
+	if h.cursor < 0 || h.cursor >= len(h.flatItems) || h.flatItems[h.cursor].IsRepoHeader {
+		return nil
+	}
+	s := h.flatItems[h.cursor].Session
+	if s == nil {
+		return nil
+	}
+	editor := h.cfg.GetEditor()
+	projectPath := s.ProjectPath
+	return func() tea.Msg {
+		cmd := exec.Command(editor, projectPath)
+		err := cmd.Start()
+		return openEditorMsg{err: err}
+	}
+}
+
 func (h *Home) deleteSession(id string) {
 	s, ok := h.sessionByID[id]
 	if !ok {
@@ -552,7 +798,11 @@ func (h *Home) deleteSession(id string) {
 // --- Tick / status ---
 
 func (h *Home) tick() tea.Cmd {
-	return tea.Tick(tickInterval, func(t time.Time) tea.Msg {
+	interval := tickInterval
+	if h.cfg != nil && h.cfg.TickIntervalSec > 0 {
+		interval = time.Duration(h.cfg.TickIntervalSec) * time.Second
+	}
+	return tea.Tick(interval, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -628,10 +878,16 @@ func (h *Home) statusWorkerCycle() {
 		for _, s := range sessions {
 			hs := h.hookWatcher.GetStatus(s.ID)
 			if hs != nil {
+				oldClaudeSessionID := s.ClaudeSessionID
 				s.UpdateHookStatus(&session.HookStatus{
 					Status:    hs.Status,
+					SessionID: hs.SessionID,
 					UpdatedAt: hs.UpdatedAt,
 				})
+				// Persist new Claude session ID if it changed.
+				if s.ClaudeSessionID != oldClaudeSessionID && s.ClaudeSessionID != "" {
+					_ = h.storage.UpdateClaudeSessionID(s.ID, s.ClaudeSessionID)
+				}
 			} else {
 				debuglog.Logger.Debug("worker: no hook data for session", "session", s.ID)
 			}
@@ -751,34 +1007,18 @@ func (h *Home) renderHelpBar() string {
 	// Border line.
 	border := lipgloss.NewStyle().Foreground(ColorBorder).Render(strings.Repeat("─", h.width))
 
-	// Key-description pairs.
-	type keyDesc struct{ key, desc string }
-	contextKeys := []keyDesc{
-		{"⏎", "Attach"},
-		{"a", "New"},
-		{"d", "Delete"},
-		{"r", "Restart"},
-	}
-	globalKeys := []keyDesc{
-		{"j/k", "Nav"},
-		{"?", "Help"},
-		{"q", "Quit"},
-	}
-
-	renderPair := func(kd keyDesc) string {
-		return HelpKeyStyle.Render(kd.key) + " " + HelpDescStyle.Render(kd.desc)
-	}
+	contextKeys, globalKeys := HelpBarBindings()
 
 	var parts []string
 	for _, kd := range contextKeys {
-		parts = append(parts, renderPair(kd))
+		parts = append(parts, HelpKeyStyle.Render(kd.Key)+" "+HelpDescStyle.Render(kd.Desc))
 	}
 	sep := HelpSepStyle.Render(" │ ")
 	left := strings.Join(parts, "  ")
 
 	var gparts []string
 	for _, kd := range globalKeys {
-		gparts = append(gparts, renderPair(kd))
+		gparts = append(gparts, HelpKeyStyle.Render(kd.Key)+" "+HelpDescStyle.Render(kd.Desc))
 	}
 	right := strings.Join(gparts, "  ")
 
@@ -823,7 +1063,7 @@ func (h *Home) selectedRepoInfo() *git.RepoInfo {
 // --- Internal helpers ---
 
 func (h *Home) rebuildFlatItems() {
-	h.flatItems = BuildFlatItems(h.sessions, h.repoExpanded)
+	h.flatItems = BuildFlatItems(h.sessions, h.repoExpanded, h.filterText)
 }
 
 func (h *Home) rebuildSessionMap() {
@@ -874,7 +1114,13 @@ func (h *Home) loadSessions() tea.Msg {
 	hooks.InjectClaudeHooks(configDir)
 	ghAvailable := github.IsGHAvailable()
 
-	return loadSessionsMsg{sessions: sessions, ghAvailable: ghAvailable}
+	// Check for claude CLI availability.
+	var warning string
+	if _, err := exec.LookPath("claude"); err != nil {
+		warning = "claude CLI not found — install Claude Code to create sessions"
+	}
+
+	return loadSessionsMsg{sessions: sessions, ghAvailable: ghAvailable, warning: warning}
 }
 
 func (h *Home) setError(err error) {

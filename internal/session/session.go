@@ -36,6 +36,7 @@ type Session struct {
 	CreatedAt       time.Time
 	LastAccessedAt  time.Time
 	Acknowledged    bool
+	ClaudeSessionID string
 
 	hookStatus    string
 	hookUpdatedAt time.Time
@@ -60,13 +61,22 @@ func NewSession(title, projectPath string) *Session {
 	}
 }
 
+// buildClaudeCmd returns the claude command with env var and optional --resume flag.
+func (s *Session) buildClaudeCmd() string {
+	cmd := fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s claude", s.ID)
+	if s.ClaudeSessionID != "" {
+		cmd += fmt.Sprintf(" --resume %s", s.ClaudeSessionID)
+	}
+	return cmd
+}
+
 // Start launches the Claude Code session in tmux.
 func (s *Session) Start() error {
 	s.mu.Lock()
 	s.Status = StatusStarting
 	s.mu.Unlock()
 
-	cmd := fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s claude", s.ID)
+	cmd := s.buildClaudeCmd()
 	if err := s.tmuxSession.Start(cmd); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
@@ -137,6 +147,7 @@ func (s *Session) Acknowledge() {
 // Defined here to avoid import cycle with hooks package.
 type HookStatus struct {
 	Status    string
+	SessionID string // Claude conversation session ID
 	UpdatedAt time.Time
 }
 
@@ -149,6 +160,9 @@ func (s *Session) UpdateHookStatus(hs *HookStatus) {
 	defer s.mu.Unlock()
 	s.hookStatus = hs.Status
 	s.hookUpdatedAt = hs.UpdatedAt
+	if hs.SessionID != "" {
+		s.ClaudeSessionID = hs.SessionID
+	}
 }
 
 // Restart kills and recreates the tmux session with the same config.
@@ -165,7 +179,7 @@ func (s *Session) Restart() error {
 	s.Status = StatusStarting
 	s.mu.Unlock()
 
-	cmd := fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s claude", s.ID)
+	cmd := s.buildClaudeCmd()
 	if err := s.tmuxSession.Start(cmd); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
@@ -185,7 +199,7 @@ func (s *Session) RespawnClaude() error {
 	s.Status = StatusStarting
 	s.mu.Unlock()
 
-	cmd := fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s claude", s.ID)
+	cmd := s.buildClaudeCmd()
 	if err := s.tmuxSession.RespawnPane(cmd); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
@@ -298,14 +312,15 @@ func (s *Session) ToRow() *SessionRow {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return &SessionRow{
-		ID:           s.ID,
-		Title:        s.Title,
-		ProjectPath:  s.ProjectPath,
-		Status:       string(s.Status),
-		TmuxSession:  s.TmuxSessionName,
-		CreatedAt:    s.CreatedAt,
-		LastAccessed: s.LastAccessedAt,
-		Acknowledged: s.Acknowledged,
+		ID:              s.ID,
+		Title:           s.Title,
+		ProjectPath:     s.ProjectPath,
+		Status:          string(s.Status),
+		TmuxSession:     s.TmuxSessionName,
+		CreatedAt:       s.CreatedAt,
+		LastAccessed:    s.LastAccessedAt,
+		Acknowledged:    s.Acknowledged,
+		ClaudeSessionID: s.ClaudeSessionID,
 	}
 }
 
@@ -324,6 +339,7 @@ func FromRow(row *SessionRow) *Session {
 		CreatedAt:       row.CreatedAt,
 		LastAccessedAt:  row.LastAccessed,
 		Acknowledged:    row.Acknowledged,
+		ClaudeSessionID: row.ClaudeSessionID,
 		tmuxSession:     ts,
 	}
 }

@@ -155,6 +155,108 @@ func (d *NewSessionDialog) expandPath(path string) string {
 	return abs
 }
 
+// sessionRenameMsg is sent when the user confirms renaming a session.
+type sessionRenameMsg struct {
+	id       string
+	newTitle string
+}
+
+// RenameDialog handles session rename flow.
+type RenameDialog struct {
+	titleInput textinput.Model
+	visible    bool
+	width      int
+	height     int
+	sessionID  string
+}
+
+// NewRenameDialog creates a new rename dialog.
+func NewRenameDialog() *RenameDialog {
+	ti := textinput.New()
+	ti.Placeholder = "session name"
+	ti.CharLimit = 64
+	ti.Width = 40
+	ti.Focus()
+
+	return &RenameDialog{
+		titleInput: ti,
+	}
+}
+
+// Show makes the dialog visible, pre-filled with the current title.
+func (d *RenameDialog) Show(sessionID, currentTitle string) {
+	d.visible = true
+	d.sessionID = sessionID
+	d.titleInput.SetValue(currentTitle)
+	d.titleInput.Focus()
+	d.titleInput.CursorEnd()
+}
+
+func (d *RenameDialog) Hide()          { d.visible = false; d.titleInput.Blur() }
+func (d *RenameDialog) IsVisible() bool { return d.visible }
+func (d *RenameDialog) SetSize(w, h int) {
+	d.width = w
+	d.height = h
+	inputWidth := w - 10
+	if inputWidth > 60 {
+		inputWidth = 60
+	}
+	if inputWidth < 20 {
+		inputWidth = 20
+	}
+	d.titleInput.Width = inputWidth
+}
+
+// Update handles input events for the rename dialog.
+func (d *RenameDialog) Update(msg tea.Msg) (*RenameDialog, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			newTitle := strings.TrimSpace(d.titleInput.Value())
+			if newTitle == "" {
+				return d, nil
+			}
+			id := d.sessionID
+			d.Hide()
+			return d, func() tea.Msg {
+				return sessionRenameMsg{id: id, newTitle: newTitle}
+			}
+		case "esc":
+			d.Hide()
+			return d, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	d.titleInput, cmd = d.titleInput.Update(msg)
+	return d, cmd
+}
+
+// View renders the rename dialog.
+func (d *RenameDialog) View() string {
+	var b strings.Builder
+
+	b.WriteString(TitleStyle.Render("Rename Session"))
+	b.WriteString("\n\n")
+	b.WriteString(DimStyle.Render("New title:"))
+	b.WriteString("\n")
+	b.WriteString(d.titleInput.View())
+	b.WriteString("\n\n")
+	b.WriteString(DimStyle.Render("enter: rename • esc: cancel"))
+
+	dialogWidth := d.width - 4
+	if dialogWidth > 64 {
+		dialogWidth = 64
+	}
+	if dialogWidth < 30 {
+		dialogWidth = 30
+	}
+
+	box := DialogStyle.Width(dialogWidth).Render(b.String())
+	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, box)
+}
+
 // ConfirmDialog handles confirmation prompts (e.g., delete session).
 type ConfirmDialog struct {
 	visible bool

@@ -17,14 +17,15 @@ type StateDB struct {
 
 // SessionRow represents a session row in the database.
 type SessionRow struct {
-	ID           string
-	Title        string
-	ProjectPath  string
-	Status       string
-	TmuxSession  string
-	CreatedAt    time.Time
-	LastAccessed time.Time
-	Acknowledged bool
+	ID               string
+	Title            string
+	ProjectPath      string
+	Status           string
+	TmuxSession      string
+	CreatedAt        time.Time
+	LastAccessed     time.Time
+	Acknowledged     bool
+	ClaudeSessionID  string
 }
 
 // DefaultDBPath returns the default database path.
@@ -85,17 +86,52 @@ func (s *StateDB) migrate() error {
 			acknowledged  INTEGER NOT NULL DEFAULT 0
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Add claude_session_id column if missing.
+	if !s.hasColumn("sessions", "claude_session_id") {
+		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN claude_session_id TEXT NOT NULL DEFAULT ''`)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *StateDB) hasColumn(table, column string) bool {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue *string
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			continue
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 // SaveSession inserts or replaces a session row.
 func (s *StateDB) SaveSession(row *SessionRow) error {
 	_, err := s.db.Exec(`
-		INSERT OR REPLACE INTO sessions (id, title, project_path, status, tmux_session, created_at, last_accessed, acknowledged)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT OR REPLACE INTO sessions (id, title, project_path, status, tmux_session, created_at, last_accessed, acknowledged, claude_session_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		row.ID, row.Title, row.ProjectPath, row.Status, row.TmuxSession,
 		row.CreatedAt.Unix(), row.LastAccessed.Unix(), boolToInt(row.Acknowledged),
+		row.ClaudeSessionID,
 	)
 	return err
 }
@@ -103,7 +139,7 @@ func (s *StateDB) SaveSession(row *SessionRow) error {
 // LoadSessions returns all sessions ordered by creation time.
 func (s *StateDB) LoadSessions() ([]*SessionRow, error) {
 	rows, err := s.db.Query(`
-		SELECT id, title, project_path, status, tmux_session, created_at, last_accessed, acknowledged
+		SELECT id, title, project_path, status, tmux_session, created_at, last_accessed, acknowledged, claude_session_id
 		FROM sessions ORDER BY created_at
 	`)
 	if err != nil {
@@ -116,7 +152,7 @@ func (s *StateDB) LoadSessions() ([]*SessionRow, error) {
 		var r SessionRow
 		var createdAt, lastAccessed int64
 		var ack int
-		if err := rows.Scan(&r.ID, &r.Title, &r.ProjectPath, &r.Status, &r.TmuxSession, &createdAt, &lastAccessed, &ack); err != nil {
+		if err := rows.Scan(&r.ID, &r.Title, &r.ProjectPath, &r.Status, &r.TmuxSession, &createdAt, &lastAccessed, &ack, &r.ClaudeSessionID); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = time.Unix(createdAt, 0)
@@ -158,6 +194,18 @@ func (s *StateDB) UpdateLastAccessed(id string) error {
 // UpdateTmuxSession updates the tmux session name (used after restart).
 func (s *StateDB) UpdateTmuxSession(id, tmuxSession string) error {
 	_, err := s.db.Exec("UPDATE sessions SET tmux_session = ? WHERE id = ?", tmuxSession, id)
+	return err
+}
+
+// UpdateClaudeSessionID updates the Claude conversation session ID.
+func (s *StateDB) UpdateClaudeSessionID(id, claudeSessionID string) error {
+	_, err := s.db.Exec("UPDATE sessions SET claude_session_id = ? WHERE id = ?", claudeSessionID, id)
+	return err
+}
+
+// UpdateTitle updates the session title.
+func (s *StateDB) UpdateTitle(id, title string) error {
+	_, err := s.db.Exec("UPDATE sessions SET title = ? WHERE id = ?", title, id)
 	return err
 }
 

@@ -35,25 +35,14 @@ func (h *HelpOverlay) Update(msg tea.Msg) (*HelpOverlay, tea.Cmd) {
 
 // View renders the keybinding cheat sheet.
 func (h *HelpOverlay) View() string {
-	bindings := []struct{ key, desc string }{
-		{"j / ↓", "Move down"},
-		{"k / ↑", "Move up"},
-		{"Enter", "Attach / toggle group"},
-		{"a / n", "New session"},
-		{"d", "Delete session"},
-		{"r", "Restart session"},
-		{"q", "Quit"},
-		{"?", "Toggle help"},
-		{"", ""},
-		{"Ctrl+Q", "Detach from session"},
-	}
+	bindings := HelpOverlayBindings()
 
 	var b strings.Builder
 	b.WriteString(TitleStyle.Render("Keybindings"))
 	b.WriteString("\n\n")
 
 	for _, bind := range bindings {
-		if bind.key == "" {
+		if bind.Key == "" {
 			b.WriteString("\n")
 			continue
 		}
@@ -61,8 +50,8 @@ func (h *HelpOverlay) View() string {
 			Foreground(ColorAccent).
 			Bold(true).
 			Width(12).
-			Render(bind.key)
-		b.WriteString("  " + key + "  " + bind.desc + "\n")
+			Render(bind.Key)
+		b.WriteString("  " + key + "  " + bind.Desc + "\n")
 	}
 
 	b.WriteString("\n")

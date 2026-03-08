@@ -18,12 +18,13 @@ make fmt      # go fmt
 cmd/brizz-code/main.go      # CLI entry point
 internal/tmux/tmux.go        # Tmux abstraction (create, kill, capture)
 internal/tmux/pty.go         # PTY-based attach with Ctrl+Q detach
-internal/session/session.go  # Session model, status detection
-internal/session/storage.go  # SQLite persistence
+internal/session/session.go  # Session model, status detection, claude --resume
+internal/session/storage.go  # SQLite persistence (sessions + claude_session_id)
 internal/git/git.go          # Git operations (branch, dirty, worktree)
 internal/git/repo_info.go    # RepoInfo cache + refresh logic
 internal/github/pr.go        # GitHub PR info via gh CLI
 internal/hooks/              # Hook-based status detection (claude_hooks, hook_watcher, status_file)
+internal/config/config.go    # JSON config (~/.config/brizz-code/config.json)
 internal/debuglog/           # slog-based debug logging to ~/.config/brizz-code/debug.log
 internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, styles)
 ```
@@ -35,7 +36,7 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, a new, d delete, r restart, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space toggle group, a new, d delete, r restart, R rename, e editor, / filter, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
@@ -47,4 +48,7 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
 - Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
+- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor)
+- Claude session resume: captures Claude session_id from hooks, uses `claude --resume <id>` on restart
+- Editor: config.editor > $EDITOR > "code" (VS Code)
 - Claude Code only, Mac only

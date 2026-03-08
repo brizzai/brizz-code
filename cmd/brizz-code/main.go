@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/yuvalhayke/brizz-code/internal/config"
 	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 	"github.com/yuvalhayke/brizz-code/internal/tmux"
@@ -60,6 +61,8 @@ func runTUI() {
 		os.Exit(1)
 	}
 
+	cfg := config.Load()
+
 	storage, err := session.Open(session.DefaultDBPath())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open database: %v\n", err)
@@ -67,7 +70,7 @@ func runTUI() {
 	}
 	defer storage.Close()
 
-	model := ui.NewHome(storage)
+	model := ui.NewHome(storage, cfg)
 	p := tea.NewProgram(
 		model,
 		tea.WithAltScreen(),
