@@ -37,6 +37,7 @@ type Session struct {
 	LastAccessedAt  time.Time
 	Acknowledged    bool
 	ClaudeSessionID string
+	WorkspaceName   string
 
 	hookStatus    string
 	hookUpdatedAt time.Time
@@ -321,6 +322,7 @@ func (s *Session) ToRow() *SessionRow {
 		LastAccessed:    s.LastAccessedAt,
 		Acknowledged:    s.Acknowledged,
 		ClaudeSessionID: s.ClaudeSessionID,
+		WorkspaceName:   s.WorkspaceName,
 	}
 }
 
@@ -340,6 +342,7 @@ func FromRow(row *SessionRow) *Session {
 		LastAccessedAt:  row.LastAccessed,
 		Acknowledged:    row.Acknowledged,
 		ClaudeSessionID: row.ClaudeSessionID,
+		WorkspaceName:   row.WorkspaceName,
 		tmuxSession:     ts,
 	}
 }

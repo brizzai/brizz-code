@@ -13,8 +13,9 @@ import (
 
 // sessionCreateMsg is sent when the user confirms creating a new session.
 type sessionCreateMsg struct {
-	path  string
-	title string
+	path          string
+	title         string
+	workspaceName string
 }
 
 // NewSessionDialog handles the new session creation flow.
@@ -259,14 +260,17 @@ func (d *RenameDialog) View() string {
 
 // ConfirmDialog handles confirmation prompts (e.g., delete session).
 type ConfirmDialog struct {
-	visible    bool
-	width      int
-	height     int
-	onYes      func() tea.Msg
-	dialogType string   // "danger", "warning", "info"
-	title      string
-	subject    string
-	details    []string
+	visible         bool
+	width           int
+	height          int
+	onYes           func() tea.Msg
+	onYesWorkspace  func() tea.Msg
+	dialogType      string // "danger", "warning", "info"
+	title           string
+	subject         string
+	details         []string
+	hasWorkspace    bool
+	workspaceName   string
 }
 
 // NewConfirmDialog creates a new confirmation dialog.
@@ -282,6 +286,22 @@ func (d *ConfirmDialog) ShowDanger(title, subject string, details []string, onYe
 	d.subject = subject
 	d.details = details
 	d.onYes = onYes
+	d.hasWorkspace = false
+	d.onYesWorkspace = nil
+	d.workspaceName = ""
+}
+
+// ShowDangerWithWorkspace shows a danger dialog with workspace destroy option.
+func (d *ConfirmDialog) ShowDangerWithWorkspace(title, subject string, details []string, workspaceName string, onYes func() tea.Msg, onYesWorkspace func() tea.Msg) {
+	d.visible = true
+	d.dialogType = "danger"
+	d.title = title
+	d.subject = subject
+	d.details = details
+	d.onYes = onYes
+	d.hasWorkspace = true
+	d.workspaceName = workspaceName
+	d.onYesWorkspace = onYesWorkspace
 }
 
 // Show shows a basic info-style confirmation dialog (backward compatible).
@@ -304,7 +324,19 @@ func (d *ConfirmDialog) SetSize(w, h int) {
 func (d *ConfirmDialog) Update(msg tea.Msg) (*ConfirmDialog, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
-		case "y", "Y", "enter":
+		case "Y":
+			if d.hasWorkspace && d.onYesWorkspace != nil {
+				cb := d.onYesWorkspace
+				d.Hide()
+				return d, func() tea.Msg { return cb() }
+			}
+			// Fall through to regular yes if no workspace.
+			d.Hide()
+			if d.onYes != nil {
+				return d, func() tea.Msg { return d.onYes() }
+			}
+			return d, nil
+		case "y", "enter":
 			d.Hide()
 			if d.onYes != nil {
 				return d, func() tea.Msg { return d.onYes() }
@@ -369,12 +401,23 @@ func (d *ConfirmDialog) View() string {
 		Bold(true).
 		Padding(0, 1).
 		Render(actionLabel)
+
+	var wsBtn string
+	if d.hasWorkspace {
+		wsBtn = lipgloss.NewStyle().
+			Background(ColorOrange).
+			Foreground(ColorBg).
+			Bold(true).
+			Padding(0, 1).
+			Render("Y +Workspace") + "  "
+	}
+
 	cancelBtn := lipgloss.NewStyle().
 		Background(ColorBorder).
 		Foreground(ColorText).
 		Padding(0, 1).
 		Render("n Cancel")
-	b.WriteString(actionBtn + "  " + cancelBtn)
+	b.WriteString(actionBtn + "  " + wsBtn + cancelBtn)
 
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

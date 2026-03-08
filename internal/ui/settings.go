@@ -19,12 +19,13 @@ var (
 
 // SettingsDialog provides a UI for configuring brizz-code settings.
 type SettingsDialog struct {
-	visible   bool
-	width     int
-	height    int
-	cursor    int // 0=theme, 1=editor, 2=tick
-	cfg       *config.Config
-	origTheme string
+	visible            bool
+	width              int
+	height             int
+	cursor             int // 0=theme, 1=editor, 2=tick, 3=workspace (read-only)
+	cfg                *config.Config
+	origTheme          string
+	workspaceConfigured bool
 }
 
 // NewSettingsDialog creates a settings dialog.
@@ -36,6 +37,7 @@ func (d *SettingsDialog) Show() {
 	d.visible = true
 	d.cursor = 0
 	d.origTheme = d.cfg.Theme
+	d.workspaceConfigured = d.cfg.Workspace.List != "" || d.cfg.Workspace.Create != "" || d.cfg.Workspace.Destroy != ""
 }
 
 func (d *SettingsDialog) Hide()          { d.visible = false }
@@ -52,11 +54,12 @@ func (d *SettingsDialog) Update(msg tea.Msg) (*SettingsDialog, tea.Cmd) {
 		return d, nil
 	}
 
+	numRows := 4 // theme, editor, tick, workspace
 	switch keyMsg.String() {
 	case "j", "down":
-		d.cursor = (d.cursor + 1) % 3
+		d.cursor = (d.cursor + 1) % numRows
 	case "k", "up":
-		d.cursor = (d.cursor + 2) % 3 // wraps backward
+		d.cursor = (d.cursor + numRows - 1) % numRows
 	case "l", "right":
 		d.cycleValue(1)
 	case "h", "left":
@@ -72,6 +75,9 @@ func (d *SettingsDialog) Update(msg tea.Msg) (*SettingsDialog, tea.Cmd) {
 }
 
 func (d *SettingsDialog) cycleValue(dir int) {
+	if d.cursor == 3 {
+		return // Workspace row is read-only.
+	}
 	switch d.cursor {
 	case 0: // Theme
 		names := make([]string, len(BuiltinPalettes))
@@ -124,14 +130,21 @@ func (d *SettingsDialog) View() string {
 		theme = "tokyo-night"
 	}
 
+	wsStatus := "not configured"
+	if d.workspaceConfigured {
+		wsStatus = "configured"
+	}
+
 	rows := []row{
 		{"Theme", PaletteDisplayName(theme)},
 		{"Editor", d.cfg.GetEditor()},
 		{"Tick (sec)", fmt.Sprintf("%d", d.cfg.TickIntervalSec)},
+		{"Workspace", wsStatus},
 	}
 
 	for i, r := range rows {
 		selected := i == d.cursor
+		isWorkspaceRow := i == 3
 
 		labelStyle := lipgloss.NewStyle().Width(14).Align(lipgloss.Right)
 		var arrowStyle lipgloss.Style
@@ -147,12 +160,24 @@ func (d *SettingsDialog) View() string {
 			valueStyle = lipgloss.NewStyle().Foreground(ColorTextDim)
 		}
 
-		line := labelStyle.Render(r.label) + "   " +
-			arrowStyle.Render("◂") + " " +
-			valueStyle.Render(r.value) + " " +
-			arrowStyle.Render("▸")
+		if isWorkspaceRow {
+			// Read-only row: show status indicator instead of arrows.
+			var statusIndicator string
+			if d.workspaceConfigured {
+				statusIndicator = lipgloss.NewStyle().Foreground(ColorGreen).Render("✓ ") + valueStyle.Render(r.value)
+			} else {
+				statusIndicator = DimStyle.Render("✕ " + r.value)
+			}
+			line := labelStyle.Render(r.label) + "   " + statusIndicator
+			b.WriteString(line)
+		} else {
+			line := labelStyle.Render(r.label) + "   " +
+				arrowStyle.Render("◂") + " " +
+				valueStyle.Render(r.value) + " " +
+				arrowStyle.Render("▸")
+			b.WriteString(line)
+		}
 
-		b.WriteString(line)
 		if i < len(rows)-1 {
 			b.WriteString("\n")
 		}

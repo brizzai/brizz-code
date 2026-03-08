@@ -41,6 +41,13 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 		usedLines++
 	}
 
+	// Workspace name.
+	if s.WorkspaceName != "" {
+		b.WriteString(DimStyle.Render(fmt.Sprintf("  workspace: %s", s.WorkspaceName)))
+		b.WriteString("\n")
+		usedLines++
+	}
+
 	// Separator.
 	sep := strings.Repeat("─", width-2)
 	if len(sep) > 0 {

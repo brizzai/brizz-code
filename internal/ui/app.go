@@ -22,6 +22,7 @@ import (
 	"github.com/yuvalhayke/brizz-code/internal/hooks"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 	"github.com/yuvalhayke/brizz-code/internal/tmux"
+	"github.com/yuvalhayke/brizz-code/internal/workspace"
 )
 
 const (
@@ -35,11 +36,13 @@ const (
 
 // Message types.
 type (
-	tickMsg          time.Time
-	statusUpdateMsg  struct{ attachedSessionID string }
+	tickMsg         time.Time
+	statusUpdateMsg struct{ attachedSessionID string }
 	sessionDeleteMsg struct {
-		id  string
-		err error
+		id               string
+		err              error
+		destroyWorkspace bool
+		workspaceName    string
 	}
 	sessionRestartMsg struct {
 		id  string
@@ -79,11 +82,14 @@ type Home struct {
 	err         error
 	errTime     time.Time
 
-	newDialog      *NewSessionDialog
-	confirmDialog  *ConfirmDialog
-	renameDialog   *RenameDialog
-	helpOverlay    *HelpOverlay
-	settingsDialog *SettingsDialog
+	newDialog             *NewSessionDialog
+	confirmDialog         *ConfirmDialog
+	renameDialog          *RenameDialog
+	helpOverlay           *HelpOverlay
+	settingsDialog        *SettingsDialog
+	workspacePicker       *WorkspacePickerDialog
+	createWorkspaceDialog *CreateWorkspaceDialog
+	workspaceProvider     *workspace.Provider
 
 	repoExpanded     map[string]bool // repo path -> expanded state
 	previewCache     map[string]string
@@ -126,6 +132,16 @@ func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 		ApplyPalette(PaletteByName(cfg.Theme))
 	}
 
+	// Initialize workspace provider from config.
+	var wp *workspace.Provider
+	if cfg.Workspace.List != "" || cfg.Workspace.Create != "" || cfg.Workspace.Destroy != "" {
+		wp = &workspace.Provider{
+			ListCmd:    cfg.Workspace.List,
+			CreateCmd:  cfg.Workspace.Create,
+			DestroyCmd: cfg.Workspace.Destroy,
+		}
+	}
+
 	return &Home{
 		storage:          storage,
 		sessionByID:      make(map[string]*session.Session),
@@ -133,8 +149,11 @@ func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 		newDialog:        NewNewSessionDialog(),
 		confirmDialog:    NewConfirmDialog(),
 		renameDialog:     NewRenameDialog(),
-		helpOverlay:      NewHelpOverlay(),
-		settingsDialog:   NewSettingsDialog(cfg),
+		helpOverlay:           NewHelpOverlay(),
+		settingsDialog:        NewSettingsDialog(cfg),
+		workspacePicker:       NewWorkspacePickerDialog(),
+		createWorkspaceDialog: NewCreateWorkspaceDialog(),
+		workspaceProvider:     wp,
 		previewCache:     make(map[string]string),
 		previewCacheTime: make(map[string]time.Time),
 		gitInfoCache:     make(map[string]*git.RepoInfo),
@@ -165,6 +184,8 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.renameDialog.SetSize(msg.Width, msg.Height)
 		h.helpOverlay.SetSize(msg.Width, msg.Height)
 		h.settingsDialog.SetSize(msg.Width, msg.Height)
+		h.workspacePicker.SetSize(msg.Width, msg.Height)
+		h.createWorkspaceDialog.SetSize(msg.Width, msg.Height)
 		h.syncViewport()
 		return h, nil
 
@@ -196,6 +217,16 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			h.setError(msg.err)
 		} else {
 			h.deleteSession(msg.id)
+			// If workspace destroy requested, do it async.
+			if msg.destroyWorkspace && msg.workspaceName != "" && h.workspaceProvider != nil && h.workspaceProvider.CanDestroy() {
+				provider := h.workspaceProvider
+				wsName := msg.workspaceName
+				sid := msg.id
+				return h, func() tea.Msg {
+					err := provider.Destroy(wsName)
+					return workspaceDestroyResultMsg{sessionID: sid, err: err}
+				}
+			}
 		}
 		return h, nil
 
@@ -232,6 +263,69 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case previewMsg:
 		h.previewCache[msg.sessionID] = msg.content
 		h.previewCacheTime[msg.sessionID] = time.Now()
+		return h, nil
+
+	case workspaceListMsg:
+		if msg.err != nil {
+			h.workspacePicker.Hide()
+			h.setError(fmt.Errorf("workspace list: %w", msg.err))
+			// Fall back to path dialog.
+			h.newDialog.Show()
+			return h, nil
+		}
+		h.workspacePicker.Show(msg.workspaces, h.sessions, h.workspaceProvider != nil && h.workspaceProvider.CanCreate())
+		return h, nil
+
+	case workspaceSelectedMsg:
+		return h.handleSessionCreate(sessionCreateMsg{
+			path:          msg.info.Path,
+			title:         msg.info.Name,
+			workspaceName: msg.info.Name,
+		})
+
+	case showCreateWorkspaceMsg:
+		h.workspacePicker.Hide()
+		h.createWorkspaceDialog.Show()
+		return h, nil
+
+	case showCustomPathMsg:
+		h.workspacePicker.Hide()
+		h.newDialog.Show()
+		return h, nil
+
+	case showWorkspacePickerMsg:
+		h.createWorkspaceDialog.Hide()
+		// Re-fetch workspace list.
+		if h.workspaceProvider != nil && h.workspaceProvider.CanList() {
+			h.workspacePicker.ShowLoading()
+			return h, h.fetchWorkspaceList()
+		}
+		return h, nil
+
+	case workspaceCreateMsg:
+		h.createWorkspaceDialog.SetCreating(true)
+		provider := h.workspaceProvider
+		return h, func() tea.Msg {
+			info, err := provider.Create(msg.name, msg.branch)
+			return workspaceCreateResultMsg{info: info, err: err}
+		}
+
+	case workspaceCreateResultMsg:
+		if msg.err != nil {
+			h.createWorkspaceDialog.SetError(msg.err.Error())
+			return h, nil
+		}
+		h.createWorkspaceDialog.Hide()
+		return h.handleSessionCreate(sessionCreateMsg{
+			path:          msg.info.Path,
+			title:         msg.info.Name,
+			workspaceName: msg.info.Name,
+		})
+
+	case workspaceDestroyResultMsg:
+		if msg.err != nil {
+			h.setError(fmt.Errorf("workspace destroy: %w", msg.err))
+		}
 		return h, nil
 
 	case loadSessionsMsg:
@@ -292,6 +386,12 @@ func (h *Home) View() string {
 	}
 	if h.settingsDialog.IsVisible() {
 		return h.settingsDialog.View()
+	}
+	if h.createWorkspaceDialog.IsVisible() {
+		return h.createWorkspaceDialog.View()
+	}
+	if h.workspacePicker.IsVisible() {
+		return h.workspacePicker.View()
 	}
 	if h.newDialog.IsVisible() {
 		return h.newDialog.View()
@@ -410,6 +510,16 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.settingsDialog = dialog
 		return h, cmd
 	}
+	if h.createWorkspaceDialog.IsVisible() {
+		dialog, cmd := h.createWorkspaceDialog.Update(msg)
+		h.createWorkspaceDialog = dialog
+		return h, cmd
+	}
+	if h.workspacePicker.IsVisible() {
+		picker, cmd := h.workspacePicker.Update(msg)
+		h.workspacePicker = picker
+		return h, cmd
+	}
 	if h.newDialog.IsVisible() {
 		dialog, cmd := h.newDialog.Update(msg)
 		h.newDialog = dialog
@@ -489,6 +599,10 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.expandRepoAtCursor()
 		return h, nil
 	case "a", "n":
+		if h.workspaceProvider != nil && h.workspaceProvider.CanList() {
+			h.workspacePicker.ShowLoading()
+			return h, h.fetchWorkspaceList()
+		}
 		h.newDialog.Show()
 		return h, nil
 	case "d":
@@ -577,6 +691,7 @@ func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
 		return h, nil
 	}
 	s := session.NewSession(msg.title, msg.path)
+	s.WorkspaceName = msg.workspaceName
 	return h, func() tea.Msg {
 		if err := s.Start(); err != nil {
 			return sessionCreateResultMsg{err: err}
@@ -629,12 +744,25 @@ func (h *Home) confirmDeleteSelected() tea.Cmd {
 	}
 
 	id := s.ID
-	h.confirmDialog.ShowDanger("Delete Session?", s.Title, []string{
-		"tmux session terminated",
-		"Terminal history lost",
-	}, func() tea.Msg {
-		return sessionDeleteMsg{id: id}
-	})
+	wsName := s.WorkspaceName
+
+	if wsName != "" && h.workspaceProvider != nil && h.workspaceProvider.CanDestroy() {
+		h.confirmDialog.ShowDangerWithWorkspace("Delete Session?", s.Title, []string{
+			"tmux session terminated",
+			"Terminal history lost",
+		}, wsName, func() tea.Msg {
+			return sessionDeleteMsg{id: id}
+		}, func() tea.Msg {
+			return sessionDeleteMsg{id: id, destroyWorkspace: true, workspaceName: wsName}
+		})
+	} else {
+		h.confirmDialog.ShowDanger("Delete Session?", s.Title, []string{
+			"tmux session terminated",
+			"Terminal history lost",
+		}, func() tea.Msg {
+			return sessionDeleteMsg{id: id}
+		})
+	}
 	return nil
 }
 
@@ -979,6 +1107,14 @@ func (h *Home) uniqueRepoPathsFromSessions(sessions []*session.Session) []string
 		}
 	}
 	return repos
+}
+
+func (h *Home) fetchWorkspaceList() tea.Cmd {
+	provider := h.workspaceProvider
+	return func() tea.Msg {
+		workspaces, err := provider.List()
+		return workspaceListMsg{workspaces: workspaces, err: err}
+	}
 }
 
 func (h *Home) fetchPreview(s *session.Session) tea.Cmd {
