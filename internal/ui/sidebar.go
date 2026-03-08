@@ -286,22 +286,24 @@ func renderPRBadge(pr *github.PR, selected bool) string {
 	changesReq := pr.ReviewDecision == "CHANGES_REQUESTED"
 	approved := pr.ReviewDecision == "APPROVED"
 	ciPass := pr.CIStatus == "SUCCESS"
+	hasThreads := pr.UnresolvedThreads > 0
 
 	var icons string
 	style := PRPendingStyle // default: yellow (waiting)
 
-	if ciFail || changesReq {
+	if ciFail || changesReq || hasThreads {
 		// Red: something needs fixing. Icons explain what.
 		style = PRFailStyle
 		if ciFail {
 			icons += "✕"
 		}
-		if changesReq {
+		if changesReq || hasThreads {
 			icons += "↩"
 		}
 	} else if approved && ciPass {
 		// Green: ready to merge.
 		style = PROpenStyle
+		icons = "✓"
 	}
 
 	result := badge

@@ -134,6 +134,9 @@ func renderGitInfoLine(info *git.RepoInfo) string {
 		if pr.ReviewDecision == "REVIEW_REQUIRED" {
 			details = append(details, "review pending")
 		}
+		if pr.UnresolvedThreads > 0 {
+			details = append(details, fmt.Sprintf("%d unresolved", pr.UnresolvedThreads))
+		}
 		if len(details) > 0 {
 			prText += " (" + strings.Join(details, ", ") + ")"
 		}
@@ -142,9 +145,10 @@ func renderGitInfoLine(info *git.RepoInfo) string {
 		changesReq := pr.ReviewDecision == "CHANGES_REQUESTED"
 		approved := pr.ReviewDecision == "APPROVED"
 		ciPass := pr.CIStatus == "SUCCESS"
+		hasThreads := pr.UnresolvedThreads > 0
 
 		style := PRPendingStyle // default: yellow
-		if ciFail || changesReq {
+		if ciFail || changesReq || hasThreads {
 			style = PRFailStyle
 		} else if approved && ciPass {
 			style = PROpenStyle

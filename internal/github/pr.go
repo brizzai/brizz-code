@@ -2,18 +2,20 @@ package github
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 )
 
 // PR represents a GitHub pull request.
 type PR struct {
-	Number         int
-	Title          string
-	URL            string
-	State          string // OPEN, CLOSED, MERGED
-	ReviewDecision string // APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, ""
-	CIStatus       string // SUCCESS, FAILURE, PENDING, ""
+	Number            int
+	Title             string
+	URL               string
+	State             string // OPEN, CLOSED, MERGED
+	ReviewDecision    string // APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, ""
+	CIStatus          string // SUCCESS, FAILURE, PENDING, ""
+	UnresolvedThreads int    // count of unresolved review threads
 }
 
 // IsGHAvailable checks if the gh CLI is installed and accessible.
@@ -60,15 +62,69 @@ func GetPRForBranch(repoPath, branch string) (*PR, error) {
 	}
 
 	pr := &PR{
-		Number:         resp.Number,
-		Title:          resp.Title,
-		URL:            resp.URL,
-		State:          resp.State,
-		ReviewDecision: resp.ReviewDecision,
-		CIStatus:       deriveCIStatus(resp.StatusCheckRollup),
+		Number:            resp.Number,
+		Title:             resp.Title,
+		URL:               resp.URL,
+		State:             resp.State,
+		ReviewDecision:    resp.ReviewDecision,
+		CIStatus:          deriveCIStatus(resp.StatusCheckRollup),
+		UnresolvedThreads: getUnresolvedThreadCount(repoPath, resp.Number, resp.URL),
 	}
 
 	return pr, nil
+}
+
+// getUnresolvedThreadCount queries GitHub GraphQL API for unresolved review thread count.
+func getUnresolvedThreadCount(repoPath string, prNumber int, prURL string) int {
+	// Parse owner/repo from PR URL: https://github.com/owner/repo/pull/123
+	trimmed := strings.TrimPrefix(prURL, "https://github.com/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) < 3 {
+		return 0
+	}
+	owner, repo := parts[0], parts[1]
+
+	query := fmt.Sprintf(`query {
+		repository(owner: "%s", name: "%s") {
+			pullRequest(number: %d) {
+				reviewThreads(first: 100) {
+					nodes { isResolved }
+				}
+			}
+		}
+	}`, owner, repo, prNumber)
+
+	cmd := exec.Command("gh", "api", "graphql", "-f", "query="+query)
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+
+	var result struct {
+		Data struct {
+			Repository struct {
+				PullRequest struct {
+					ReviewThreads struct {
+						Nodes []struct {
+							IsResolved bool `json:"isResolved"`
+						} `json:"nodes"`
+					} `json:"reviewThreads"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return 0
+	}
+
+	count := 0
+	for _, t := range result.Data.Repository.PullRequest.ReviewThreads.Nodes {
+		if !t.IsResolved {
+			count++
+		}
+	}
+	return count
 }
 
 // deriveCIStatus determines overall CI status from status check rollup.
