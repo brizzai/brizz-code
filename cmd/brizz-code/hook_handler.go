@@ -1,0 +1,166 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/yuvalhayke/brizz-code/internal/hooks"
+)
+
+// hookPayload represents the JSON payload Claude Code sends to hooks via stdin.
+type hookPayload struct {
+	HookEventName string          `json:"hook_event_name"`
+	SessionID     string          `json:"session_id"`
+	Source        string          `json:"source"`
+	Matcher       json.RawMessage `json:"matcher,omitempty"`
+}
+
+// mapEventToStatus maps a Claude Code hook event to a brizz-code status string.
+func mapEventToStatus(event string) string {
+	switch event {
+	case "UserPromptSubmit":
+		return "running"
+	case "Stop":
+		return "finished"
+	case "PermissionRequest":
+		return "waiting"
+	case "Notification":
+		return "" // handled separately based on matcher
+	case "SessionStart":
+		return "finished"
+	case "SessionEnd":
+		return "dead"
+	default:
+		return ""
+	}
+}
+
+// handleHookHandler processes a Claude Code hook event.
+// Reads JSON from stdin, maps the event to a status, and writes a status file.
+// Always exits 0 to avoid blocking Claude Code.
+func handleHookHandler() {
+	defer func() {
+		if r := recover(); r != nil {
+			// Never panic — always exit cleanly.
+		}
+	}()
+
+	instanceID := os.Getenv("BRIZZCODE_INSTANCE_ID")
+	if instanceID == "" {
+		return
+	}
+
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil || len(data) == 0 {
+		return
+	}
+
+	var payload hookPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return
+	}
+
+	status := mapEventToStatus(payload.HookEventName)
+
+	// Special handling for Notification events.
+	if payload.HookEventName == "Notification" && payload.Matcher != nil {
+		var matcher string
+		if err := json.Unmarshal(payload.Matcher, &matcher); err == nil {
+			if matcher == "permission_prompt" || matcher == "elicitation_dialog" {
+				status = "waiting"
+			}
+		}
+	}
+
+	if status == "" {
+		return
+	}
+
+	sf := &hooks.StatusFile{
+		Status:    status,
+		SessionID: payload.SessionID,
+		Event:     payload.HookEventName,
+		Timestamp: time.Now().Unix(),
+	}
+
+	hooksDir := hooks.GetHooksDir()
+	_ = hooks.WriteStatusFile(hooksDir, instanceID, sf)
+
+	// Opportunistic cleanup of stale files.
+	cleanStaleHookFiles(hooksDir)
+}
+
+// handleHooksCmd handles the "hooks" CLI subcommand for manual hook management.
+func handleHooksCmd(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: brizz-code hooks <install|uninstall|status>")
+		os.Exit(1)
+	}
+
+	configDir := hooks.GetClaudeConfigDir()
+
+	switch args[0] {
+	case "install":
+		installed, err := hooks.InjectClaudeHooks(configDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error installing hooks: %v\n", err)
+			os.Exit(1)
+		}
+		if installed {
+			fmt.Println("Claude Code hooks installed successfully.")
+			fmt.Printf("Config: %s/settings.json\n", configDir)
+		} else {
+			fmt.Println("Claude Code hooks are already installed.")
+		}
+	case "uninstall":
+		removed, err := hooks.RemoveClaudeHooks(configDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error removing hooks: %v\n", err)
+			os.Exit(1)
+		}
+		if removed {
+			fmt.Println("Claude Code hooks removed successfully.")
+		} else {
+			fmt.Println("No brizz-code hooks found to remove.")
+		}
+	case "status":
+		installed := hooks.AreHooksInstalled(configDir)
+		if installed {
+			fmt.Println("Status: INSTALLED")
+			fmt.Printf("Config: %s/settings.json\n", configDir)
+		} else {
+			fmt.Println("Status: NOT INSTALLED")
+			fmt.Println("Run 'brizz-code hooks install' to install.")
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown hooks subcommand: %s\n", args[0])
+		fmt.Fprintln(os.Stderr, "Usage: brizz-code hooks <install|uninstall|status>")
+		os.Exit(1)
+	}
+}
+
+// cleanStaleHookFiles removes hook status files older than 24 hours.
+func cleanStaleHookFiles(hooksDir string) {
+	entries, err := os.ReadDir(hooksDir)
+	if err != nil {
+		return
+	}
+
+	cutoff := time.Now().Add(-24 * time.Hour)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(hooksDir, entry.Name()))
+		}
+	}
+}

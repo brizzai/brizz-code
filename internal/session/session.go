@@ -35,6 +35,9 @@ type Session struct {
 	LastAccessedAt  time.Time
 	Acknowledged    bool
 
+	hookStatus    string
+	hookUpdatedAt time.Time
+
 	tmuxSession *tmux.Session
 	mu          sync.RWMutex
 }
@@ -61,7 +64,8 @@ func (s *Session) Start() error {
 	s.Status = StatusStarting
 	s.mu.Unlock()
 
-	if err := s.tmuxSession.Start("claude"); err != nil {
+	cmd := fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s claude", s.ID)
+	if err := s.tmuxSession.Start(cmd); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
@@ -127,6 +131,24 @@ func (s *Session) Acknowledge() {
 	}
 }
 
+// HookStatus holds decoded status from a hook status file.
+// Defined here to avoid import cycle with hooks package.
+type HookStatus struct {
+	Status    string
+	UpdatedAt time.Time
+}
+
+// UpdateHookStatus updates the session's hook-based status.
+func (s *Session) UpdateHookStatus(hs *HookStatus) {
+	if hs == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hookStatus = hs.Status
+	s.hookUpdatedAt = hs.UpdatedAt
+}
+
 // Restart kills and recreates the tmux session with the same config.
 func (s *Session) Restart() error {
 	// Kill old tmux session if it still exists.
@@ -141,7 +163,8 @@ func (s *Session) Restart() error {
 	s.Status = StatusStarting
 	s.mu.Unlock()
 
-	if err := s.tmuxSession.Start("claude"); err != nil {
+	cmd := fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s claude", s.ID)
+	if err := s.tmuxSession.Start(cmd); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
@@ -160,7 +183,8 @@ func (s *Session) RespawnClaude() error {
 	s.Status = StatusStarting
 	s.mu.Unlock()
 
-	if err := s.tmuxSession.RespawnPane("claude"); err != nil {
+	cmd := fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s claude", s.ID)
+	if err := s.tmuxSession.RespawnPane(cmd); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
@@ -176,6 +200,9 @@ func (s *Session) RespawnClaude() error {
 	return nil
 }
 
+// hookFreshnessWindow is how long hook data is considered fresh.
+const hookFreshnessWindow = 2 * time.Minute
+
 // UpdateStatus detects the session status from pane content.
 func (s *Session) UpdateStatus() {
 	if !s.IsAlive() {
@@ -189,6 +216,34 @@ func (s *Session) UpdateStatus() {
 		return
 	}
 
+	// Hook fast path: if fresh hook data exists, use it instead of pane capture.
+	s.mu.RLock()
+	hookStatus := s.hookStatus
+	hookFresh := !s.hookUpdatedAt.IsZero() && time.Since(s.hookUpdatedAt) < hookFreshnessWindow
+	s.mu.RUnlock()
+
+	if hookStatus != "" && hookFresh {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		switch hookStatus {
+		case "running":
+			s.Status = StatusRunning
+			s.Acknowledged = false
+		case "waiting":
+			s.Status = StatusWaiting
+		case "finished":
+			if s.Acknowledged {
+				s.Status = StatusIdle
+			} else {
+				s.Status = StatusFinished
+			}
+		case "dead":
+			s.Status = StatusError
+		}
+		return
+	}
+
+	// Pane capture fallback.
 	content, err := s.tmuxSession.CapturePane()
 	if err != nil {
 		return // Keep previous status on capture failure.

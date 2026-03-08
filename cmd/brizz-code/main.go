@@ -36,6 +36,10 @@ func main() {
 			os.Exit(1)
 		}
 		runRemove(args[1])
+	case "hook-handler":
+		handleHookHandler()
+	case "hooks":
+		handleHooksCmd(args[1:])
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -193,6 +197,7 @@ Usage:
   brizz-code add <path>   Add a new session
   brizz-code list         List all sessions
   brizz-code remove <id>  Remove a session
+  brizz-code hooks <install|uninstall|status>  Manage Claude Code hooks
   brizz-code help         Show this help`)
 }
 

@@ -1,0 +1,366 @@
+package hooks
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// brizzCodeHookMarker is the substring used to identify brizz-code hooks in settings.json.
+const brizzCodeHookMarker = "brizz-code hook-handler"
+
+// claudeHookEntry represents a single hook entry in Claude Code settings.
+type claudeHookEntry struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+	Async   bool   `json:"async,omitempty"`
+}
+
+// claudeHookMatcher represents a matcher block in settings.
+type claudeHookMatcher struct {
+	Matcher string            `json:"matcher,omitempty"`
+	Hooks   []claudeHookEntry `json:"hooks"`
+}
+
+// hookEventConfig defines which Claude Code events we subscribe to.
+var hookEventConfigs = []struct {
+	Event   string
+	Matcher string
+	Async   bool
+}{
+	{Event: "UserPromptSubmit", Async: true},
+	{Event: "Stop", Async: true},
+	{Event: "PermissionRequest", Async: true},
+	{Event: "Notification", Matcher: "permission_prompt|elicitation_dialog", Async: true},
+	{Event: "SessionStart", Async: true},
+	{Event: "SessionEnd", Async: true},
+}
+
+// GetClaudeConfigDir returns the Claude Code config directory.
+func GetClaudeConfigDir() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), ".claude")
+	}
+	return filepath.Join(home, ".claude")
+}
+
+// GetHookCommand returns the full hook command string using the current binary path.
+func GetHookCommand() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "brizz-code hook-handler"
+	}
+	// Resolve symlinks for stable path.
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return exe + " hook-handler"
+	}
+	return resolved + " hook-handler"
+}
+
+// brizzCodeHook returns a hook entry with the current binary path.
+func brizzCodeHook(async bool) claudeHookEntry {
+	return claudeHookEntry{
+		Type:    "command",
+		Command: GetHookCommand(),
+		Async:   async,
+	}
+}
+
+// InjectClaudeHooks injects brizz-code hook entries into Claude Code's settings.json.
+// Returns true if hooks were newly installed, false if already present.
+func InjectClaudeHooks(configDir string) (bool, error) {
+	settingsPath := filepath.Join(configDir, "settings.json")
+
+	var rawSettings map[string]json.RawMessage
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return false, fmt.Errorf("read settings.json: %w", err)
+		}
+		rawSettings = make(map[string]json.RawMessage)
+	} else {
+		if err := json.Unmarshal(data, &rawSettings); err != nil {
+			return false, fmt.Errorf("parse settings.json: %w", err)
+		}
+	}
+
+	var existingHooks map[string]json.RawMessage
+	if raw, ok := rawSettings["hooks"]; ok {
+		if err := json.Unmarshal(raw, &existingHooks); err != nil {
+			existingHooks = make(map[string]json.RawMessage)
+		}
+	} else {
+		existingHooks = make(map[string]json.RawMessage)
+	}
+
+	if hooksAlreadyInstalled(existingHooks) {
+		// Check if binary path changed (rebuild) — update command if needed.
+		if !hooksNeedUpdate(existingHooks) {
+			return false, nil
+		}
+	}
+
+	for _, cfg := range hookEventConfigs {
+		existingHooks[cfg.Event] = mergeHookEvent(existingHooks[cfg.Event], cfg.Matcher, cfg.Async)
+	}
+
+	hooksRaw, err := json.Marshal(existingHooks)
+	if err != nil {
+		return false, fmt.Errorf("marshal hooks: %w", err)
+	}
+	rawSettings["hooks"] = hooksRaw
+
+	finalData, err := json.MarshalIndent(rawSettings, "", "  ")
+	if err != nil {
+		return false, fmt.Errorf("marshal settings: %w", err)
+	}
+
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return false, fmt.Errorf("create config dir: %w", err)
+	}
+
+	tmpPath := settingsPath + ".tmp"
+	if err := os.WriteFile(tmpPath, finalData, 0644); err != nil {
+		return false, fmt.Errorf("write settings.json.tmp: %w", err)
+	}
+	if err := os.Rename(tmpPath, settingsPath); err != nil {
+		os.Remove(tmpPath)
+		return false, fmt.Errorf("rename settings.json: %w", err)
+	}
+
+	return true, nil
+}
+
+// RemoveClaudeHooks removes brizz-code hook entries from Claude Code's settings.json.
+func RemoveClaudeHooks(configDir string) (bool, error) {
+	settingsPath := filepath.Join(configDir, "settings.json")
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read settings.json: %w", err)
+	}
+
+	var rawSettings map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawSettings); err != nil {
+		return false, fmt.Errorf("parse settings.json: %w", err)
+	}
+
+	hooksRaw, ok := rawSettings["hooks"]
+	if !ok {
+		return false, nil
+	}
+
+	var existingHooks map[string]json.RawMessage
+	if err := json.Unmarshal(hooksRaw, &existingHooks); err != nil {
+		return false, nil
+	}
+
+	removed := false
+	for _, cfg := range hookEventConfigs {
+		if raw, ok := existingHooks[cfg.Event]; ok {
+			cleaned, didRemove := removeBrizzCodeFromEvent(raw)
+			if didRemove {
+				removed = true
+				if cleaned == nil {
+					delete(existingHooks, cfg.Event)
+				} else {
+					existingHooks[cfg.Event] = cleaned
+				}
+			}
+		}
+	}
+
+	if !removed {
+		return false, nil
+	}
+
+	if len(existingHooks) == 0 {
+		delete(rawSettings, "hooks")
+	} else {
+		hooksData, _ := json.Marshal(existingHooks)
+		rawSettings["hooks"] = hooksData
+	}
+
+	finalData, err := json.MarshalIndent(rawSettings, "", "  ")
+	if err != nil {
+		return false, fmt.Errorf("marshal settings: %w", err)
+	}
+
+	tmpPath := settingsPath + ".tmp"
+	if err := os.WriteFile(tmpPath, finalData, 0644); err != nil {
+		return false, fmt.Errorf("write settings.json.tmp: %w", err)
+	}
+	if err := os.Rename(tmpPath, settingsPath); err != nil {
+		os.Remove(tmpPath)
+		return false, fmt.Errorf("rename settings.json: %w", err)
+	}
+
+	return true, nil
+}
+
+// AreHooksInstalled checks if brizz-code hooks are present in settings.json.
+func AreHooksInstalled(configDir string) bool {
+	settingsPath := filepath.Join(configDir, "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return false
+	}
+
+	var rawSettings map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawSettings); err != nil {
+		return false
+	}
+
+	hooksRaw, ok := rawSettings["hooks"]
+	if !ok {
+		return false
+	}
+
+	var existingHooks map[string]json.RawMessage
+	if err := json.Unmarshal(hooksRaw, &existingHooks); err != nil {
+		return false
+	}
+
+	return hooksAlreadyInstalled(existingHooks)
+}
+
+// hooksAlreadyInstalled checks if all required brizz-code hooks are present.
+func hooksAlreadyInstalled(hooks map[string]json.RawMessage) bool {
+	for _, cfg := range hookEventConfigs {
+		raw, ok := hooks[cfg.Event]
+		if !ok {
+			return false
+		}
+		if !eventHasBrizzCodeHook(raw) {
+			return false
+		}
+	}
+	return true
+}
+
+// hooksNeedUpdate checks if the hook command path has changed (e.g., after rebuild).
+func hooksNeedUpdate(hooks map[string]json.RawMessage) bool {
+	currentCmd := GetHookCommand()
+	for _, cfg := range hookEventConfigs {
+		raw, ok := hooks[cfg.Event]
+		if !ok {
+			continue
+		}
+		var matchers []claudeHookMatcher
+		if err := json.Unmarshal(raw, &matchers); err != nil {
+			continue
+		}
+		for _, m := range matchers {
+			for _, h := range m.Hooks {
+				if strings.Contains(h.Command, brizzCodeHookMarker) && h.Command != currentCmd {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// eventHasBrizzCodeHook checks if a hook event contains our hook.
+func eventHasBrizzCodeHook(raw json.RawMessage) bool {
+	var matchers []claudeHookMatcher
+	if err := json.Unmarshal(raw, &matchers); err != nil {
+		return false
+	}
+	for _, m := range matchers {
+		for _, h := range m.Hooks {
+			if strings.Contains(h.Command, brizzCodeHookMarker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// mergeHookEvent adds brizz-code's hook to an event's matcher array, preserving existing hooks.
+func mergeHookEvent(existing json.RawMessage, matcher string, async bool) json.RawMessage {
+	var matchers []claudeHookMatcher
+
+	if existing != nil {
+		if err := json.Unmarshal(existing, &matchers); err != nil {
+			matchers = nil
+		}
+	}
+
+	currentCmd := GetHookCommand()
+
+	// Check if we already have a matcher entry with our hook.
+	for i, m := range matchers {
+		if m.Matcher == matcher {
+			for j, h := range m.Hooks {
+				if strings.Contains(h.Command, brizzCodeHookMarker) {
+					// Update command path if changed.
+					if h.Command != currentCmd {
+						matchers[i].Hooks[j].Command = currentCmd
+					}
+					result, _ := json.Marshal(matchers)
+					return result
+				}
+			}
+			// Append our hook to existing matcher.
+			matchers[i].Hooks = append(matchers[i].Hooks, brizzCodeHook(async))
+			result, _ := json.Marshal(matchers)
+			return result
+		}
+	}
+
+	// No matching matcher found; add a new one.
+	newMatcher := claudeHookMatcher{
+		Matcher: matcher,
+		Hooks:   []claudeHookEntry{brizzCodeHook(async)},
+	}
+	matchers = append(matchers, newMatcher)
+	result, _ := json.Marshal(matchers)
+	return result
+}
+
+// removeBrizzCodeFromEvent removes brizz-code hook entries from an event's matcher array.
+func removeBrizzCodeFromEvent(raw json.RawMessage) (json.RawMessage, bool) {
+	var matchers []claudeHookMatcher
+	if err := json.Unmarshal(raw, &matchers); err != nil {
+		return raw, false
+	}
+
+	removed := false
+	var cleaned []claudeHookMatcher
+
+	for _, m := range matchers {
+		var kept []claudeHookEntry
+		for _, h := range m.Hooks {
+			if strings.Contains(h.Command, brizzCodeHookMarker) {
+				removed = true
+				continue
+			}
+			kept = append(kept, h)
+		}
+		if len(kept) > 0 {
+			m.Hooks = kept
+			cleaned = append(cleaned, m)
+		}
+	}
+
+	if !removed {
+		return raw, false
+	}
+	if len(cleaned) == 0 {
+		return nil, true
+	}
+
+	result, _ := json.Marshal(cleaned)
+	return result, true
+}

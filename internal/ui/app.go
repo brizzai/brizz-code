@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yuvalhayke/brizz-code/internal/git"
 	"github.com/yuvalhayke/brizz-code/internal/github"
+	"github.com/yuvalhayke/brizz-code/internal/hooks"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 	"github.com/yuvalhayke/brizz-code/internal/tmux"
 )
@@ -76,6 +79,8 @@ type Home struct {
 	gitInfoCache map[string]*git.RepoInfo // repo root path -> git info
 	gitRRIndex   int                      // round-robin index for git refresh
 	ghAvailable  bool                     // cached gh CLI availability
+
+	hookWatcher *hooks.HookWatcher
 }
 
 // NewHome creates the main TUI model.
@@ -174,6 +179,19 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(h.flatItems) > 0 && h.cursor == 0 {
 			h.cursor = FirstSelectableItem(h.flatItems)
 		}
+
+		// Install Claude Code hooks (idempotent, best-effort).
+		configDir := hooks.GetClaudeConfigDir()
+		hooks.InjectClaudeHooks(configDir)
+
+		// Start hook watcher.
+		if h.hookWatcher == nil {
+			if watcher, err := hooks.NewHookWatcher(); err == nil {
+				h.hookWatcher = watcher
+				go watcher.Start()
+			}
+		}
+
 		return h, nil
 	}
 
@@ -331,6 +349,9 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.helpOverlay.Show()
 		return h, nil
 	case "q", "ctrl+c":
+		if h.hookWatcher != nil {
+			h.hookWatcher.Stop()
+		}
 		return h, tea.Quit
 	}
 
@@ -462,6 +483,9 @@ func (h *Home) deleteSession(id string) {
 	// Remove from storage.
 	_ = h.storage.DeleteSession(id)
 
+	// Remove hook status file.
+	_ = os.Remove(filepath.Join(hooks.GetHooksDir(), id+".json"))
+
 	// Remove from list.
 	var remaining []*session.Session
 	for _, sess := range h.sessions {
@@ -495,6 +519,19 @@ func (h *Home) tick() tea.Cmd {
 
 func (h *Home) handleTick() (tea.Model, tea.Cmd) {
 	tmux.RefreshSessionCache()
+
+	// Sync hook status to all sessions (fast: in-memory map lookups).
+	if h.hookWatcher != nil {
+		for _, s := range h.sessions {
+			hs := h.hookWatcher.GetStatus(s.ID)
+			if hs != nil {
+				s.UpdateHookStatus(&session.HookStatus{
+					Status:    hs.Status,
+					UpdatedAt: hs.UpdatedAt,
+				})
+			}
+		}
+	}
 
 	// Round-robin status updates.
 	if len(h.sessions) > 0 {
