@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 )
@@ -81,8 +83,8 @@ var (
 	TreeConnectorSelStyle  = lipgloss.NewStyle().Foreground(ColorBg).Background(ColorAccent)
 	ToolBadgeSelStyle      = lipgloss.NewStyle().Foreground(ColorBg).Background(ColorAccent)
 
-	// Panel title style.
-	PanelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorText)
+	// Panel title style (cyan/blue like agent-deck).
+	PanelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorBlue)
 
 	// Header bar style.
 	HeaderBarStyle = lipgloss.NewStyle().Background(ColorSurface).Padding(0, 1)
@@ -152,7 +154,7 @@ func ApplyPalette(p Palette) {
 	TreeConnectorSelStyle = lipgloss.NewStyle().Foreground(ColorBg).Background(ColorAccent)
 	ToolBadgeSelStyle = lipgloss.NewStyle().Foreground(ColorBg).Background(ColorAccent)
 
-	PanelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorText)
+	PanelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorBlue)
 	HeaderBarStyle = lipgloss.NewStyle().Background(ColorSurface).Padding(0, 1)
 
 	HelpKeyStyle = lipgloss.NewStyle().Background(ColorAccent).Foreground(ColorBg).Bold(true).Padding(0, 1)
@@ -164,6 +166,16 @@ func ApplyPalette(p Palette) {
 	PROpenStyle = lipgloss.NewStyle().Foreground(ColorGreen)
 	PRFailStyle = lipgloss.NewStyle().Foreground(ColorRed)
 	PRPendingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
+}
+
+// RenderPanelTitle renders a panel title with a divider underline.
+func RenderPanelTitle(title string, width int) string {
+	titleLine := PanelTitleStyle.Render(title)
+	if width < 1 {
+		width = 1
+	}
+	underline := lipgloss.NewStyle().Foreground(ColorBorder).Render(strings.Repeat("─", width))
+	return titleLine + "\n" + underline
 }
 
 // StatusSymbol returns a styled status indicator.

@@ -11,13 +11,13 @@ import (
 // RenderPreview renders the preview pane for the selected session.
 func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, width, height int) string {
 	if s == nil {
-		return PanelTitleStyle.Render(" PREVIEW") + "\n" + DimStyle.Render("  No session selected")
+		return RenderPanelTitle(" PREVIEW", width) + "\n" + DimStyle.Render("  No session selected")
 	}
 
 	var b strings.Builder
 
 	// Panel title.
-	b.WriteString(PanelTitleStyle.Render(" PREVIEW"))
+	b.WriteString(RenderPanelTitle(" PREVIEW", width))
 	b.WriteString("\n")
 
 	// Header: title + status.
@@ -34,7 +34,7 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 	b.WriteString("\n")
 
 	// Git info line.
-	usedLines := 4 // panel title + header + path + separator
+	usedLines := 5 // panel title + underline + header + path + separator
 	if gitLine := renderGitInfoLine(repoInfo); gitLine != "" {
 		b.WriteString("  " + gitLine)
 		b.WriteString("\n")

@@ -110,11 +110,11 @@ func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map
 	var b strings.Builder
 
 	// Panel title.
-	b.WriteString(PanelTitleStyle.Render(" SESSIONS"))
+	b.WriteString(RenderPanelTitle(" SESSIONS", width))
 	b.WriteString("\n")
 
-	// Determine visible range (subtract 1 for the title line).
-	visibleHeight := height - 1
+	// Determine visible range (subtract 2 for title + underline).
+	visibleHeight := height - 2
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
@@ -173,7 +173,7 @@ func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map
 // renderEmptyState renders the empty sessions placeholder.
 func renderEmptyState(width, height int) string {
 	var b strings.Builder
-	b.WriteString(PanelTitleStyle.Render(" SESSIONS"))
+	b.WriteString(RenderPanelTitle(" SESSIONS", width))
 	b.WriteString("\n")
 
 	if height < 8 {

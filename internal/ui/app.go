@@ -339,22 +339,27 @@ func (h *Home) View() string {
 		if sidebarWidth < 20 {
 			sidebarWidth = 20
 		}
-		previewWidth := h.width - sidebarWidth - 3 // 3 for separator
+		previewWidth := h.width - sidebarWidth - 3 // 3 for separator " │ "
 
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+		leftPanel := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
 		s, content := h.selectedPreview()
-		preview := RenderPreview(s, content, h.selectedRepoInfo(), previewWidth, contentHeight)
+		rightPanel := RenderPreview(s, content, h.selectedRepoInfo(), previewWidth, contentHeight)
 
-		// Side by side with separator.
-		sidebarBox := lipgloss.NewStyle().Width(sidebarWidth).Height(contentHeight).Render(sidebar)
-		sep := lipgloss.NewStyle().
-			Foreground(ColorBorder).
-			Width(1).
-			Height(contentHeight).
-			Render(strings.Repeat("│\n", contentHeight))
-		previewBox := lipgloss.NewStyle().Width(previewWidth).Height(contentHeight).Render(preview)
+		// Build separator as explicit lines.
+		sepStyle := lipgloss.NewStyle().Foreground(ColorBorder)
+		sepLines := make([]string, contentHeight)
+		for i := range sepLines {
+			sepLines[i] = sepStyle.Render(" │ ")
+		}
+		separator := strings.Join(sepLines, "\n")
 
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, sidebarBox, " "+sep+" ", previewBox))
+		// Ensure exact dimensions before joining (prevents ANSI misalignment).
+		leftPanel = ensureExactHeight(leftPanel, contentHeight)
+		rightPanel = ensureExactHeight(rightPanel, contentHeight)
+		leftPanel = ensureExactWidth(leftPanel, sidebarWidth)
+		rightPanel = ensureExactWidth(rightPanel, previewWidth)
+
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, separator, rightPanel))
 	}
 
 	// Pad to fill content area.
@@ -993,10 +998,8 @@ func (h *Home) renderHeader() string {
 		statusCounts[s.GetStatus()]++
 	}
 
-	logo := lipgloss.NewStyle().Foreground(ColorAccent).Render("⟨") +
-		lipgloss.NewStyle().Bold(true).Foreground(ColorText).Render("bc") +
-		lipgloss.NewStyle().Foreground(ColorAccent).Render("⟩")
-	title := logo + " " + TitleStyle.Render("brizz-code") + " "
+	logo := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render("✦")
+	title := logo + " " + TitleStyle.Render("brizz-code")
 
 	// Build status indicators — only show non-zero.
 	var indicators []string
@@ -1017,15 +1020,9 @@ func (h *Home) renderHeader() string {
 	}
 
 	sep := lipgloss.NewStyle().Foreground(ColorBorder).Render(" • ")
-	right := strings.Join(indicators, sep)
+	stats := strings.Join(indicators, sep)
 
-	headerLeft := title
-	gap := h.width - lipgloss.Width(headerLeft) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-
-	content := headerLeft + strings.Repeat(" ", gap) + right
+	content := " " + title + "  " + stats
 	return HeaderBarStyle.Width(h.width).Render(content)
 }
 
@@ -1110,8 +1107,8 @@ func (h *Home) syncViewport() {
 	if h.cursor >= len(h.flatItems) {
 		h.cursor = len(h.flatItems) - 1
 	}
-	// Calculate visible height for sidebar.
-	contentHeight := h.height - 2 - helpBarHeight
+	// Calculate visible height for sidebar (subtract title + underline).
+	contentHeight := h.height - 2 - helpBarHeight - 2
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
@@ -1152,5 +1149,45 @@ func (h *Home) loadSessions() tea.Msg {
 func (h *Home) setError(err error) {
 	h.err = err
 	h.errTime = time.Now()
+}
+
+// ensureExactHeight pads or truncates content to exactly n lines.
+func ensureExactHeight(content string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	for len(lines) < n {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ensureExactWidth pads or truncates each line to exactly the given visual width.
+func ensureExactWidth(content string, width int) string {
+	if width <= 0 {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	result := make([]string, len(lines))
+	for i, line := range lines {
+		w := lipgloss.Width(line)
+		if w == width {
+			result[i] = line
+		} else if w < width {
+			result[i] = line + strings.Repeat(" ", width-w)
+		} else {
+			truncated := lipgloss.NewStyle().MaxWidth(width).Render(line)
+			tw := lipgloss.Width(truncated)
+			if tw < width {
+				truncated += strings.Repeat(" ", width-tw)
+			}
+			result[i] = truncated
+		}
+	}
+	return strings.Join(result, "\n")
 }
 
