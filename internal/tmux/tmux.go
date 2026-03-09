@@ -165,6 +165,13 @@ func (s *Session) Exists() bool {
 	return cmd.Run() == nil
 }
 
+// SendKeys sends keystrokes to the tmux pane.
+func (s *Session) SendKeys(keys ...string) error {
+	args := append([]string{"send-keys", "-t", s.Name}, keys...)
+	cmd := exec.Command("tmux", args...)
+	return cmd.Run()
+}
+
 // Kill terminates the tmux session.
 func (s *Session) Kill() error {
 	cmd := exec.Command("tmux", "kill-session", "-t", s.Name)

@@ -63,8 +63,9 @@ type (
 		warning     string
 		err         error
 	}
-	openEditorMsg  struct{ err error }
-	openPRMsg      struct{ err error }
+	openEditorMsg    struct{ err error }
+	openPRMsg        struct{ err error }
+	quickApproveMsg  struct{ err error }
 	spinnerTickMsg struct{}
 )
 
@@ -268,6 +269,12 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openPRMsg:
 		if msg.err != nil {
 			h.setError(msg.err)
+		}
+		return h, nil
+
+	case quickApproveMsg:
+		if msg.err != nil {
+			h.setError(fmt.Errorf("approve: %w", msg.err))
 		}
 		return h, nil
 
@@ -655,6 +662,8 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, h.openEditorSelected()
 	case "p":
 		return h, h.openPRInBrowser()
+	case "Y":
+		return h, h.quickApproveSelected()
 	case "/":
 		h.filterActive = true
 		h.filterInput.Focus()
@@ -954,6 +963,25 @@ func (h *Home) openEditorSelected() tea.Cmd {
 		cmd := exec.Command(editor, projectPath)
 		err := cmd.Start()
 		return openEditorMsg{err: err}
+	}
+}
+
+func (h *Home) quickApproveSelected() tea.Cmd {
+	if h.cursor < 0 || h.cursor >= len(h.flatItems) || h.flatItems[h.cursor].IsRepoHeader {
+		return nil
+	}
+	s := h.flatItems[h.cursor].Session
+	if s == nil || !s.IsAlive() {
+		return nil
+	}
+	if s.GetStatus() != session.StatusWaiting {
+		h.setError(fmt.Errorf("session not waiting for approval"))
+		return nil
+	}
+	ts := s.GetTmuxSession()
+	return func() tea.Msg {
+		err := ts.SendKeys("y")
+		return quickApproveMsg{err: err}
 	}
 }
 

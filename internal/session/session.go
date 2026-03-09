@@ -129,6 +129,13 @@ func (s *Session) SetStatus(status Status) {
 	}
 }
 
+// GetHookStatus returns the raw hook status string (thread-safe).
+func (s *Session) GetHookStatus() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hookStatus
+}
+
 // IsAlive checks if the tmux session exists.
 func (s *Session) IsAlive() bool {
 	return s.tmuxSession.Exists()
@@ -298,12 +305,16 @@ func (s *Session) UpdateStatus() {
 				}
 			}
 		case "waiting":
-			// Hook says waiting, but check pane in case user already acted.
+			// Hook says waiting — trust hooks as authoritative.
+			// Only override to running (spinner/busy is unambiguous).
+			// Never override to finished: pane detection's ❯ prompt match
+			// false-positives on Claude's menu selector (e.g. "❯ 1. Yes").
+			// Hooks will fire the correct event for waiting→finished transitions.
 			s.Status = StatusWaiting
 			s.Acknowledged = false
-			if paneStatus != "" && paneStatus != StatusWaiting {
-				s.Status = paneStatus
-				log.Info("hook says waiting but pane shows different, overriding", "pane", paneStatus)
+			if paneStatus == StatusRunning {
+				s.Status = StatusRunning
+				log.Info("hook says waiting but pane shows running, overriding")
 			} else if paneContent != "" {
 				// Content change detection: if content changed since waiting started, user acted.
 				hash := hashContent(normalizeForHash(paneContent))

@@ -34,6 +34,11 @@ internal/ui/settings.go      # Settings dialog (S key)
 internal/ui/keybindings.go   # Centralized keybinding definitions
 internal/ui/workspace_picker.go  # Workspace picker dialog (provider integration)
 internal/ui/workspace_create.go  # Create workspace sub-dialog
+internal/chrome/protocol.go      # Command/Response types, action constants, socket path
+internal/chrome/native_host.go   # Native messaging host with Unix socket bridge
+internal/chrome/client.go        # TUI-side client (connects to socket, sends commands)
+internal/chrome/install.go       # NMH manifest auto-install to Chrome's NativeMessagingHosts dir
+chrome-extension/                # Chrome MV3 extension (service worker, manifest, icons)
 ```
 
 ## Conventions
@@ -43,7 +48,7 @@ internal/ui/workspace_create.go  # Create workspace sub-dialog
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space toggle group, a new session (instant, repo-scoped), n new session in workspace (picker), d delete (Y to also destroy workspace), r restart, R rename, e editor, / filter, S settings, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space toggle group, a new session (instant, repo-scoped), n new session in workspace (picker), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, / filter, S settings, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
@@ -65,4 +70,12 @@ internal/ui/workspace_create.go  # Create workspace sub-dialog
 - Editor: config.editor > $EDITOR > "code" (VS Code)
 - Themes: tokyo-night (default), catppuccin-mocha, rose-pine, nord, gruvbox — configurable via settings (S key)
 - Settings dialog: S key opens settings overlay, live theme preview, auto-saves on close
+- Chrome tab control: `p` opens PR in Chrome via extension (reuses existing tab), falls back to `open <url>` if unavailable
+- Chrome extension architecture: TUI →[unix socket]→ native host (`brizz-code chrome-host`) →[stdio]→ Chrome service worker
+- Native messaging host: `brizz-code chrome-host` subcommand (also auto-detected when Chrome passes `chrome-extension://...` arg)
+- Unix socket: `~/.config/brizz-code/chrome.sock` (created by native host, mode 0600)
+- NMH manifest: auto-installed to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.brizzcode.tabcontrol.json` on TUI startup
+- Chrome extension ID: `haphpcoecelhofejcklinnlbfijgdnih` (stable via `key` in manifest.json)
+- Extension commands: `open_or_focus`, `close_tab`, `create_tab_group`, `ping`
+- Service worker reconnects to native host on disconnect (2s delay)
 - Claude Code only, Mac only
