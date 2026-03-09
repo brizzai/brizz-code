@@ -43,7 +43,7 @@ internal/ui/workspace_create.go  # Create workspace sub-dialog
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space toggle group, a new (repo-scoped workspace picker), d delete (Y to also destroy workspace), r restart, R rename, e editor, / filter, S settings, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space toggle group, a new session (instant, repo-scoped), n new session in workspace (picker), d delete (Y to also destroy workspace), r restart, R rename, e editor, / filter, S settings, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
