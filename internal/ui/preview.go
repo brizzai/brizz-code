@@ -86,7 +86,8 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 		if len(line) > width-2 {
 			line = line[:width-2]
 		}
-		b.WriteString("  " + line)
+		// Reset ANSI at end of each line to prevent background color bleed.
+		b.WriteString("  " + line + "\x1b[0m")
 		if i < len(lines)-1 {
 			b.WriteString("\n")
 		}
@@ -112,48 +113,53 @@ func renderGitInfoLine(info *git.RepoInfo) string {
 	}
 
 	// PR info.
-	if info.PR != nil {
+	if info.PR != nil && info.PR.State != "CLOSED" {
 		pr := info.PR
 		prText := fmt.Sprintf("PR #%d", pr.Number)
-		var details []string
-		if pr.CIStatus == "FAILURE" {
-			details = append(details, "CI failing")
-		}
-		if pr.ReviewDecision == "CHANGES_REQUESTED" {
-			details = append(details, "changes requested")
-		}
-		if pr.ReviewDecision == "APPROVED" {
-			details = append(details, "approved")
-		}
-		if pr.CIStatus == "SUCCESS" && pr.ReviewDecision != "APPROVED" {
-			details = append(details, "CI passing")
-		}
-		if pr.CIStatus == "PENDING" {
-			details = append(details, "CI pending")
-		}
-		if pr.ReviewDecision == "REVIEW_REQUIRED" {
-			details = append(details, "review pending")
-		}
-		if pr.UnresolvedThreads > 0 {
-			details = append(details, fmt.Sprintf("%d unresolved", pr.UnresolvedThreads))
-		}
-		if len(details) > 0 {
-			prText += " (" + strings.Join(details, ", ") + ")"
-		}
 
-		ciFail := pr.CIStatus == "FAILURE"
-		changesReq := pr.ReviewDecision == "CHANGES_REQUESTED"
-		approved := pr.ReviewDecision == "APPROVED"
-		ciPass := pr.CIStatus == "SUCCESS"
-		hasThreads := pr.UnresolvedThreads > 0
+		if pr.State == "MERGED" {
+			parts = append(parts, PRMergedStyle.Render(prText+" (merged)"))
+		} else {
+			var details []string
+			if pr.CIStatus == "FAILURE" {
+				details = append(details, "CI failing")
+			}
+			if pr.ReviewDecision == "CHANGES_REQUESTED" {
+				details = append(details, "changes requested")
+			}
+			if pr.ReviewDecision == "APPROVED" {
+				details = append(details, "approved")
+			}
+			if pr.CIStatus == "SUCCESS" && pr.ReviewDecision != "APPROVED" {
+				details = append(details, "CI passing")
+			}
+			if pr.CIStatus == "PENDING" {
+				details = append(details, "CI pending")
+			}
+			if pr.ReviewDecision == "REVIEW_REQUIRED" {
+				details = append(details, "review pending")
+			}
+			if pr.UnresolvedThreads > 0 {
+				details = append(details, fmt.Sprintf("%d unresolved", pr.UnresolvedThreads))
+			}
+			if len(details) > 0 {
+				prText += " (" + strings.Join(details, ", ") + ")"
+			}
 
-		style := PRPendingStyle // default: yellow
-		if ciFail || changesReq || hasThreads {
-			style = PRFailStyle
-		} else if approved && ciPass {
-			style = PROpenStyle
+			ciFail := pr.CIStatus == "FAILURE"
+			changesReq := pr.ReviewDecision == "CHANGES_REQUESTED"
+			approved := pr.ReviewDecision == "APPROVED"
+			ciPass := pr.CIStatus == "SUCCESS"
+			hasThreads := pr.UnresolvedThreads > 0
+
+			style := PRPendingStyle // default: yellow
+			if ciFail || changesReq || hasThreads {
+				style = PRFailStyle
+			} else if approved && ciPass {
+				style = PROpenStyle
+			}
+			parts = append(parts, style.Render(prText))
 		}
-		parts = append(parts, style.Render(prText))
 	}
 
 	return strings.Join(parts, "  ")

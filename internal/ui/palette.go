@@ -16,7 +16,8 @@ type Palette struct {
 	Blue    lipgloss.Color
 	Red     lipgloss.Color
 	Gray    lipgloss.Color
-	Orange  lipgloss.Color
+	Orange lipgloss.Color
+	Purple lipgloss.Color
 }
 
 // Built-in palette definitions.
@@ -35,6 +36,7 @@ var (
 		Red:     lipgloss.Color("#f7768e"),
 		Gray:    lipgloss.Color("#565f89"),
 		Orange:  lipgloss.Color("#ff9e64"),
+		Purple:  lipgloss.Color("#bb9af7"),
 	}
 
 	PaletteCatppuccin = Palette{
@@ -51,6 +53,7 @@ var (
 		Red:     lipgloss.Color("#f38ba8"),
 		Gray:    lipgloss.Color("#6c7086"),
 		Orange:  lipgloss.Color("#fab387"),
+		Purple:  lipgloss.Color("#cba6f7"),
 	}
 
 	PaletteRosePine = Palette{
@@ -67,6 +70,7 @@ var (
 		Red:     lipgloss.Color("#eb6f92"),
 		Gray:    lipgloss.Color("#908caa"),
 		Orange:  lipgloss.Color("#ebbcba"),
+		Purple:  lipgloss.Color("#c4a7e7"),
 	}
 
 	PaletteNord = Palette{
@@ -83,6 +87,7 @@ var (
 		Red:     lipgloss.Color("#bf616a"),
 		Gray:    lipgloss.Color("#616e88"),
 		Orange:  lipgloss.Color("#d08770"),
+		Purple:  lipgloss.Color("#b48ead"),
 	}
 
 	PaletteGruvbox = Palette{
@@ -99,6 +104,7 @@ var (
 		Red:     lipgloss.Color("#fb4934"),
 		Gray:    lipgloss.Color("#928374"),
 		Orange:  lipgloss.Color("#fe8019"),
+		Purple:  lipgloss.Color("#d3869b"),
 	}
 )
 

@@ -2,6 +2,7 @@ package session
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -41,6 +42,9 @@ type Session struct {
 
 	hookStatus    string
 	hookUpdatedAt time.Time
+
+	lastContentHash     string
+	lastContentChangeAt time.Time
 
 	tmuxSession *tmux.Session
 	mu          sync.RWMutex
@@ -159,6 +163,11 @@ func (s *Session) UpdateHookStatus(hs *HookStatus) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Reset content hash tracking when hook status changes (fresh tracking for new state).
+	if s.hookStatus != hs.Status {
+		s.lastContentHash = ""
+		s.lastContentChangeAt = time.Time{}
+	}
 	s.hookStatus = hs.Status
 	s.hookUpdatedAt = hs.UpdatedAt
 	if hs.SessionID != "" {
@@ -244,22 +253,94 @@ func (s *Session) UpdateStatus() {
 	s.mu.RUnlock()
 
 	if hasHook {
+		// Capture pane once for content change detection and pane-based overrides.
+		var paneContent string
+		var paneStatus Status
+		if content, err := s.tmuxSession.CapturePane(); err == nil {
+			paneContent = stripANSI(content)
+			paneStatus = detectStatus(paneContent, log)
+		}
+
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		switch hookStatus {
 		case "running":
 			s.Status = StatusRunning
 			s.Acknowledged = false
+			// Check if pane shows finished/waiting — override immediately.
+			if paneStatus == StatusFinished || paneStatus == StatusWaiting {
+				s.Status = paneStatus
+				log.Info("hook says running but pane shows different, overriding", "pane", paneStatus)
+			} else if paneContent != "" {
+				// Content change detection: if content is stable >10s, Claude likely stopped.
+				hash := hashContent(normalizeForHash(paneContent))
+				if hash != s.lastContentHash {
+					s.lastContentHash = hash
+					s.lastContentChangeAt = time.Now()
+				} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) > 10*time.Second {
+					// Content stable >10s while hook says running — check for prompt.
+					if paneStatus == "" {
+						// Pane didn't match anything, but check if prompt is buried deeper.
+						// If stable this long, likely Claude stopped (e.g. user pressed Escape).
+						s.Status = StatusFinished
+						log.Info("content stable >10s, hook says running, assuming finished",
+							"stableSince", s.lastContentChangeAt.Format(time.TimeOnly))
+					}
+				}
+			}
 		case "waiting":
+			// Hook says waiting, but check pane in case user already acted.
 			s.Status = StatusWaiting
 			s.Acknowledged = false
+			if paneStatus != "" && paneStatus != StatusWaiting {
+				s.Status = paneStatus
+				log.Info("hook says waiting but pane shows different, overriding", "pane", paneStatus)
+			} else if paneContent != "" {
+				// Content change detection: if content changed since waiting started, user acted.
+				hash := hashContent(normalizeForHash(paneContent))
+				if s.lastContentHash == "" {
+					// First tick in waiting state — save baseline hash.
+					s.lastContentHash = hash
+					s.lastContentChangeAt = time.Now()
+				} else if hash != s.lastContentHash {
+					// Content changed — user acted on the prompt.
+					s.lastContentHash = hash
+					s.lastContentChangeAt = time.Now()
+					// Re-check pane now that content changed.
+					if paneStatus == StatusRunning {
+						s.Status = StatusRunning
+						log.Info("content changed while waiting, pane shows running")
+					} else if paneStatus == StatusFinished {
+						s.Status = StatusFinished
+						log.Info("content changed while waiting, pane shows finished")
+					} else {
+						// Content changed but pane unclear — assume running (user likely approved).
+						s.Status = StatusRunning
+						log.Info("content changed while waiting, assuming running")
+					}
+				} else if hookAge > 60*time.Second {
+					// Stale waiting hook with no content change — assume finished.
+					// idle_prompt hook at ~60s provides a parallel path.
+					s.Status = StatusFinished
+					log.Info("hook says waiting but stale and no content change, assuming finished",
+						"hookAge", hookAge.Round(time.Second))
+				}
+			} else if hookAge > 60*time.Second {
+				s.Status = StatusFinished
+				log.Info("hook says waiting but stale and pane unavailable, assuming finished",
+					"hookAge", hookAge.Round(time.Second))
+			}
 		case "finished":
+			s.lastContentHash = ""
+			s.lastContentChangeAt = time.Time{}
 			if s.Acknowledged {
 				s.Status = StatusIdle
 			} else {
 				s.Status = StatusFinished
 			}
 		case "dead":
+			s.lastContentHash = ""
+			s.lastContentChangeAt = time.Time{}
 			s.Status = StatusError
 		}
 		if s.Status != oldStatus {
@@ -385,7 +466,7 @@ func detectStatus(content string, log *slog.Logger) Status {
 
 	// Get last non-empty lines for analysis.
 	var recentLines []string
-	for i := len(lines) - 1; i >= 0 && len(recentLines) < 25; i-- {
+	for i := len(lines) - 1; i >= 0 && len(recentLines) < 50; i-- {
 		line := strings.TrimRight(lines[i], " \t")
 		if line != "" {
 			recentLines = append(recentLines, line)
@@ -410,6 +491,12 @@ func detectStatus(content string, log *slog.Logger) Status {
 				return StatusRunning
 			}
 		}
+	}
+
+	// Check whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)").
+	if strings.Contains(lowerContent, "…") && strings.Contains(lowerContent, "tokens") {
+		log.Debug("detectStatus: matched whimsical activity pattern")
+		return StatusRunning
 	}
 
 	// Check approval/permission prompts.
@@ -446,6 +533,36 @@ func detectStatus(content string, log *slog.Logger) Status {
 	}
 
 	return "" // No match — caller keeps previous status.
+}
+
+// normalizeForHash normalizes pane content for stable hashing.
+// Strips ANSI, spinner chars, trailing whitespace, and collapses blank lines.
+func normalizeForHash(content string) string {
+	content = stripANSI(content)
+	// Strip spinner characters.
+	for _, sc := range spinnerChars {
+		content = strings.ReplaceAll(content, sc, "")
+	}
+	// Trim trailing whitespace per line and collapse consecutive blank lines.
+	lines := strings.Split(content, "\n")
+	var result []string
+	prevBlank := false
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t")
+		blank := line == ""
+		if blank && prevBlank {
+			continue
+		}
+		result = append(result, line)
+		prevBlank = blank
+	}
+	return strings.Join(result, "\n")
+}
+
+// hashContent returns a truncated SHA256 hash (16 hex chars) of the content.
+func hashContent(content string) string {
+	h := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("%x", h[:8])
 }
 
 // stripANSI removes ANSI escape sequences from content.

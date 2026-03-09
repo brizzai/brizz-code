@@ -76,8 +76,11 @@ func handleHookHandler() {
 	if payload.HookEventName == "Notification" && payload.Matcher != nil {
 		var matcher string
 		if err := json.Unmarshal(payload.Matcher, &matcher); err == nil {
-			if matcher == "permission_prompt" || matcher == "elicitation_dialog" {
+			switch matcher {
+			case "permission_prompt", "elicitation_dialog":
 				status = "waiting"
+			case "idle_prompt":
+				status = "finished"
 			}
 		}
 	}

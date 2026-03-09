@@ -279,7 +279,21 @@ func renderPRBadge(pr *github.PR, selected bool) string {
 		return ""
 	}
 
+	// Hide closed (not merged) PRs entirely.
+	if pr.State == "CLOSED" {
+		return ""
+	}
+
 	badge := fmt.Sprintf("#%d", pr.Number)
+
+	// Merged: purple with upward arrow.
+	if pr.State == "MERGED" {
+		result := badge + " ⇡"
+		if selected {
+			return SessionStatusSelStyle.Render(result)
+		}
+		return PRMergedStyle.Render(result)
+	}
 
 	// Determine color from overall state, icons only for problems.
 	ciFail := pr.CIStatus == "FAILURE"

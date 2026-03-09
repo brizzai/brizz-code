@@ -34,6 +34,7 @@ var hookEventConfigs = []struct {
 	{Event: "Stop", Async: true},
 	{Event: "PermissionRequest", Async: true},
 	{Event: "Notification", Matcher: "permission_prompt|elicitation_dialog", Async: true},
+	{Event: "Notification", Matcher: "idle_prompt", Async: true},
 	{Event: "SessionStart", Async: true},
 	{Event: "SessionEnd", Async: true},
 }
@@ -100,16 +101,16 @@ func InjectClaudeHooks(configDir string) (bool, error) {
 		existingHooks = make(map[string]json.RawMessage)
 	}
 
-	if hooksAlreadyInstalled(existingHooks) {
-		// Check if binary path changed (rebuild) — update command if needed.
-		if !hooksNeedUpdate(existingHooks) {
-			return false, nil
-		}
+	if hooksAlreadyInstalled(existingHooks) && !hooksNeedUpdate(existingHooks) && !hasStaleHookEvents(existingHooks) {
+		return false, nil
 	}
 
 	for _, cfg := range hookEventConfigs {
 		existingHooks[cfg.Event] = mergeHookEvent(existingHooks[cfg.Event], cfg.Matcher, cfg.Async)
 	}
+
+	// Clean up stale brizz-code hooks from events we no longer subscribe to.
+	cleanStaleHookEvents(existingHooks)
 
 	hooksRaw, err := json.Marshal(existingHooks)
 	if err != nil {
@@ -234,6 +235,48 @@ func AreHooksInstalled(configDir string) bool {
 	return hooksAlreadyInstalled(existingHooks)
 }
 
+// hasStaleHookEvents checks if there are brizz-code hooks in events we no longer subscribe to.
+func hasStaleHookEvents(hooks map[string]json.RawMessage) bool {
+	activeEvents := make(map[string]bool)
+	for _, cfg := range hookEventConfigs {
+		activeEvents[cfg.Event] = true
+	}
+	for event, raw := range hooks {
+		if activeEvents[event] {
+			continue
+		}
+		if eventHasBrizzCodeHook(raw) {
+			return true
+		}
+	}
+	return false
+}
+
+// cleanStaleHookEvents removes brizz-code hooks from events we no longer subscribe to.
+func cleanStaleHookEvents(hooks map[string]json.RawMessage) {
+	activeEvents := make(map[string]bool)
+	for _, cfg := range hookEventConfigs {
+		activeEvents[cfg.Event] = true
+	}
+
+	for event, raw := range hooks {
+		if activeEvents[event] {
+			continue
+		}
+		if !eventHasBrizzCodeHook(raw) {
+			continue
+		}
+		cleaned, didRemove := removeBrizzCodeFromEvent(raw)
+		if didRemove {
+			if cleaned == nil {
+				delete(hooks, event)
+			} else {
+				hooks[event] = cleaned
+			}
+		}
+	}
+}
+
 // hooksAlreadyInstalled checks if all required brizz-code hooks are present.
 func hooksAlreadyInstalled(hooks map[string]json.RawMessage) bool {
 	for _, cfg := range hookEventConfigs {
@@ -241,8 +284,14 @@ func hooksAlreadyInstalled(hooks map[string]json.RawMessage) bool {
 		if !ok {
 			return false
 		}
-		if !eventHasBrizzCodeHook(raw) {
-			return false
+		if cfg.Matcher != "" {
+			if !eventHasBrizzCodeHookWithMatcher(raw, cfg.Matcher) {
+				return false
+			}
+		} else {
+			if !eventHasBrizzCodeHook(raw) {
+				return false
+			}
 		}
 	}
 	return true
@@ -261,10 +310,33 @@ func hooksNeedUpdate(hooks map[string]json.RawMessage) bool {
 			continue
 		}
 		for _, m := range matchers {
+			// Only check matchers relevant to this config.
+			if cfg.Matcher != "" && m.Matcher != cfg.Matcher {
+				continue
+			}
 			for _, h := range m.Hooks {
 				if strings.Contains(h.Command, brizzCodeHookMarker) && h.Command != currentCmd {
 					return true
 				}
+			}
+		}
+	}
+	return false
+}
+
+// eventHasBrizzCodeHookWithMatcher checks if a hook event contains our hook under a specific matcher.
+func eventHasBrizzCodeHookWithMatcher(raw json.RawMessage, matcher string) bool {
+	var matchers []claudeHookMatcher
+	if err := json.Unmarshal(raw, &matchers); err != nil {
+		return false
+	}
+	for _, m := range matchers {
+		if m.Matcher != matcher {
+			continue
+		}
+		for _, h := range m.Hooks {
+			if strings.Contains(h.Command, brizzCodeHookMarker) {
+				return true
 			}
 		}
 	}

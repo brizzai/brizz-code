@@ -22,6 +22,7 @@ var (
 	ColorGray    = lipgloss.Color("#565f89")
 	ColorWhite   = lipgloss.Color("#c0caf5")
 	ColorOrange  = lipgloss.Color("#ff9e64")
+	ColorPurple  = lipgloss.Color("#bb9af7")
 )
 
 // Pre-allocated styles.
@@ -106,6 +107,7 @@ var (
 	PROpenStyle    = lipgloss.NewStyle().Foreground(ColorGreen)
 	PRFailStyle    = lipgloss.NewStyle().Foreground(ColorRed)
 	PRPendingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
+	PRMergedStyle  = lipgloss.NewStyle().Foreground(ColorPurple)
 )
 
 // ApplyPalette reassigns all color vars and rebuilds all style vars from the given palette.
@@ -125,6 +127,7 @@ func ApplyPalette(p Palette) {
 	ColorGray = p.Gray
 	ColorWhite = p.Text
 	ColorOrange = p.Orange
+	ColorPurple = p.Purple
 
 	// 2. Rebuild all styles (lipgloss copies colors by value at construction).
 	TitleStyle = lipgloss.NewStyle().Bold(true).Foreground(ColorAccent)
@@ -166,6 +169,7 @@ func ApplyPalette(p Palette) {
 	PROpenStyle = lipgloss.NewStyle().Foreground(ColorGreen)
 	PRFailStyle = lipgloss.NewStyle().Foreground(ColorRed)
 	PRPendingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
+	PRMergedStyle = lipgloss.NewStyle().Foreground(ColorPurple)
 }
 
 // RenderPanelTitle renders a panel title with a divider underline.
