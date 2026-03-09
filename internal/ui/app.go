@@ -616,7 +616,20 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right", "l":
 		h.expandRepoAtCursor()
 		return h, nil
-	case "a", "n":
+	case "a":
+		// Instant session at current repo path.
+		repoPath := h.resolveCurrentRepo()
+		if repoPath == "" {
+			h.newDialog.Show()
+			return h, nil
+		}
+		repoName := filepath.Base(repoPath)
+		return h.handleSessionCreate(sessionCreateMsg{
+			path:  repoPath,
+			title: repoName,
+		})
+	case "n":
+		// Workspace/worktree picker.
 		repoPath := h.resolveCurrentRepo()
 		if repoPath == "" {
 			h.newDialog.Show()
