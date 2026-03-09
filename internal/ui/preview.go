@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/yuvalhayke/brizz-code/internal/git"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 )
@@ -82,9 +83,9 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 
 	for i := start; i < len(lines); i++ {
 		line := lines[i]
-		// Truncate long lines.
-		if len(line) > width-2 {
-			line = line[:width-2]
+		// Truncate long lines (ANSI-aware to avoid cutting escape sequences).
+		if ansi.StringWidth(line) > width-2 {
+			line = ansi.Truncate(line, width-2, "")
 		}
 		// Reset ANSI at end of each line to prevent background color bleed.
 		b.WriteString("  " + line + "\x1b[0m")

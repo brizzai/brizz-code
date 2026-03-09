@@ -69,9 +69,14 @@ func ReconnectSession(tmuxName, displayName, workDir string) *Session {
 }
 
 // Start creates a detached tmux session and runs the given command.
-func (s *Session) Start(command string) error {
+// Optional env vars are set at the tmux session level via -e flags,
+// inherited by the shell and all child processes (avoids race with shell plugins).
+func (s *Session) Start(command string, env ...string) error {
 	// Create detached session.
 	args := []string{"new-session", "-d", "-s", s.Name, "-c", s.WorkDir}
+	for _, e := range env {
+		args = append(args, "-e", e)
+	}
 	cmd := exec.Command("tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux new-session failed: %s: %w", string(output), err)
@@ -124,8 +129,14 @@ func (s *Session) ConfigureStatusBar() {
 }
 
 // RespawnPane kills the current pane process and restarts with the given command.
-func (s *Session) RespawnPane(command string) error {
-	cmd := exec.Command("tmux", "respawn-pane", "-k", "-t", s.Name+":", command)
+// Optional env vars are set via -e flags on the respawned pane.
+func (s *Session) RespawnPane(command string, env ...string) error {
+	args := []string{"respawn-pane", "-k", "-t", s.Name + ":"}
+	for _, e := range env {
+		args = append(args, "-e", e)
+	}
+	args = append(args, command)
+	cmd := exec.Command("tmux", args...)
 	return cmd.Run()
 }
 

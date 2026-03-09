@@ -66,13 +66,18 @@ func NewSession(title, projectPath string) *Session {
 	}
 }
 
-// buildClaudeCmd returns the claude command with env var and optional --resume flag.
+// buildClaudeCmd returns the claude command with optional --resume flag.
 func (s *Session) buildClaudeCmd() string {
-	cmd := fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s claude", s.ID)
+	cmd := "claude"
 	if s.ClaudeSessionID != "" {
 		cmd += fmt.Sprintf(" --resume %s", s.ClaudeSessionID)
 	}
 	return cmd
+}
+
+// sessionEnv returns the env vars to set on the tmux session for this brizz-code session.
+func (s *Session) sessionEnv() []string {
+	return []string{fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s", s.ID)}
 }
 
 // Start launches the Claude Code session in tmux.
@@ -82,7 +87,7 @@ func (s *Session) Start() error {
 	s.mu.Unlock()
 
 	cmd := s.buildClaudeCmd()
-	if err := s.tmuxSession.Start(cmd); err != nil {
+	if err := s.tmuxSession.Start(cmd, s.sessionEnv()...); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
@@ -190,7 +195,7 @@ func (s *Session) Restart() error {
 	s.mu.Unlock()
 
 	cmd := s.buildClaudeCmd()
-	if err := s.tmuxSession.Start(cmd); err != nil {
+	if err := s.tmuxSession.Start(cmd, s.sessionEnv()...); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
@@ -210,7 +215,7 @@ func (s *Session) RespawnClaude() error {
 	s.mu.Unlock()
 
 	cmd := s.buildClaudeCmd()
-	if err := s.tmuxSession.RespawnPane(cmd); err != nil {
+	if err := s.tmuxSession.RespawnPane(cmd, s.sessionEnv()...); err != nil {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
