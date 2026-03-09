@@ -54,11 +54,6 @@ func handleHookHandler() {
 		}
 	}()
 
-	instanceID := os.Getenv("BRIZZCODE_INSTANCE_ID")
-	if instanceID == "" {
-		return
-	}
-
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil || len(data) == 0 {
 		return
@@ -67,6 +62,16 @@ func handleHookHandler() {
 	var payload hookPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
 		log.Warn("hook-handler: bad JSON", "err", err)
+		return
+	}
+
+	instanceID := os.Getenv("BRIZZCODE_INSTANCE_ID")
+	if instanceID == "" {
+		log.Warn("hook-handler: no BRIZZCODE_INSTANCE_ID env var",
+			"event", payload.HookEventName,
+			"claudeSession", payload.SessionID,
+			"source", payload.Source,
+		)
 		return
 	}
 

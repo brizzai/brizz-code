@@ -508,11 +508,18 @@ func detectStatus(content string, log *slog.Logger) Status {
 	}
 
 	// Check for prompt indicator (Claude is idle, waiting for user input).
+	// Scan last few lines since Claude Code renders a separator + status bar below the prompt.
 	if len(recentLines) > 0 {
-		lastLine := strings.TrimSpace(recentLines[0]) // recentLines is reversed.
-		if lastLine == ">" || lastLine == "❯" || strings.HasPrefix(lastLine, "> ") || strings.HasPrefix(lastLine, "❯ ") {
-			log.Debug("detectStatus: matched prompt", "lastLine", lastLine)
-			return StatusFinished
+		scanLimit := 5
+		if scanLimit > len(recentLines) {
+			scanLimit = len(recentLines)
+		}
+		for i := 0; i < scanLimit; i++ {
+			line := strings.TrimSpace(recentLines[i])
+			if line == ">" || line == "❯" || strings.HasPrefix(line, "> ") || strings.HasPrefix(line, "❯ ") {
+				log.Debug("detectStatus: matched prompt", "line", line, "linesFromBottom", i)
+				return StatusFinished
+			}
 		}
 
 		// Check idle patterns anywhere in recent lines (e.g. permission mode bar).
@@ -523,6 +530,7 @@ func detectStatus(content string, log *slog.Logger) Status {
 			}
 		}
 
+		lastLine := strings.TrimSpace(recentLines[0])
 		log.Debug("detectStatus: no pattern matched",
 			"lastLine", lastLine,
 			"lastLineHex", fmt.Sprintf("%x", lastLine),
