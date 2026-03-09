@@ -77,7 +77,10 @@ func (s *Session) buildClaudeCmd() string {
 
 // sessionEnv returns the env vars to set on the tmux session for this brizz-code session.
 func (s *Session) sessionEnv() []string {
-	return []string{fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s", s.ID)}
+	return []string{
+		fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s", s.ID),
+		"ZSH_DOTENV_PROMPT=false", // Auto-source .env without prompting (oh-my-zsh dotenv plugin).
+	}
 }
 
 // Start launches the Claude Code session in tmux.
