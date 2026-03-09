@@ -267,25 +267,26 @@ func (s *Session) UpdateStatus() {
 		case "running":
 			s.Status = StatusRunning
 			s.Acknowledged = false
-			// Check if pane shows finished/waiting — override immediately.
-			if paneStatus == StatusFinished || paneStatus == StatusWaiting {
+			// Only override to waiting immediately (permission prompts are unambiguous).
+			// Do NOT override to finished here — the old ❯ prompt from the previous turn
+			// is always visible in scrollback and causes false "finished" flashes between
+			// spinner frames. Let content stability (10s) handle running→finished.
+			if paneStatus == StatusWaiting {
 				s.Status = paneStatus
-				log.Info("hook says running but pane shows different, overriding", "pane", paneStatus)
-			} else if paneContent != "" {
+				log.Info("hook says running but pane shows waiting, overriding")
+			}
+			if paneContent != "" {
 				// Content change detection: if content is stable >10s, Claude likely stopped.
 				hash := hashContent(normalizeForHash(paneContent))
 				if hash != s.lastContentHash {
 					s.lastContentHash = hash
 					s.lastContentChangeAt = time.Now()
 				} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) > 10*time.Second {
-					// Content stable >10s while hook says running — check for prompt.
-					if paneStatus == "" {
-						// Pane didn't match anything, but check if prompt is buried deeper.
-						// If stable this long, likely Claude stopped (e.g. user pressed Escape).
-						s.Status = StatusFinished
-						log.Info("content stable >10s, hook says running, assuming finished",
-							"stableSince", s.lastContentChangeAt.Format(time.TimeOnly))
-					}
+					// Content stable >10s while hook says running — Claude likely stopped
+					// (e.g. user pressed Escape, no Stop hook fires).
+					s.Status = StatusFinished
+					log.Info("content stable >10s, hook says running, assuming finished",
+						"stableSince", s.lastContentChangeAt.Format(time.TimeOnly))
 				}
 			}
 		case "waiting":
