@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -622,8 +623,8 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return h, h.attachSelected()
 	case " ":
-		// Toggle repo group (on repo header or on session under that repo).
-		h.toggleRepoGroupAtCursor()
+		// Jump to next waiting (or finished) session.
+		h.jumpToNextAttentionSession()
 		return h, nil
 	case "left", "h":
 		h.collapseRepoAtCursor()
@@ -910,30 +911,80 @@ func (h *Home) collapseRepoAtCursor() {
 	h.syncViewport()
 }
 
-func (h *Home) toggleRepoGroupAtCursor() {
-	if h.cursor < 0 || h.cursor >= len(h.flatItems) {
+
+// jumpToNextAttentionSession cycles through sessions needing attention:
+// waiting first, then finished. Wraps around, auto-expands collapsed groups.
+func (h *Home) jumpToNextAttentionSession() {
+	// Build ordered list of ALL sessions (same order as sidebar).
+	groups := session.GroupByRepo(h.sessions)
+	repos := make([]string, 0, len(groups))
+	for repo := range groups {
+		repos = append(repos, repo)
+	}
+	sort.Strings(repos)
+
+	type candidate struct {
+		s    *session.Session
+		repo string
+	}
+	var allSessions []candidate
+	for _, repo := range repos {
+		for _, s := range groups[repo] {
+			allSessions = append(allSessions, candidate{s: s, repo: repo})
+		}
+	}
+	if len(allSessions) == 0 {
 		return
 	}
-	item := h.flatItems[h.cursor]
-	if item.IsRepoHeader {
-		h.toggleRepoGroup()
-		return
+
+	// Find the current session's position in allSessions.
+	var currentID string
+	if h.cursor >= 0 && h.cursor < len(h.flatItems) && !h.flatItems[h.cursor].IsRepoHeader {
+		if s := h.flatItems[h.cursor].Session; s != nil {
+			currentID = s.ID
+		}
 	}
-	// Find the repo header for this session.
-	if item.Session != nil {
-		repo := session.GetRepoRoot(item.Session.ProjectPath)
-		h.repoExpanded[repo] = !h.repoExpanded[repo]
-		h.rebuildFlatItems()
-		// Move cursor to repo header if group collapsed.
-		if !h.repoExpanded[repo] {
-			for i, fi := range h.flatItems {
-				if fi.IsRepoHeader && fi.RepoPath == repo {
-					h.cursor = i
-					break
-				}
+	currentIdx := -1
+	for i, c := range allSessions {
+		if c.s.ID == currentID {
+			currentIdx = i
+			break
+		}
+	}
+
+	// findNext scans forward (wrapping) for a session with the given status.
+	findNext := func(status session.Status) *candidate {
+		n := len(allSessions)
+		start := currentIdx + 1
+		for i := 0; i < n; i++ {
+			c := &allSessions[(start+i)%n]
+			if c.s.GetStatus() == status {
+				return c
 			}
 		}
-		h.syncViewport()
+		return nil
+	}
+
+	// Priority: waiting > finished.
+	target := findNext(session.StatusWaiting)
+	if target == nil {
+		target = findNext(session.StatusFinished)
+	}
+	if target == nil {
+		return // Silent no-op.
+	}
+
+	// Expand the repo group if collapsed.
+	h.repoExpanded[target.repo] = true
+	h.rebuildFlatItems()
+
+	// Set cursor to the target session.
+	for i, item := range h.flatItems {
+		if !item.IsRepoHeader && item.Session != nil && item.Session.ID == target.s.ID {
+			h.cursor = i
+			h.syncViewport()
+			return
+		}
 	}
 }
 

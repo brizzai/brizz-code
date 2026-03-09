@@ -15,12 +15,12 @@ type KeyBinding struct {
 // Add new keybindings here — help bar and overlay auto-update.
 var allKeyBindings = []KeyBinding{
 	// Navigation.
-	{Key: "j / ↓", BarKey: "j/k", BarDesc: "Nav", Desc: "Move down", Section: "nav"},
+	{Key: "j / ↓", BarKey: "↑↓", BarDesc: "Nav", Desc: "Move down", Section: "nav"},
 	{Key: "k / ↑", Desc: "Move up", Section: "nav"},
 
 	// Session actions.
 	{Key: "Enter", BarKey: "⏎", BarDesc: "Open", Desc: "Attach / toggle group", Section: "session"},
-	{Key: "Space", Desc: "Toggle repo group", Section: "session"},
+	{Key: "Space", BarKey: "␣", BarDesc: "Next", Desc: "Jump to next waiting/finished", Section: "session"},
 	{Key: "← / h", Desc: "Collapse group", Section: "session"},
 	{Key: "→ / l", Desc: "Expand group", Section: "session"},
 	{Key: "a", BarKey: "a", BarDesc: "New", Desc: "New session", Section: "session"},
