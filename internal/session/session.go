@@ -338,17 +338,9 @@ func (s *Session) UpdateStatus() {
 						s.Status = StatusRunning
 						log.Info("content changed while waiting, assuming running")
 					}
-				} else if hookAge > 60*time.Second {
-					// Stale waiting hook with no content change — assume finished.
-					// idle_prompt hook at ~60s provides a parallel path.
-					s.Status = StatusFinished
-					log.Info("hook says waiting but stale and no content change, assuming finished",
-						"hookAge", hookAge.Round(time.Second))
 				}
-			} else if hookAge > 60*time.Second {
-				s.Status = StatusFinished
-				log.Info("hook says waiting but stale and pane unavailable, assuming finished",
-					"hookAge", hookAge.Round(time.Second))
+				// No stale timeout — trust hooks. idle_prompt hook at ~60s
+				// handles the case where user escaped/denied without a Stop hook.
 			}
 		case "finished":
 			s.lastContentHash = ""

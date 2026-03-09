@@ -980,7 +980,10 @@ func (h *Home) quickApproveSelected() tea.Cmd {
 	}
 	ts := s.GetTmuxSession()
 	return func() tea.Msg {
-		err := ts.SendKeys("y")
+		// Send "y" then Enter: menu-style prompts ignore "y" and Enter confirms;
+		// (Y/n) and (y/N) prompts accept "y" as approval, Enter submits.
+		_ = ts.SendKeys("y")
+		err := ts.SendKeys("Enter")
 		return quickApproveMsg{err: err}
 	}
 }
