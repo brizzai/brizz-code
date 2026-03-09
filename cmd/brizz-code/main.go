@@ -23,6 +23,13 @@ func main() {
 		return
 	}
 
+	// Chrome launches native messaging hosts with chrome-extension://... as the sole argument.
+	// Detect this and route to chrome-host handler.
+	if strings.HasPrefix(args[0], "chrome-extension://") {
+		handleChromeHost()
+		return
+	}
+
 	switch args[0] {
 	case "add":
 		if len(args) < 2 {
@@ -40,6 +47,8 @@ func main() {
 		runRemove(args[1])
 	case "hook-handler":
 		handleHookHandler()
+	case "chrome-host":
+		handleChromeHost()
 	case "hooks":
 		handleHooksCmd(args[1:])
 	case "help", "--help", "-h":

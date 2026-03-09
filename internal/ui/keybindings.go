@@ -29,6 +29,7 @@ var allKeyBindings = []KeyBinding{
 	{Key: "r", BarKey: "r", BarDesc: "Restart", Desc: "Restart session", Section: "session"},
 	{Key: "R", Desc: "Rename session", Section: "session"},
 	{Key: "e", Desc: "Open in editor", Section: "session"},
+	{Key: "p", BarKey: "p", BarDesc: "PR", Desc: "Open PR in browser", Section: "session"},
 	{Key: "/", BarKey: "/", BarDesc: "Filter", Desc: "Filter sessions", Section: "session"},
 
 	// Global.

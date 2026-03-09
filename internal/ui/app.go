@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/yuvalhayke/brizz-code/internal/chrome"
 	"github.com/yuvalhayke/brizz-code/internal/config"
 	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/git"
@@ -63,6 +64,7 @@ type (
 		err         error
 	}
 	openEditorMsg  struct{ err error }
+	openPRMsg      struct{ err error }
 	spinnerTickMsg struct{}
 )
 
@@ -260,6 +262,12 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openEditorMsg:
 		if msg.err != nil {
 			h.setError(fmt.Errorf("editor: %w", msg.err))
+		}
+		return h, nil
+
+	case openPRMsg:
+		if msg.err != nil {
+			h.setError(msg.err)
 		}
 		return h, nil
 
@@ -645,6 +653,8 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, h.renameSelected()
 	case "e":
 		return h, h.openEditorSelected()
+	case "p":
+		return h, h.openPRInBrowser()
 	case "/":
 		h.filterActive = true
 		h.filterInput.Focus()
@@ -944,6 +954,44 @@ func (h *Home) openEditorSelected() tea.Cmd {
 		cmd := exec.Command(editor, projectPath)
 		err := cmd.Start()
 		return openEditorMsg{err: err}
+	}
+}
+
+func (h *Home) openPRInBrowser() tea.Cmd {
+	repo := h.resolveCurrentRepo()
+	if repo == "" {
+		h.setError(fmt.Errorf("no repo selected"))
+		return nil
+	}
+
+	info := h.gitInfoCache[repo]
+	if info == nil || info.PR == nil || info.PR.URL == "" {
+		h.setError(fmt.Errorf("no PR for this branch"))
+		return nil
+	}
+
+	prURL := info.PR.URL
+	repoName := filepath.Base(repo)
+
+	return func() tea.Msg {
+		// Try Chrome extension first.
+		client := &chrome.Client{}
+		cmd := &chrome.Command{
+			ID:     fmt.Sprintf("pr-%d", time.Now().UnixNano()),
+			Action: chrome.ActionOpenOrFocus,
+			URL:    prURL,
+			Group:  repoName,
+		}
+
+		_, err := client.Send(cmd)
+		if err != nil {
+			// Fallback to macOS open command.
+			debuglog.Logger.Debug("chrome extension unavailable, falling back to open", "err", err)
+			if openErr := exec.Command("open", prURL).Start(); openErr != nil {
+				return openPRMsg{err: fmt.Errorf("open PR: %w", openErr)}
+			}
+		}
+		return openPRMsg{}
 	}
 }
 
@@ -1321,6 +1369,7 @@ func (h *Home) loadSessions() tea.Msg {
 	// These block but run in the tea.Cmd goroutine, not Update().
 	configDir := hooks.GetClaudeConfigDir()
 	hooks.InjectClaudeHooks(configDir)
+	chrome.InstallNativeMessagingHost()
 	ghAvailable := github.IsGHAvailable()
 
 	// Check for claude CLI availability.

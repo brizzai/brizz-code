@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "brizz-code",
+  "version": "1.0.0",
+  "description": "Chrome tab control for brizz-code",
+  "permissions": ["tabs", "tabGroups", "nativeMessaging"],
+  "background": { "service_worker": "service-worker.js" },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4XsmMeTwqcOkTcrmySd0yeKXYwmDVI2R5oP5hJ3QUmpv1pKg3TOCWJ368xIVj9TrCOsO+uGtcxij4ZBPJnaOYRF3yYolefVTEPoz0zm/iA6Q0ovuKaK6jBF85uQ/SYO+TrG9/mYZxLksmceh7zINxHnd+aK2oc6yWpD0coSEDshHVR4/SoP4hcspxmDlUIYPdC4MKUSUqWXXxZJ+G1UUGPUhV4JhVEL1lKqmtiZjWBKXkVt+ZbSCSMLW+76jB9lP51xLHV2X2ItiuD6nKU3inDloGDwa7r/FPbsl+PsOuD87SDGcVzunmZ7rAAL24EjFqy0SN/lMW6sT4bZr2YzlbwIDAQAB"
+}
