@@ -1,3 +1,8 @@
 build/
 /brizz-code
+/brizz-desktop
 *.log
+
+# Frontend build artifacts
+node_modules/
+dist/

@@ -24,7 +24,7 @@ var allKeyBindings = []KeyBinding{
 	{Key: "← / h", Desc: "Collapse group", Section: "session"},
 	{Key: "→ / l", Desc: "Expand group", Section: "session"},
 	{Key: "a", BarKey: "a", BarDesc: "New", Desc: "New session", Section: "session"},
-	{Key: "n", Desc: "New session in workspace", Section: "session"},
+	{Key: "n", BarKey: "n", BarDesc: "Wksp", Desc: "New session in workspace", Section: "session"},
 	{Key: "d", BarKey: "d", BarDesc: "Del", Desc: "Delete session", Section: "session"},
 	{Key: "r", BarKey: "r", BarDesc: "Restart", Desc: "Restart session", Section: "session"},
 	{Key: "R", Desc: "Rename session", Section: "session"},
