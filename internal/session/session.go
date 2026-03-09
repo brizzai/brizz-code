@@ -305,17 +305,19 @@ func (s *Session) UpdateStatus() {
 				}
 			}
 		case "waiting":
-			// Hook says waiting — trust hooks as authoritative.
-			// Only override to running (spinner/busy is unambiguous).
-			// Never override to finished: pane detection's ❯ prompt match
-			// false-positives on Claude's menu selector (e.g. "❯ 1. Yes").
-			// Hooks will fire the correct event for waiting→finished transitions.
+			// Hook says waiting — trust hooks fully, never override from pane.
+			//
+			// Why no pane override at all:
+			// - waiting→finished: ❯ prompt match false-positives on Claude's menu
+			//   selector (e.g. "❯ 1. Yes, allow once")
+			// - waiting→running: stale "Running…" / spinner text from subagent output
+			//   above the permission prompt triggers whimsical/spinner patterns
+			// - If user approves, UserPromptSubmit hook fires within milliseconds
+			// - If user denies/escapes, idle_prompt hook at ~60s handles it
+			// - Content change detection below handles the gap if hooks are delayed
 			s.Status = StatusWaiting
 			s.Acknowledged = false
-			if paneStatus == StatusRunning {
-				s.Status = StatusRunning
-				log.Info("hook says waiting but pane shows running, overriding")
-			} else if paneContent != "" {
+			if paneContent != "" {
 				// Content change detection: if content changed since waiting started, user acted.
 				hash := hashContent(normalizeForHash(paneContent))
 				if s.lastContentHash == "" {
@@ -324,23 +326,13 @@ func (s *Session) UpdateStatus() {
 					s.lastContentChangeAt = time.Now()
 				} else if hash != s.lastContentHash {
 					// Content changed — user acted on the prompt.
+					// Transition to running (approval is the most common action).
+					// Hooks will correct to the right status within milliseconds.
 					s.lastContentHash = hash
 					s.lastContentChangeAt = time.Now()
-					// Re-check pane now that content changed.
-					if paneStatus == StatusRunning {
-						s.Status = StatusRunning
-						log.Info("content changed while waiting, pane shows running")
-					} else if paneStatus == StatusFinished {
-						s.Status = StatusFinished
-						log.Info("content changed while waiting, pane shows finished")
-					} else {
-						// Content changed but pane unclear — assume running (user likely approved).
-						s.Status = StatusRunning
-						log.Info("content changed while waiting, assuming running")
-					}
+					s.Status = StatusRunning
+					log.Info("content changed while waiting, assuming running")
 				}
-				// No stale timeout — trust hooks. idle_prompt hook at ~60s
-				// handles the case where user escaped/denied without a Stop hook.
 			}
 		case "finished":
 			s.lastContentHash = ""
