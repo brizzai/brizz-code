@@ -101,6 +101,8 @@ type Home struct {
 	workspacePicker       *WorkspacePickerDialog
 	createWorkspaceDialog *CreateWorkspaceDialog
 
+	pendingWorkspaces []*PendingWorkspace // in-flight workspace creations
+
 	repoExpanded     map[string]bool // repo path -> expanded state
 	previewCache     map[string]string
 	previewCacheTime map[string]time.Time
@@ -326,22 +328,51 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return h, nil
 
 	case workspaceCreateMsg:
-		h.createWorkspaceDialog.SetCreating(true)
+		// Close dialog immediately — creation runs in background.
+		h.createWorkspaceDialog.Hide()
+
+		pw := &PendingWorkspace{
+			ID:       generatePendingID(),
+			Name:     msg.name,
+			RepoPath: msg.repoPath,
+		}
+		h.pendingWorkspaces = append(h.pendingWorkspaces, pw)
+
+		// Expand the repo group and rebuild sidebar.
+		h.repoExpanded[msg.repoPath] = true
+		h.rebuildFlatItems()
+
+		// Auto-select the phantom entry.
+		for i, item := range h.flatItems {
+			if item.Pending != nil && item.Pending.ID == pw.ID {
+				h.cursor = i
+				h.syncViewport()
+				break
+			}
+		}
+
+		pendingID := pw.ID
 		provider := msg.provider
 		repoPath := msg.repoPath
 		name := msg.name
 		branch := msg.branch
 		return h, tea.Batch(func() tea.Msg {
 			info, err := provider.Create(repoPath, name, branch)
-			return workspaceCreateResultMsg{info: info, err: err}
+			return workspaceCreateResultMsg{info: info, err: err, pendingID: pendingID, repoPath: repoPath}
 		}, spinnerTickCmd)
 
 	case workspaceCreateResultMsg:
+		h.removePendingWorkspace(msg.pendingID)
+
 		if msg.err != nil {
-			h.createWorkspaceDialog.SetError(msg.err.Error())
+			h.setError(fmt.Errorf("workspace create failed: %w", msg.err))
+			h.rebuildFlatItems()
+			// Clamp cursor if it was on the removed phantom.
+			if h.cursor >= len(h.flatItems) && len(h.flatItems) > 0 {
+				h.cursor = len(h.flatItems) - 1
+			}
 			return h, nil
 		}
-		h.createWorkspaceDialog.Hide()
 		return h.handleSessionCreate(sessionCreateMsg{
 			path:          msg.info.Path,
 			title:         msg.info.Name,
@@ -362,6 +393,13 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if h.createWorkspaceDialog.IsVisible() && h.createWorkspaceDialog.creating {
 			h.createWorkspaceDialog.frame++
+			return h, spinnerTickCmd
+		}
+		// Animate pending workspace spinners in sidebar.
+		if len(h.pendingWorkspaces) > 0 {
+			for _, pw := range h.pendingWorkspaces {
+				pw.Frame++
+			}
 			return h, spinnerTickCmd
 		}
 		return h, nil
@@ -1437,7 +1475,16 @@ func (h *Home) selectedRepoInfo() *git.RepoInfo {
 // --- Internal helpers ---
 
 func (h *Home) rebuildFlatItems() {
-	h.flatItems = BuildFlatItems(h.sessions, h.repoExpanded, h.filterText)
+	h.flatItems = BuildFlatItems(h.sessions, h.pendingWorkspaces, h.repoExpanded, h.filterText)
+}
+
+func (h *Home) removePendingWorkspace(id string) {
+	for i, pw := range h.pendingWorkspaces {
+		if pw.ID == id {
+			h.pendingWorkspaces = append(h.pendingWorkspaces[:i], h.pendingWorkspaces[i+1:]...)
+			return
+		}
+	}
 }
 
 func (h *Home) rebuildSessionMap() {

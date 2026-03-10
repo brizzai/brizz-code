@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"crypto/rand"
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -11,6 +13,20 @@ import (
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+// PendingWorkspace represents an in-flight workspace creation shown as a phantom sidebar entry.
+type PendingWorkspace struct {
+	ID       string // unique ID for matching results back
+	Name     string // display name
+	RepoPath string // which repo group to show under
+	Frame    int    // spinner animation frame counter
+}
+
+func generatePendingID() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("pending-%x", b)
+}
+
 // Messages for workspace creation flow.
 type (
 	workspaceCreateMsg struct {
@@ -19,8 +35,10 @@ type (
 		provider     workspace.Provider
 	}
 	workspaceCreateResultMsg struct {
-		info *workspace.WorkspaceInfo
-		err  error
+		info      *workspace.WorkspaceInfo
+		err       error
+		pendingID string
+		repoPath  string
 	}
 	workspaceDestroyResultMsg struct {
 		sessionID string

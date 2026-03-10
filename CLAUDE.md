@@ -34,7 +34,7 @@ internal/ui/palette.go       # Theme palette definitions (5 built-in themes)
 internal/ui/settings.go      # Settings dialog (S key)
 internal/ui/keybindings.go   # Centralized keybinding definitions
 internal/ui/workspace_picker.go  # Workspace picker dialog (provider integration)
-internal/ui/workspace_create.go  # Create workspace sub-dialog
+internal/ui/workspace_create.go  # Create workspace sub-dialog + PendingWorkspace phantom entries
 internal/chrome/protocol.go      # Command/Response types, action constants, socket path
 internal/chrome/native_host.go   # Native messaging host with Unix socket bridge
 internal/chrome/client.go        # TUI-side client (connects to socket, sends commands)
@@ -66,6 +66,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
 - Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions)
 - Workspace: built-in git worktree support (zero config), per-repo `.bc.json` overrides with custom shell commands
+- Workspace creation is non-blocking: dialog closes immediately, phantom "Creating..." entry with spinner appears in sidebar, user can keep navigating
 - `.bc.json` / `.bc.local.json` in repo root: `{"workspace": {"list": "cmd", "create": "cmd {{name}} {{branch}}", "destroy": "cmd {{name}}"}}`
 - Claude session resume: captures Claude session_id from hooks, uses `claude --resume <id>` on restart
 - Editor: config.editor > $EDITOR > "code" (VS Code)

@@ -27,6 +27,7 @@ type SidebarItem struct {
 	IsLast       bool // last session in its repo group
 	Expanded     bool // only for repo headers
 	SessionCount int  // only for repo headers: total sessions in group
+	Pending      *PendingWorkspace // non-nil for phantom "creating..." entries
 }
 
 // RepoGroupInfo holds session counts/statuses for a repo group (used when collapsed).
@@ -38,8 +39,16 @@ type RepoGroupInfo struct {
 // BuildFlatItems groups sessions by repo and flattens into a navigable list.
 // expanded maps repo path -> whether the group is expanded.
 // filter, when non-empty, only includes sessions whose title contains the filter string.
-func BuildFlatItems(sessions []*session.Session, expanded map[string]bool, filter string) []SidebarItem {
+// pending workspaces are injected as phantom entries under their repo group.
+func BuildFlatItems(sessions []*session.Session, pending []*PendingWorkspace, expanded map[string]bool, filter string) []SidebarItem {
 	groups := session.GroupByRepo(sessions)
+
+	// Include repos that only have pending workspaces (no sessions yet).
+	for _, pw := range pending {
+		if _, exists := groups[pw.RepoPath]; !exists {
+			groups[pw.RepoPath] = nil
+		}
+	}
 
 	// Sort repo paths alphabetically.
 	repos := make([]string, 0, len(groups))
@@ -50,9 +59,16 @@ func BuildFlatItems(sessions []*session.Session, expanded map[string]bool, filte
 
 	lowerFilter := strings.ToLower(filter)
 
+	// Index pending workspaces by repo for fast lookup.
+	pendingByRepo := make(map[string][]*PendingWorkspace)
+	for _, pw := range pending {
+		pendingByRepo[pw.RepoPath] = append(pendingByRepo[pw.RepoPath], pw)
+	}
+
 	var items []SidebarItem
 	for _, repo := range repos {
 		groupSessions := groups[repo]
+		repoPending := pendingByRepo[repo]
 
 		// Apply filter: only include matching sessions.
 		var filtered []*session.Session
@@ -62,8 +78,9 @@ func BuildFlatItems(sessions []*session.Session, expanded map[string]bool, filte
 					filtered = append(filtered, s)
 				}
 			}
-			if len(filtered) == 0 {
-				continue // Skip repo groups with no matching sessions.
+			// Skip repo groups with no matching sessions and no pending.
+			if len(filtered) == 0 && len(repoPending) == 0 {
+				continue
 			}
 		} else {
 			filtered = groupSessions
@@ -75,14 +92,27 @@ func BuildFlatItems(sessions []*session.Session, expanded map[string]bool, filte
 			IsRepoHeader: true,
 			RepoPath:     repo,
 			Expanded:     isExpanded,
-			SessionCount: len(groupSessions), // Always show total count.
+			SessionCount: len(groupSessions), // Always show total count (real sessions only).
 		})
 
 		if isExpanded {
-			for i, s := range filtered {
+			totalChildren := len(filtered) + len(repoPending)
+			childIdx := 0
+
+			for _, s := range filtered {
+				childIdx++
 				items = append(items, SidebarItem{
 					Session: s,
-					IsLast:  i == len(filtered)-1,
+					IsLast:  childIdx == totalChildren,
+				})
+			}
+
+			// Append pending workspaces after real sessions.
+			for _, pw := range repoPending {
+				childIdx++
+				items = append(items, SidebarItem{
+					Pending: pw,
+					IsLast:  childIdx == totalChildren,
 				})
 			}
 		}
@@ -152,6 +182,8 @@ func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map
 			info := CollectGroupInfo(sessions, item.RepoPath)
 			repoInfo := gitInfo[item.RepoPath]
 			b.WriteString(renderRepoHeader(item.RepoPath, item.Expanded, info, repoInfo, width, i == cursor))
+		} else if item.Pending != nil {
+			b.WriteString(renderPendingItem(item.Pending, item.IsLast, width, i == cursor))
 		} else {
 			b.WriteString(renderSessionItem(item.Session, item.IsLast, width, i == cursor))
 		}
@@ -372,6 +404,41 @@ func renderSessionItem(s *session.Session, isLast bool, width int, selected bool
 
 	styledConnector := treeStyle.Render(connector)
 	return fmt.Sprintf(" %s%s %s %s", selPrefix, styledConnector, styledSymbol, styledTitle)
+}
+
+func renderPendingItem(pw *PendingWorkspace, isLast bool, width int, selected bool) string {
+	spinner := spinnerFrames[pw.Frame%len(spinnerFrames)]
+	title := "Creating \"" + pw.Name + "\"..."
+
+	connector := treeBranch
+	if isLast {
+		connector = treeLast
+	}
+
+	maxTitleLen := width - 10
+	if maxTitleLen < 10 {
+		maxTitleLen = 10
+	}
+	if len(title) > maxTitleLen {
+		title = title[:maxTitleLen-1] + "…"
+	}
+
+	selPrefix := " "
+	treeStyle := DimStyle
+	var styledSpinner, styledTitle string
+
+	if selected {
+		selPrefix = SessionSelectionPrefix.Render("▶")
+		treeStyle = TreeConnectorSelStyle
+		styledSpinner = SessionStatusSelStyle.Render(spinner)
+		styledTitle = SessionTitleSelStyle.Render(" " + title + " ")
+	} else {
+		styledSpinner = lipgloss.NewStyle().Foreground(ColorAccent).Render(spinner)
+		styledTitle = DimStyle.Render(title)
+	}
+
+	styledConnector := treeStyle.Render(connector)
+	return fmt.Sprintf(" %s%s %s %s", selPrefix, styledConnector, styledSpinner, styledTitle)
 }
 
 // NextSelectableItem finds the next item index (repo headers are now selectable).
