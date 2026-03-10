@@ -8,10 +8,12 @@ import (
 
 // StatusFile is the JSON format written to ~/.config/brizz-code/hooks/{session_id}.json.
 type StatusFile struct {
-	Status    string `json:"status"`
-	SessionID string `json:"session_id,omitempty"`
-	Event     string `json:"event"`
-	Timestamp int64  `json:"ts"`
+	Status      string `json:"status"`
+	SessionID   string `json:"session_id,omitempty"`
+	Event       string `json:"event"`
+	Timestamp   int64  `json:"ts"`
+	UserPrompt  string `json:"user_prompt,omitempty"`
+	PromptCount int    `json:"prompt_count,omitempty"`
 }
 
 // WriteStatusFile atomically writes a status file to the hooks directory.

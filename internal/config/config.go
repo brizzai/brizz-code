@@ -12,6 +12,15 @@ type Config struct {
 	DefaultProjectPath string `json:"default_project_path,omitempty"`
 	Editor             string `json:"editor,omitempty"`
 	Theme              string `json:"theme,omitempty"`
+	AutoNameSessions   *bool  `json:"auto_name_sessions,omitempty"`
+}
+
+// IsAutoNameEnabled returns whether auto-naming is enabled (default: true).
+func (c *Config) IsAutoNameEnabled() bool {
+	if c.AutoNameSessions == nil {
+		return true
+	}
+	return *c.AutoNameSessions
 }
 
 // DefaultConfigPath returns the default config file path.

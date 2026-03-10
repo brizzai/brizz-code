@@ -27,6 +27,10 @@ type SessionRow struct {
 	Acknowledged    bool
 	ClaudeSessionID string
 	WorkspaceName   string
+	ManuallyRenamed bool
+	FirstPrompt     string
+	TitleGenerated  bool
+	PromptCount     int
 }
 
 // DefaultDBPath returns the default database path.
@@ -107,6 +111,32 @@ func (s *StateDB) migrate() error {
 		}
 	}
 
+	// Add auto-naming columns if missing.
+	if !s.hasColumn("sessions", "manually_renamed") {
+		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN manually_renamed INTEGER NOT NULL DEFAULT 0`)
+		if err != nil {
+			return err
+		}
+	}
+	if !s.hasColumn("sessions", "first_prompt") {
+		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN first_prompt TEXT NOT NULL DEFAULT ''`)
+		if err != nil {
+			return err
+		}
+	}
+	if !s.hasColumn("sessions", "title_generated") {
+		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN title_generated INTEGER NOT NULL DEFAULT 0`)
+		if err != nil {
+			return err
+		}
+	}
+	if !s.hasColumn("sessions", "prompt_count") {
+		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN prompt_count INTEGER NOT NULL DEFAULT 0`)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -135,12 +165,14 @@ func (s *StateDB) hasColumn(table, column string) bool {
 // SaveSession inserts or replaces a session row.
 func (s *StateDB) SaveSession(row *SessionRow) error {
 	_, err := s.db.Exec(`
-		INSERT OR REPLACE INTO sessions (id, title, project_path, status, tmux_session, created_at, last_accessed, acknowledged, claude_session_id, workspace_name)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT OR REPLACE INTO sessions (id, title, project_path, status, tmux_session, created_at, last_accessed, acknowledged, claude_session_id, workspace_name, manually_renamed, first_prompt, title_generated, prompt_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		row.ID, row.Title, row.ProjectPath, row.Status, row.TmuxSession,
 		row.CreatedAt.Unix(), row.LastAccessed.Unix(), boolToInt(row.Acknowledged),
 		row.ClaudeSessionID, row.WorkspaceName,
+		boolToInt(row.ManuallyRenamed), row.FirstPrompt, boolToInt(row.TitleGenerated),
+		row.PromptCount,
 	)
 	return err
 }
@@ -148,7 +180,7 @@ func (s *StateDB) SaveSession(row *SessionRow) error {
 // LoadSessions returns all sessions ordered by creation time.
 func (s *StateDB) LoadSessions() ([]*SessionRow, error) {
 	rows, err := s.db.Query(`
-		SELECT id, title, project_path, status, tmux_session, created_at, last_accessed, acknowledged, claude_session_id, workspace_name
+		SELECT id, title, project_path, status, tmux_session, created_at, last_accessed, acknowledged, claude_session_id, workspace_name, manually_renamed, first_prompt, title_generated, prompt_count
 		FROM sessions ORDER BY created_at
 	`)
 	if err != nil {
@@ -160,13 +192,15 @@ func (s *StateDB) LoadSessions() ([]*SessionRow, error) {
 	for rows.Next() {
 		var r SessionRow
 		var createdAt, lastAccessed int64
-		var ack int
-		if err := rows.Scan(&r.ID, &r.Title, &r.ProjectPath, &r.Status, &r.TmuxSession, &createdAt, &lastAccessed, &ack, &r.ClaudeSessionID, &r.WorkspaceName); err != nil {
+		var ack, manuallyRenamed, titleGenerated int
+		if err := rows.Scan(&r.ID, &r.Title, &r.ProjectPath, &r.Status, &r.TmuxSession, &createdAt, &lastAccessed, &ack, &r.ClaudeSessionID, &r.WorkspaceName, &manuallyRenamed, &r.FirstPrompt, &titleGenerated, &r.PromptCount); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = time.Unix(createdAt, 0)
 		r.LastAccessed = time.Unix(lastAccessed, 0)
 		r.Acknowledged = ack != 0
+		r.ManuallyRenamed = manuallyRenamed != 0
+		r.TitleGenerated = titleGenerated != 0
 		sessions = append(sessions, &r)
 	}
 	return sessions, rows.Err()
@@ -221,6 +255,36 @@ func (s *StateDB) UpdateTitle(id, title string) error {
 // UpdateWorkspaceName updates the workspace name for a session.
 func (s *StateDB) UpdateWorkspaceName(id, name string) error {
 	_, err := s.db.Exec("UPDATE sessions SET workspace_name = ? WHERE id = ?", name, id)
+	return err
+}
+
+// MarkManuallyRenamed marks a session as manually renamed (prevents auto-rename).
+func (s *StateDB) MarkManuallyRenamed(id string) error {
+	_, err := s.db.Exec("UPDATE sessions SET manually_renamed = 1 WHERE id = ?", id)
+	return err
+}
+
+// UpdateFirstPrompt stores the first user prompt for a session.
+func (s *StateDB) UpdateFirstPrompt(id, prompt string) error {
+	_, err := s.db.Exec("UPDATE sessions SET first_prompt = ? WHERE id = ?", prompt, id)
+	return err
+}
+
+// MarkTitleGenerated marks a session's title as generated (prevents re-generation).
+func (s *StateDB) MarkTitleGenerated(id string) error {
+	_, err := s.db.Exec("UPDATE sessions SET title_generated = 1 WHERE id = ?", id)
+	return err
+}
+
+// ResetTitleGenerated clears the title_generated flag to allow re-generation.
+func (s *StateDB) ResetTitleGenerated(id string) error {
+	_, err := s.db.Exec("UPDATE sessions SET title_generated = 0 WHERE id = ?", id)
+	return err
+}
+
+// UpdatePromptCount updates the prompt count for a session.
+func (s *StateDB) UpdatePromptCount(id string, count int) error {
+	_, err := s.db.Exec("UPDATE sessions SET prompt_count = ? WHERE id = ?", count, id)
 	return err
 }
 

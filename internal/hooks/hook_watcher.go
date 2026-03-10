@@ -15,10 +15,12 @@ const hookDebounce = 100 * time.Millisecond
 
 // HookStatus holds the decoded status from a hook status file.
 type HookStatus struct {
-	Status    string
-	SessionID string
-	Event     string
-	UpdatedAt time.Time
+	Status      string
+	SessionID   string
+	Event       string
+	UpdatedAt   time.Time
+	UserPrompt  string
+	PromptCount int
 }
 
 // HookWatcher watches ~/.config/brizz-code/hooks/ for status file changes
@@ -163,10 +165,12 @@ func (w *HookWatcher) processFile(filePath string) {
 	instanceID := strings.TrimSuffix(base, ".json")
 
 	hookStatus := &HookStatus{
-		Status:    sf.Status,
-		SessionID: sf.SessionID,
-		Event:     sf.Event,
-		UpdatedAt: time.Unix(sf.Timestamp, 0),
+		Status:      sf.Status,
+		SessionID:   sf.SessionID,
+		Event:       sf.Event,
+		UpdatedAt:   time.Unix(sf.Timestamp, 0),
+		UserPrompt:  sf.UserPrompt,
+		PromptCount: sf.PromptCount,
 	}
 
 	w.mu.Lock()

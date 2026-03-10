@@ -18,6 +18,7 @@ type hookPayload struct {
 	SessionID     string          `json:"session_id"`
 	Source        string          `json:"source"`
 	Matcher       json.RawMessage `json:"matcher,omitempty"`
+	Prompt        string          `json:"prompt,omitempty"`
 }
 
 // mapEventToStatus maps a Claude Code hook event to a brizz-code status string.
@@ -102,14 +103,37 @@ func handleHookHandler() {
 		"claudeSession", payload.SessionID,
 	)
 
-	sf := &hooks.StatusFile{
-		Status:    status,
-		SessionID: payload.SessionID,
-		Event:     payload.HookEventName,
-		Timestamp: time.Now().Unix(),
+	// Extract user prompt and prompt count.
+	var userPrompt string
+	var promptCount int
+	if payload.HookEventName == "UserPromptSubmit" && payload.Prompt != "" {
+		userPrompt = payload.Prompt
 	}
 
+	// Preserve user_prompt and prompt_count from previous status file.
 	hooksDir := hooks.GetHooksDir()
+	existingPath := filepath.Join(hooksDir, instanceID+".json")
+	if existing, err := hooks.ReadStatusFile(existingPath); err == nil {
+		promptCount = existing.PromptCount
+		if userPrompt == "" && existing.UserPrompt != "" {
+			userPrompt = existing.UserPrompt
+		}
+	}
+
+	// Increment prompt count on new user prompt submissions.
+	if payload.HookEventName == "UserPromptSubmit" {
+		promptCount++
+	}
+
+	sf := &hooks.StatusFile{
+		Status:      status,
+		SessionID:   payload.SessionID,
+		Event:       payload.HookEventName,
+		Timestamp:   time.Now().Unix(),
+		UserPrompt:  userPrompt,
+		PromptCount: promptCount,
+	}
+
 	if err := hooks.WriteStatusFile(hooksDir, instanceID, sf); err != nil {
 		log.Error("hook-handler: write failed", "err", err)
 	}

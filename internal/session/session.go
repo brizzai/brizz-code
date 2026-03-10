@@ -39,6 +39,10 @@ type Session struct {
 	Acknowledged    bool
 	ClaudeSessionID string
 	WorkspaceName   string
+	ManuallyRenamed bool
+	FirstPrompt     string
+	TitleGenerated  bool
+	PromptCount     int
 
 	hookStatus    string
 	hookUpdatedAt time.Time
@@ -166,9 +170,11 @@ func (s *Session) Acknowledge() {
 // HookStatus holds decoded status from a hook status file.
 // Defined here to avoid import cycle with hooks package.
 type HookStatus struct {
-	Status    string
-	SessionID string // Claude conversation session ID
-	UpdatedAt time.Time
+	Status      string
+	SessionID   string // Claude conversation session ID
+	UpdatedAt   time.Time
+	UserPrompt  string
+	PromptCount int
 }
 
 // UpdateHookStatus updates the session's hook-based status.
@@ -187,6 +193,15 @@ func (s *Session) UpdateHookStatus(hs *HookStatus) {
 	s.hookUpdatedAt = hs.UpdatedAt
 	if hs.SessionID != "" {
 		s.ClaudeSessionID = hs.SessionID
+	}
+	// Track user prompts for auto-naming (always update to latest).
+	if hs.PromptCount > s.PromptCount {
+		s.PromptCount = hs.PromptCount
+		if hs.UserPrompt != "" {
+			s.FirstPrompt = hs.UserPrompt
+		}
+	} else if hs.UserPrompt != "" && s.FirstPrompt == "" {
+		s.FirstPrompt = hs.UserPrompt
 	}
 }
 
@@ -408,6 +423,10 @@ func (s *Session) ToRow() *SessionRow {
 		Acknowledged:    s.Acknowledged,
 		ClaudeSessionID: s.ClaudeSessionID,
 		WorkspaceName:   s.WorkspaceName,
+		ManuallyRenamed: s.ManuallyRenamed,
+		FirstPrompt:     s.FirstPrompt,
+		TitleGenerated:  s.TitleGenerated,
+		PromptCount:     s.PromptCount,
 	}
 }
 
@@ -428,6 +447,10 @@ func FromRow(row *SessionRow) *Session {
 		Acknowledged:    row.Acknowledged,
 		ClaudeSessionID: row.ClaudeSessionID,
 		WorkspaceName:   row.WorkspaceName,
+		ManuallyRenamed: row.ManuallyRenamed,
+		FirstPrompt:     row.FirstPrompt,
+		TitleGenerated:  row.TitleGenerated,
+		PromptCount:     row.PromptCount,
 		tmuxSession:     ts,
 	}
 }

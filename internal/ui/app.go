@@ -22,6 +22,7 @@ import (
 	"github.com/yuvalhayke/brizz-code/internal/git"
 	"github.com/yuvalhayke/brizz-code/internal/github"
 	"github.com/yuvalhayke/brizz-code/internal/hooks"
+	"github.com/yuvalhayke/brizz-code/internal/naming"
 	"github.com/yuvalhayke/brizz-code/internal/session"
 	"github.com/yuvalhayke/brizz-code/internal/tmux"
 	"github.com/yuvalhayke/brizz-code/internal/workspace"
@@ -125,6 +126,7 @@ type Home struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	workerStarted bool
+
 }
 
 // NewHome creates the main TUI model.
@@ -252,7 +254,9 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionRenameMsg:
 		if s, ok := h.sessionByID[msg.id]; ok {
 			s.Title = msg.newTitle
+			s.ManuallyRenamed = true
 			_ = h.storage.UpdateTitle(s.ID, msg.newTitle)
+			_ = h.storage.MarkManuallyRenamed(s.ID)
 			h.rebuildFlatItems()
 		}
 		return h, nil
@@ -1201,17 +1205,48 @@ func (h *Home) statusWorkerCycle() {
 			hs := h.hookWatcher.GetStatus(s.ID)
 			if hs != nil {
 				oldClaudeSessionID := s.ClaudeSessionID
+				oldFirstPrompt := s.FirstPrompt
+				oldPromptCount := s.PromptCount
 				s.UpdateHookStatus(&session.HookStatus{
-					Status:    hs.Status,
-					SessionID: hs.SessionID,
-					UpdatedAt: hs.UpdatedAt,
+					Status:      hs.Status,
+					SessionID:   hs.SessionID,
+					UpdatedAt:   hs.UpdatedAt,
+					UserPrompt:  hs.UserPrompt,
+					PromptCount: hs.PromptCount,
 				})
 				// Persist new Claude session ID if it changed.
 				if s.ClaudeSessionID != oldClaudeSessionID && s.ClaudeSessionID != "" {
 					_ = h.storage.UpdateClaudeSessionID(s.ID, s.ClaudeSessionID)
 				}
+				// Persist prompt changes and trigger retitle at threshold.
+				if s.PromptCount != oldPromptCount {
+					_ = h.storage.UpdatePromptCount(s.ID, s.PromptCount)
+					if h.cfg.IsAutoNameEnabled() && s.PromptCount >= naming.RetitlePromptThreshold && s.TitleGenerated && !s.ManuallyRenamed {
+						s.TitleGenerated = false
+						_ = h.storage.ResetTitleGenerated(s.ID)
+					}
+				}
+				if s.FirstPrompt != "" && s.FirstPrompt != oldFirstPrompt {
+					_ = h.storage.UpdateFirstPrompt(s.ID, s.FirstPrompt)
+				}
 			} else {
 				debuglog.Logger.Debug("worker: no hook data for session", "session", s.ID)
+			}
+		}
+	}
+
+	// 3b. Auto-name: generate title for ONE session per cycle.
+	if h.cfg.IsAutoNameEnabled() {
+		for _, s := range sessions {
+			if s.FirstPrompt != "" && !s.ManuallyRenamed && !s.TitleGenerated {
+				title := naming.GenerateTitle(s.FirstPrompt)
+				if title != "" {
+					s.Title = title
+					_ = h.storage.UpdateTitle(s.ID, title)
+				}
+				s.TitleGenerated = true
+				_ = h.storage.MarkTitleGenerated(s.ID)
+				break // one per cycle
 			}
 		}
 	}

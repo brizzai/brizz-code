@@ -52,7 +52,7 @@ func (d *SettingsDialog) Update(msg tea.Msg) (*SettingsDialog, tea.Cmd) {
 		return d, nil
 	}
 
-	numRows := 3 // theme, editor, tick
+	numRows := 4 // theme, editor, tick, auto-name
 	switch keyMsg.String() {
 	case "j", "down":
 		d.cursor = (d.cursor + 1) % numRows
@@ -108,6 +108,11 @@ func (d *SettingsDialog) cycleValue(dir int) {
 		}
 		idx = (idx + dir + len(tickPresets)) % len(tickPresets)
 		d.cfg.TickIntervalSec = tickPresets[idx]
+
+	case 3: // Auto-name
+		enabled := d.cfg.IsAutoNameEnabled()
+		enabled = !enabled
+		d.cfg.AutoNameSessions = &enabled
 	}
 }
 
@@ -125,10 +130,16 @@ func (d *SettingsDialog) View() string {
 		theme = "tokyo-night"
 	}
 
+	autoNameValue := "on"
+	if !d.cfg.IsAutoNameEnabled() {
+		autoNameValue = "off"
+	}
+
 	rows := []row{
 		{"Theme", PaletteDisplayName(theme)},
 		{"Editor", d.cfg.GetEditor()},
 		{"Tick (sec)", fmt.Sprintf("%d", d.cfg.TickIntervalSec)},
+		{"Auto-name", autoNameValue},
 	}
 
 	for i, r := range rows {

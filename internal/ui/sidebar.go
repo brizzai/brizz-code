@@ -208,7 +208,7 @@ func renderEmptyState(width, height int) string {
 }
 
 func renderRepoHeader(repoPath string, expanded bool, info RepoGroupInfo, repoInfo *git.RepoInfo, width int, selected bool) string {
-	name := filepath.Base(repoPath) + "/"
+	name := filepath.Base(repoPath)
 
 	// Expand/collapse indicator.
 	expandIcon := "▸"
@@ -222,6 +222,10 @@ func renderRepoHeader(repoPath string, expanded bool, info RepoGroupInfo, repoIn
 	if repoInfo != nil {
 		if repoInfo.Branch != "" {
 			branch := repoInfo.Branch
+			// Strip username prefix (e.g. "yuval/brz-123" → "brz-123").
+			if idx := strings.LastIndex(branch, "/"); idx != -1 {
+				branch = branch[idx+1:]
+			}
 			if len(branch) > 15 {
 				branch = branch[:12] + "..."
 			}
@@ -343,7 +347,7 @@ func renderSessionItem(s *session.Session, isLast bool, width int, selected bool
 	}
 
 	// Truncate title if needed.
-	maxTitleLen := width - 16 // account for tree + symbol + badge + spacing
+	maxTitleLen := width - 10 // account for tree + symbol + spacing
 	if maxTitleLen < 10 {
 		maxTitleLen = 10
 	}
@@ -354,22 +358,20 @@ func renderSessionItem(s *session.Session, isLast bool, width int, selected bool
 	// Selection prefix: ▶ when selected, space when not — both 1 char wide.
 	selPrefix := " "
 	treeStyle := DimStyle
-	var styledSymbol, styledTitle, styledBadge string
+	var styledSymbol, styledTitle string
 
 	if selected {
 		selPrefix = SessionSelectionPrefix.Render("▶")
 		treeStyle = TreeConnectorSelStyle
 		styledSymbol = SessionStatusSelStyle.Render(symbolRaw)
 		styledTitle = SessionTitleSelStyle.Render(" " + title + " ")
-		styledBadge = ToolBadgeSelStyle.Render("claude")
 	} else {
 		styledSymbol = StatusSymbol(status)
 		styledTitle = TitleStyleForStatus(status).Render(title)
-		styledBadge = ToolClaudeStyle.Render("claude")
 	}
 
 	styledConnector := treeStyle.Render(connector)
-	return fmt.Sprintf(" %s%s %s %s %s", selPrefix, styledConnector, styledSymbol, styledTitle, styledBadge)
+	return fmt.Sprintf(" %s%s %s %s", selPrefix, styledConnector, styledSymbol, styledTitle)
 }
 
 // NextSelectableItem finds the next item index (repo headers are now selectable).

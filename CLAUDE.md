@@ -27,6 +27,7 @@ internal/hooks/              # Hook-based status detection (claude_hooks, hook_w
 internal/workspace/provider.go     # Provider interface + GitWorktreeProvider + ShellProvider
 internal/workspace/repo_config.go  # Per-repo .bc.json loading + ResolveProvider
 internal/config/config.go    # JSON config (~/.config/brizz-code/config.json)
+internal/naming/naming.go    # Auto-name sessions via smart heuristic (filler stripping, title-case)
 internal/debuglog/           # slog-based debug logging to ~/.config/brizz-code/debug.log
 internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, styles)
 internal/ui/palette.go       # Theme palette definitions (5 built-in themes)
@@ -63,13 +64,17 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
 - Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
-- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme)
+- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions)
 - Workspace: built-in git worktree support (zero config), per-repo `.bc.json` overrides with custom shell commands
 - `.bc.json` / `.bc.local.json` in repo root: `{"workspace": {"list": "cmd", "create": "cmd {{name}} {{branch}}", "destroy": "cmd {{name}}"}}`
 - Claude session resume: captures Claude session_id from hooks, uses `claude --resume <id>` on restart
 - Editor: config.editor > $EDITOR > "code" (VS Code)
 - Themes: tokyo-night (default), catppuccin-mocha, rose-pine, nord, gruvbox — configurable via settings (S key)
-- Settings dialog: S key opens settings overlay, live theme preview, auto-saves on close
+- Settings dialog: S key opens settings overlay, live theme preview, auto-name toggle, auto-saves on close
+- Auto-naming: sessions auto-titled from user prompt via smart heuristic (filler stripping, word-boundary truncation)
+- Auto-naming pipeline: UserPromptSubmit hook → status file → HookWatcher → Session.FirstPrompt → worker cycle → naming.GenerateTitle
+- Retitle: after 3 prompts, title regenerated from latest prompt (better reflects session scope)
+- Manual rename (R key) sets ManuallyRenamed flag, prevents auto-rename
 - Chrome tab control: `p` opens PR in Chrome via extension (reuses existing tab), falls back to `open <url>` if unavailable
 - Chrome extension architecture: TUI →[unix socket]→ native host (`brizz-code chrome-host`) →[stdio]→ Chrome service worker
 - Native messaging host: `brizz-code chrome-host` subcommand (also auto-detected when Chrome passes `chrome-extension://...` arg)
