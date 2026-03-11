@@ -526,9 +526,14 @@ func detectStatus(content string, log *slog.Logger) Status {
 	}
 
 	// Check whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)").
-	if strings.Contains(lowerContent, "…") && strings.Contains(lowerContent, "tokens") {
-		log.Debug("detectStatus: matched whimsical activity pattern")
-		return StatusRunning
+	// Match on "· ↓" + "tokens" on the same line — specific enough to avoid false positives
+	// from source code diffs or stale scrollback containing "…" and "tokens" separately.
+	for _, line := range recentLines {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "· ↓") && strings.Contains(lower, "tokens") {
+			log.Debug("detectStatus: matched whimsical activity pattern", "line", line)
+			return StatusRunning
+		}
 	}
 
 	// Check approval/permission prompts.

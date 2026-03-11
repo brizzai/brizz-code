@@ -13,6 +13,8 @@ make test     # go test -race
 make fmt      # go fmt
 ```
 
+- No pre-commit hooks configured — do not run `pre-commit run`
+
 ## Package Structure
 ```
 cmd/brizz-code/main.go      # CLI entry point
