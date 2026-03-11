@@ -352,7 +352,12 @@ func (s *Session) UpdateStatus() {
 		case "finished":
 			s.lastContentHash = ""
 			s.lastContentChangeAt = time.Time{}
-			if s.Acknowledged {
+			if paneStatus == StatusRunning {
+				// Hook says finished (e.g. SessionStart after auto-resume) but pane
+				// shows an active spinner — Claude is actually working.
+				s.Status = StatusRunning
+				log.Info("hook says finished but pane shows running, overriding")
+			} else if s.Acknowledged {
 				s.Status = StatusIdle
 			} else {
 				s.Status = StatusFinished
