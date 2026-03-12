@@ -90,15 +90,41 @@ func (g *GitWorktreeProvider) Create(repoPath, name, branch string) (*WorkspaceI
 }
 
 func (g *GitWorktreeProvider) Destroy(repoPath, name string) error {
-	// Find worktree path by name.
-	workspaces, err := g.List(repoPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// List ALL worktrees (unfiltered) — repoPath might be a linked worktree
+	// itself, so we can't use g.List() which filters out the repoPath entry.
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "list", "--porcelain")
+	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("find worktree: %w", err)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("git worktree list: %s", strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return fmt.Errorf("git worktree list: %w", err)
+	}
+	all := parseWorktreePorcelain(string(out))
+	if len(all) == 0 {
+		return fmt.Errorf("worktree %q not found", name)
 	}
 
+	// First entry is always the main worktree — use it as base for derived path
+	// and as the -C target for git worktree remove.
+	mainPath, _ := filepath.Abs(all[0].Path)
+	absRepo, _ := filepath.Abs(repoPath)
+	derivedPath, _ := filepath.Abs(deriveWorktreePath(mainPath, name))
+
+	// Find the worktree to remove. Try multiple matching strategies:
+	// 1. Exact name match (ws.Name == name)
+	// 2. Derived path match (worktree created by brizz-code: mainRepo-name)
+	// 3. repoPath itself is the worktree (caller resolved GetRepoRoot to worktree path)
 	var wtPath string
-	for _, ws := range workspaces {
-		if ws.Name == name {
+	for _, ws := range all {
+		absWS, _ := filepath.Abs(ws.Path)
+		if absWS == mainPath {
+			continue // never remove the main worktree
+		}
+		if ws.Name == name || absWS == derivedPath || absWS == absRepo {
 			wtPath = ws.Path
 			break
 		}
@@ -107,12 +133,9 @@ func (g *GitWorktreeProvider) Destroy(repoPath, name string) error {
 		return fmt.Errorf("worktree %q not found", name)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "remove", wtPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git worktree remove: %s", strings.TrimSpace(string(out)))
+	cmd = exec.CommandContext(ctx, "git", "-C", mainPath, "worktree", "remove", "--force", wtPath)
+	if rmOut, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git worktree remove: %s", strings.TrimSpace(string(rmOut)))
 	}
 	return nil
 }
