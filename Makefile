@@ -1,10 +1,11 @@
 BINARY := brizz-code
 BUILD_DIR := build
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 .PHONY: build run clean test fmt install
 
 build:
-	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/brizz-code
+	go build -ldflags "-s -w -X main.version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY) ./cmd/brizz-code
 
 run:
 	go run ./cmd/brizz-code

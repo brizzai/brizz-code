@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip release]')"
+    permissions:
+      contents: write
+    outputs:
+      new_tag: ${{ steps.version.outputs.next }}
+      skipped: ${{ steps.version.outputs.skipped }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version from conventional commits
+        id: version
+        run: |
+          # Get the latest semver tag, or default to v0.0.0
+          LATEST=$(git tag -l 'v*' --sort=-version:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            LATEST="v0.0.0"
+          fi
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+          # Parse commits since last tag for conventional commit prefixes
+          BUMP="patch"
+          COMMITS=$(git log "${LATEST}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          while IFS= read -r msg; do
+            # Check for breaking changes
+            if echo "$msg" | grep -qE '^[a-z]+(\(.+\))?!:|BREAKING CHANGE:'; then
+              BUMP="major"
+              break
+            fi
+            # Check for features
+            if echo "$msg" | grep -qE '^feat(\(.+\))?:'; then
+              BUMP="minor"
+            fi
+          done <<< "$COMMITS"
+
+          # Strip v prefix, split, compute next version
+          NUM="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$NUM"
+
+          case "$BUMP" in
+            major) NEXT="v$((MAJOR + 1)).0.0" ;;
+            minor) NEXT="v${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+          esac
+
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+          echo "Bump: $BUMP | $LATEST -> $NEXT"
+
+      - name: Create and push tag
+        run: |
+          git tag ${{ steps.version.outputs.next }}
+          git push origin ${{ steps.version.outputs.next }}
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.skipped != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch new tag
+        run: git fetch --tags
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Bundle Chrome extension
+        run: zip -r chrome-extension.zip chrome-extension/
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ needs.tag.outputs.new_tag }}

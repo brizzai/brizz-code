@@ -15,6 +15,20 @@ make fmt      # go fmt
 
 - No pre-commit hooks configured — do not run `pre-commit run`
 
+## Commit Convention
+Use [conventional commits](https://www.conventionalcommits.org/). This drives automatic version bumps on merge to main:
+- `fix: ...` → patch (v0.1.0 → v0.1.1)
+- `feat: ...` → minor (v0.1.0 → v0.2.0)
+- `feat!: ...` or `BREAKING CHANGE: ...` → major (v0.1.0 → v1.0.0)
+- `chore:`, `docs:`, `refactor:`, `test:`, `style:` → patch
+- Add `[skip release]` in commit message to skip version bump entirely
+- Scopes are optional: `fix(hooks): ...`, `feat(ui): ...`
+
+## Release
+- Every merge to main auto-creates a git tag and GitHub Release via GoReleaser
+- Manual major/minor bumps: `git tag v1.0.0 && git push origin v1.0.0`
+- Install script: `curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | bash`
+
 ## Package Structure
 ```
 cmd/brizz-code/main.go      # CLI entry point

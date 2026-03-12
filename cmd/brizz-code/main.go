@@ -15,6 +15,9 @@ import (
 	"github.com/yuvalhayke/brizz-code/internal/ui"
 )
 
+// version is set via -ldflags at build time. GoReleaser populates this automatically.
+var version = "dev"
+
 func main() {
 	args := os.Args[1:]
 
@@ -51,6 +54,8 @@ func main() {
 		handleChromeHost()
 	case "hooks":
 		handleHooksCmd(args[1:])
+	case "version", "--version", "-v":
+		fmt.Printf("brizz-code %s\n", version)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -63,7 +68,7 @@ func main() {
 func runTUI() {
 	debuglog.Init()
 	defer debuglog.Close()
-	debuglog.Logger.Info("brizz-code TUI starting")
+	debuglog.Logger.Info("brizz-code TUI starting", "version", version)
 
 	if err := tmux.IsTmuxAvailable(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -207,14 +212,15 @@ func runRemove(idPrefix string) {
 }
 
 func printUsage() {
-	fmt.Println(`brizz-code - manage Claude Code sessions
-
+	fmt.Printf("brizz-code %s - manage Claude Code sessions\n", version)
+	fmt.Println(`
 Usage:
   brizz-code              Launch TUI
   brizz-code add <path>   Add a new session
   brizz-code list         List all sessions
   brizz-code remove <id>  Remove a session
   brizz-code hooks <install|uninstall|status>  Manage Claude Code hooks
+  brizz-code version      Show version
   brizz-code help         Show this help`)
 }
 

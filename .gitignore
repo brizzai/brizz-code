@@ -6,3 +6,6 @@ build/
 # Frontend build artifacts
 node_modules/
 dist/
+
+# CI artifacts
+chrome-extension.zip
