@@ -43,6 +43,7 @@ type Session struct {
 	FirstPrompt     string
 	TitleGenerated  bool
 	PromptCount     int
+	ForkFromID      string // Transient: if set, start with --resume <id> --fork-session (cleared after start)
 
 	hookStatus    string
 	hookUpdatedAt time.Time
@@ -70,10 +71,12 @@ func NewSession(title, projectPath string) *Session {
 	}
 }
 
-// buildClaudeCmd returns the claude command with optional --resume flag.
+// buildClaudeCmd returns the claude command with optional --resume/--fork-session flags.
 func (s *Session) buildClaudeCmd() string {
 	cmd := "claude"
-	if s.ClaudeSessionID != "" {
+	if s.ForkFromID != "" {
+		cmd += fmt.Sprintf(" --resume %s --fork-session", s.ForkFromID)
+	} else if s.ClaudeSessionID != "" {
 		cmd += fmt.Sprintf(" --resume %s", s.ClaudeSessionID)
 	}
 	return cmd
@@ -103,6 +106,7 @@ func (s *Session) Start() error {
 
 	s.mu.Lock()
 	s.Status = StatusRunning
+	s.ForkFromID = "" // Clear after first start so restarts use session's own ClaudeSessionID.
 	s.mu.Unlock()
 	return nil
 }

@@ -211,6 +211,17 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionCreateMsg:
 		return h.handleSessionCreate(msg)
 
+	case forkSessionMsg:
+		s := session.NewSession(msg.title, msg.path)
+		s.WorkspaceName = msg.workspaceName
+		s.ForkFromID = msg.parentClaudeSessionID
+		return h, func() tea.Msg {
+			if err := s.Start(); err != nil {
+				return sessionCreateResultMsg{err: err}
+			}
+			return sessionCreateResultMsg{session: s}
+		}
+
 	case sessionCreateResultMsg:
 		return h.handleSessionCreateResult(msg)
 
@@ -695,6 +706,8 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		h.workspacePicker.ShowLoading()
 		return h, tea.Batch(h.fetchWorkspaceListForRepo(repoPath), spinnerTickCmd)
+	case "f":
+		return h, h.forkSelected()
 	case "d":
 		return h, h.confirmDeleteSelected()
 	case "r":
@@ -884,6 +897,30 @@ func (h *Home) restartSelected() tea.Cmd {
 			err = s.Restart()
 		}
 		return sessionRestartMsg{id: id, err: err}
+	}
+}
+
+func (h *Home) forkSelected() tea.Cmd {
+	s := h.selectedSession()
+	if s == nil {
+		h.setError(fmt.Errorf("cannot fork: no session selected"))
+		return nil
+	}
+	if s.ClaudeSessionID == "" {
+		h.setError(fmt.Errorf("cannot fork: session has no Claude conversation ID yet"))
+		return nil
+	}
+	title := s.Title + " (fork)"
+	claudeSessionID := s.ClaudeSessionID
+	path := s.ProjectPath
+	workspaceName := s.WorkspaceName
+	return func() tea.Msg {
+		return forkSessionMsg{
+			parentClaudeSessionID: claudeSessionID,
+			path:                  path,
+			title:                 title,
+			workspaceName:         workspaceName,
+		}
 	}
 }
 

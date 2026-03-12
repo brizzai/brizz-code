@@ -18,6 +18,14 @@ type sessionCreateMsg struct {
 	workspaceName string
 }
 
+// forkSessionMsg is sent when the user forks an existing session.
+type forkSessionMsg struct {
+	parentClaudeSessionID string
+	path                  string
+	title                 string
+	workspaceName         string
+}
+
 // NewSessionDialog handles the new session creation flow.
 type NewSessionDialog struct {
 	pathInput textinput.Model
