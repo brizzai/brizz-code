@@ -312,9 +312,14 @@ func (s *Session) UpdateStatus() {
 					s.lastContentHash = hash
 					s.lastContentChangeAt = time.Now()
 				} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) > 10*time.Second {
-					// Content stable >10s while hook says running — Claude likely stopped
-					// (e.g. user pressed Escape, no Stop hook fires).
-					s.Status = StatusFinished
+					// Content stable >10s while hook says running — hook is stale.
+					// Preserve idle if already acknowledged (don't bounce back to finished).
+					if oldStatus == StatusIdle {
+						s.Status = StatusIdle
+						s.Acknowledged = true
+					} else {
+						s.Status = StatusFinished
+					}
 					log.Info("content stable >10s, hook says running, assuming finished",
 						"stableSince", s.lastContentChangeAt.Format(time.TimeOnly))
 				}
