@@ -13,6 +13,7 @@ type Config struct {
 	Editor             string `json:"editor,omitempty"`
 	Theme              string `json:"theme,omitempty"`
 	AutoNameSessions   *bool  `json:"auto_name_sessions,omitempty"`
+	AutoUpdate         *bool  `json:"auto_update,omitempty"`
 }
 
 // IsAutoNameEnabled returns whether auto-naming is enabled (default: true).
@@ -21,6 +22,14 @@ func (c *Config) IsAutoNameEnabled() bool {
 		return true
 	}
 	return *c.AutoNameSessions
+}
+
+// IsAutoUpdateEnabled returns whether auto-update is enabled (default: true).
+func (c *Config) IsAutoUpdateEnabled() bool {
+	if c.AutoUpdate == nil {
+		return true
+	}
+	return *c.AutoUpdate
 }
 
 // DefaultConfigPath returns the default config file path.

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,6 +14,7 @@ import (
 	"github.com/yuvalhayke/brizz-code/internal/session"
 	"github.com/yuvalhayke/brizz-code/internal/tmux"
 	"github.com/yuvalhayke/brizz-code/internal/ui"
+	"github.com/yuvalhayke/brizz-code/internal/update"
 )
 
 // version is set via -ldflags at build time. GoReleaser populates this automatically.
@@ -54,6 +56,8 @@ func main() {
 		handleChromeHost()
 	case "hooks":
 		handleHooksCmd(args[1:])
+	case "update":
+		runUpdate()
 	case "version", "--version", "-v":
 		fmt.Printf("brizz-code %s\n", version)
 	case "help", "--help", "-h":
@@ -76,6 +80,15 @@ func runTUI() {
 	}
 
 	cfg := config.Load()
+
+	// Auto-update: check for newer version on launch.
+	if cfg.IsAutoUpdateEnabled() && version != "dev" && update.ShouldCheck() {
+		if newVer, err := update.Update(version); err == nil && newVer != "" {
+			fmt.Printf("Updated brizz-code to %s, restarting...\n", newVer)
+			exe, _ := os.Executable()
+			syscall.Exec(exe, os.Args, os.Environ())
+		}
+	}
 
 	storage, err := session.Open(session.DefaultDBPath())
 	if err != nil {
@@ -211,6 +224,21 @@ func runRemove(idPrefix string) {
 	fmt.Printf("Removed session '%s' (%s)\n", match.Title, match.ID)
 }
 
+func runUpdate() {
+	fmt.Printf("brizz-code %s\n", version)
+	fmt.Println("Checking for updates...")
+	newVer, err := update.Update(version)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+		os.Exit(1)
+	}
+	if newVer == "" {
+		fmt.Println("Already up to date.")
+	} else {
+		fmt.Printf("Updated to %s\n", newVer)
+	}
+}
+
 func printUsage() {
 	fmt.Printf("brizz-code %s - manage Claude Code sessions\n", version)
 	fmt.Println(`
@@ -220,6 +248,7 @@ Usage:
   brizz-code list         List all sessions
   brizz-code remove <id>  Remove a session
   brizz-code hooks <install|uninstall|status>  Manage Claude Code hooks
+  brizz-code update       Update to latest version
   brizz-code version      Show version
   brizz-code help         Show this help`)
 }
