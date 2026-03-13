@@ -1,9 +1,12 @@
 package git
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // GetBranchName returns the current branch name for the given repo path.
@@ -25,6 +28,109 @@ func HasUncommittedChanges(repoPath string) bool {
 		return false
 	}
 	return strings.TrimSpace(string(output)) != ""
+}
+
+// BranchInfo holds metadata about a git branch.
+type BranchInfo struct {
+	Name        string
+	IsRemote    bool // only exists as remote (no local)
+	IsCurrent   bool
+	CommitDate  time.Time
+	AuthorEmail string // email of the last commit's author
+}
+
+// ListBranches returns all branches sorted by most recently committed first.
+// Includes both local and remote branches, with deduplication.
+func ListBranches(repoPath string) ([]BranchInfo, error) {
+	cmd := exec.Command("git", "-C", repoPath, "for-each-ref",
+		"--sort=-committerdate",
+		"--format=%(refname:short)\t%(committerdate:unix)\t%(authoremail)",
+		"refs/heads/", "refs/remotes/origin/")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git for-each-ref: %w", err)
+	}
+
+	currentBranch := GetBranchName(repoPath)
+
+	localSet := make(map[string]bool)
+	var branches []BranchInfo
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		name := parts[0]
+		var commitDate time.Time
+		var authorEmail string
+		if len(parts) >= 2 {
+			if unix, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+				commitDate = time.Unix(unix, 0)
+			}
+		}
+		if len(parts) >= 3 {
+			authorEmail = strings.Trim(parts[2], "<>")
+		}
+
+		if strings.HasPrefix(name, "origin/") {
+			remoteName := strings.TrimPrefix(name, "origin/")
+			if remoteName == "HEAD" {
+				continue
+			}
+			if localSet[remoteName] {
+				continue // already have local version
+			}
+			branches = append(branches, BranchInfo{
+				Name:        remoteName,
+				IsRemote:    true,
+				IsCurrent:   remoteName == currentBranch,
+				CommitDate:  commitDate,
+				AuthorEmail: authorEmail,
+			})
+		} else {
+			localSet[name] = true
+			branches = append(branches, BranchInfo{
+				Name:        name,
+				IsRemote:    false,
+				IsCurrent:   name == currentBranch,
+				CommitDate:  commitDate,
+				AuthorEmail: authorEmail,
+			})
+		}
+	}
+
+	// Move current branch to index 0.
+	for i, b := range branches {
+		if b.IsCurrent && i > 0 {
+			branches = append([]BranchInfo{b}, append(branches[:i], branches[i+1:]...)...)
+			break
+		}
+	}
+
+	return branches, nil
+}
+
+// GetUserEmail returns the git user.email for the given repo.
+func GetUserEmail(repoPath string) string {
+	cmd := exec.Command("git", "-C", repoPath, "config", "user.email")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// CheckoutBranch checks out the given branch in the repo.
+// For remote-only branches, git auto-creates a local tracking branch.
+func CheckoutBranch(repoPath, branch string) error {
+	cmd := exec.Command("git", "-C", repoPath, "checkout", branch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 // IsWorktree returns true if the given path is a git worktree (not the main repo).

@@ -100,6 +100,7 @@ type Home struct {
 	settingsDialog        *SettingsDialog
 	workspacePicker       *WorkspacePickerDialog
 	createWorkspaceDialog *CreateWorkspaceDialog
+	branchDialog          *BranchCheckoutDialog
 
 	pendingWorkspaces []*PendingWorkspace // in-flight workspace creations
 
@@ -156,6 +157,7 @@ func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 		settingsDialog:        NewSettingsDialog(cfg),
 		workspacePicker:       NewWorkspacePickerDialog(),
 		createWorkspaceDialog: NewCreateWorkspaceDialog(),
+		branchDialog:          NewBranchCheckoutDialog(),
 		previewCache:          make(map[string]string),
 		previewCacheTime:      make(map[string]time.Time),
 		gitInfoCache:          make(map[string]*git.RepoInfo),
@@ -188,6 +190,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.settingsDialog.SetSize(msg.Width, msg.Height)
 		h.workspacePicker.SetSize(msg.Width, msg.Height)
 		h.createWorkspaceDialog.SetSize(msg.Width, msg.Height)
+		h.branchDialog.SetSize(msg.Width, msg.Height)
 		h.syncViewport()
 		return h, nil
 
@@ -293,6 +296,32 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case quickApproveMsg:
 		if msg.err != nil {
 			h.setError(fmt.Errorf("approve: %w", msg.err))
+		}
+		return h, nil
+
+	case branchListMsg:
+		if msg.err != nil {
+			h.branchDialog.ShowError(msg.err.Error())
+			return h, nil
+		}
+		h.branchDialog.Show(msg.branches, msg.repoPath, msg.isDirty, msg.userEmail)
+		return h, nil
+
+	case branchCheckoutMsg:
+		h.branchDialog.Hide()
+		if msg.err != nil {
+			h.setError(fmt.Errorf("checkout: %w", msg.err))
+			return h, nil
+		}
+		// Refresh git info for the repo.
+		h.workerMu.Lock()
+		h.gitInfoCache[msg.repoPath] = git.RefreshGitInfo(msg.repoPath)
+		h.workerMu.Unlock()
+		h.rebuildFlatItems()
+		// Trigger PR refresh for new branch.
+		select {
+		case h.statusTrigger <- struct{}{}:
+		default:
 		}
 		return h, nil
 
@@ -402,6 +431,10 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			h.workspacePicker.frame++
 			return h, spinnerTickCmd
 		}
+		if h.branchDialog.IsVisible() && h.branchDialog.loading {
+			h.branchDialog.frame++
+			return h, spinnerTickCmd
+		}
 		if h.createWorkspaceDialog.IsVisible() && h.createWorkspaceDialog.creating {
 			h.createWorkspaceDialog.frame++
 			return h, spinnerTickCmd
@@ -479,6 +512,9 @@ func (h *Home) View() string {
 	}
 	if h.workspacePicker.IsVisible() {
 		return h.workspacePicker.View()
+	}
+	if h.branchDialog.IsVisible() {
+		return h.branchDialog.View()
 	}
 	if h.newDialog.IsVisible() {
 		return h.newDialog.View()
@@ -607,6 +643,11 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.workspacePicker = picker
 		return h, cmd
 	}
+	if h.branchDialog.IsVisible() {
+		dialog, cmd := h.branchDialog.Update(msg)
+		h.branchDialog = dialog
+		return h, cmd
+	}
 	if h.newDialog.IsVisible() {
 		dialog, cmd := h.newDialog.Update(msg)
 		h.newDialog = dialog
@@ -720,6 +761,13 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, h.openPRInBrowser()
 	case "Y":
 		return h, h.quickApproveSelected()
+	case "b":
+		repoPath := h.resolveCurrentRepo()
+		if repoPath == "" {
+			return h, nil
+		}
+		h.branchDialog.ShowLoading()
+		return h, tea.Batch(h.fetchBranchList(repoPath), spinnerTickCmd)
 	case "/":
 		h.filterActive = true
 		h.filterInput.Focus()
@@ -1397,6 +1445,15 @@ func (h *Home) resolveCurrentRepo() string {
 		return session.GetRepoRoot(item.Session.ProjectPath)
 	}
 	return ""
+}
+
+func (h *Home) fetchBranchList(repoPath string) tea.Cmd {
+	return func() tea.Msg {
+		branches, err := git.ListBranches(repoPath)
+		isDirty := git.HasUncommittedChanges(repoPath)
+		userEmail := git.GetUserEmail(repoPath)
+		return branchListMsg{branches: branches, repoPath: repoPath, isDirty: isDirty, userEmail: userEmail, err: err}
+	}
 }
 
 func (h *Home) fetchWorkspaceListForRepo(repoPath string) tea.Cmd {
