@@ -143,6 +143,9 @@ func renderGitInfoLine(info *git.RepoInfo) string {
 			if pr.UnresolvedThreads > 0 {
 				details = append(details, fmt.Sprintf("%d unresolved", pr.UnresolvedThreads))
 			}
+			if pr.HasConflicts {
+				details = append(details, "conflicts")
+			}
 			if len(details) > 0 {
 				prText += " (" + strings.Join(details, ", ") + ")"
 			}
@@ -154,7 +157,7 @@ func renderGitInfoLine(info *git.RepoInfo) string {
 			hasThreads := pr.UnresolvedThreads > 0
 
 			style := PRPendingStyle // default: yellow
-			if ciFail || changesReq || hasThreads {
+			if ciFail || changesReq || hasThreads || pr.HasConflicts {
 				style = PRFailStyle
 			} else if approved && ciPass {
 				style = PROpenStyle

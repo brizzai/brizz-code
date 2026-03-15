@@ -16,6 +16,7 @@ type PR struct {
 	ReviewDecision    string // APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, ""
 	CIStatus          string // SUCCESS, FAILURE, PENDING, ""
 	UnresolvedThreads int    // count of unresolved review threads
+	HasConflicts      bool   // true when GitHub reports merge conflicts
 }
 
 // IsGHAvailable checks if the gh CLI is installed and accessible.
@@ -32,6 +33,7 @@ type ghPRResponse struct {
 	State               string             `json:"state"`
 	ReviewDecision      string             `json:"reviewDecision"`
 	StatusCheckRollup   []statusCheckEntry `json:"statusCheckRollup"`
+	Mergeable           string             `json:"mergeable"` // MERGEABLE, CONFLICTING, UNKNOWN
 }
 
 type statusCheckEntry struct {
@@ -47,7 +49,7 @@ func GetPRForBranch(repoPath, branch string) (*PR, error) {
 	}
 
 	cmd := exec.Command("gh", "pr", "view", branch,
-		"--json", "number,title,url,state,reviewDecision,statusCheckRollup",
+		"--json", "number,title,url,state,reviewDecision,statusCheckRollup,mergeable",
 	)
 	cmd.Dir = repoPath
 	output, err := cmd.Output()
@@ -69,6 +71,7 @@ func GetPRForBranch(repoPath, branch string) (*PR, error) {
 		ReviewDecision:    resp.ReviewDecision,
 		CIStatus:          deriveCIStatus(resp.StatusCheckRollup),
 		UnresolvedThreads: getUnresolvedThreadCount(repoPath, resp.Number, resp.URL),
+		HasConflicts:      resp.Mergeable == "CONFLICTING",
 	}
 
 	return pr, nil

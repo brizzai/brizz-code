@@ -337,15 +337,19 @@ func renderPRBadge(pr *github.PR, selected bool) string {
 	approved := pr.ReviewDecision == "APPROVED"
 	ciPass := pr.CIStatus == "SUCCESS"
 	hasThreads := pr.UnresolvedThreads > 0
+	hasConflicts := pr.HasConflicts
 
 	var icons string
 	style := PRPendingStyle // default: yellow (waiting)
 
-	if ciFail || changesReq || hasThreads {
+	if ciFail || changesReq || hasThreads || hasConflicts {
 		// Red: something needs fixing. Icons explain what.
 		style = PRFailStyle
 		if ciFail {
 			icons += "✕"
+		}
+		if hasConflicts {
+			icons += "⚠"
 		}
 		if changesReq || hasThreads {
 			icons += "↩"
