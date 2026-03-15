@@ -45,16 +45,18 @@ You're running 5 Claude Code sessions across different features. One is waiting 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | bash
+# Clone and run the installer
+git clone git@github.com:brizzai/brizz-code.git /tmp/brizz-code
+bash /tmp/brizz-code/install.sh
 ```
 
 ### Requirements
 
 - macOS
+- [`gh`](https://cli.github.com/) authenticated with repo access (`gh auth login`)
 - [tmux](https://github.com/tmux/tmux) (`brew install tmux`)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 - Git
-- [`gh`](https://cli.github.com/) (optional — enables PR badges)
 
 ## Quick Start
 
@@ -81,6 +83,8 @@ brizz-code
 | `d` | Delete session |
 | `r` | Restart session |
 | `R` | Rename session |
+| `f` | Fork session |
+| `b` | Switch git branch |
 | `e` | Open in editor |
 | `p` | Open PR in browser |
 | `/` | Filter sessions |

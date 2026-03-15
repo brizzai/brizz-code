@@ -27,7 +27,7 @@ Use [conventional commits](https://www.conventionalcommits.org/). This drives au
 ## Release
 - Every merge to main auto-creates a git tag and GitHub Release via GoReleaser
 - Manual major/minor bumps: `git tag v1.0.0 && git push origin v1.0.0`
-- Install script: `curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | bash`
+- Install: clone repo and run `bash install.sh` (requires `gh` CLI authenticated with repo access)
 
 ## Package Structure
 ```

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# brizz-code installer
+# brizz-code installer (requires gh CLI authenticated with repo access)
 # Usage: curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | bash
-# Private repo: GITHUB_TOKEN=ghp_xxx curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
-#   https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | GITHUB_TOKEN=ghp_xxx bash
+#    or: gh repo clone brizzai/brizz-code /tmp/bc && bash /tmp/bc/install.sh
 
 set -euo pipefail
 
@@ -18,6 +17,17 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
+
+# Require gh CLI
+if ! command -v gh &>/dev/null; then
+    echo "Error: gh CLI is required. Install it: brew install gh"
+    exit 1
+fi
+
+if ! gh auth status &>/dev/null; then
+    echo "Error: gh CLI is not authenticated. Run: gh auth login"
+    exit 1
+fi
 
 # macOS only
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -37,20 +47,11 @@ esac
 echo "brizz-code installer"
 echo "Platform: ${OS}/${ARCH}"
 
-# Auth header for private repos
-AUTH_ARGS=()
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    AUTH_ARGS=(-H "Authorization: Bearer $GITHUB_TOKEN")
-fi
-
 # Resolve version
 if [[ -z "$VERSION" ]]; then
-    VERSION=$(curl -fsSL "${AUTH_ARGS[@]}" "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
-        | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-
+    VERSION=$(gh release view --repo "$REPO" --json tagName --jq '.tagName' 2>/dev/null || true)
     if [[ -z "$VERSION" ]]; then
-        echo "Error: Could not determine latest version."
-        echo "For private repos, set GITHUB_TOKEN."
+        echo "Error: Could not determine latest version. Check repo access."
         exit 1
     fi
 fi
@@ -60,27 +61,11 @@ echo "Version: ${VERSION}"
 
 # Download
 ARCHIVE_NAME="brizz-code_${VERSION_NUM}_${OS}_${ARCH}.tar.gz"
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_NAME}"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Downloading ${ARCHIVE_NAME}..."
-
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    # Private repo: use GitHub API to download release asset
-    ASSET_URL=$(curl -fsSL "${AUTH_ARGS[@]}" \
-        "https://api.github.com/repos/${REPO}/releases/tags/${VERSION}" 2>/dev/null \
-        | grep -B2 "\"name\": \"${ARCHIVE_NAME}\"" | grep '"url"' | sed -E 's/.*"(https[^"]+)".*/\1/')
-
-    if [[ -n "$ASSET_URL" ]]; then
-        curl -fsSL "${AUTH_ARGS[@]}" -H "Accept: application/octet-stream" \
-            "$ASSET_URL" -o "$TMP_DIR/$ARCHIVE_NAME"
-    else
-        curl -fsSL -L "${AUTH_ARGS[@]}" "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE_NAME"
-    fi
-else
-    curl -fsSL -L "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE_NAME"
-fi
+gh release download "$VERSION" --repo "$REPO" --pattern "$ARCHIVE_NAME" --dir "$TMP_DIR"
 
 # Extract and install
 tar -xzf "$TMP_DIR/$ARCHIVE_NAME" -C "$TMP_DIR"
