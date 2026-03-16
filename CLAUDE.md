@@ -49,7 +49,7 @@ internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, s
 internal/ui/palette.go       # Theme palette definitions (5 built-in themes)
 internal/ui/settings.go      # Settings dialog (S key)
 internal/ui/keybindings.go   # Centralized keybinding definitions
-internal/ui/workspace_picker.go  # Workspace picker dialog (provider integration)
+internal/ui/workspace_picker.go  # Worktree dialog (base branch + new branch + existing worktrees)
 internal/ui/workspace_create.go  # Create workspace sub-dialog + PendingWorkspace phantom entries
 internal/chrome/protocol.go      # Command/Response types, action constants, socket path
 internal/chrome/native_host.go   # Native messaging host with Unix socket bridge
@@ -65,7 +65,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session in workspace (picker), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, S settings, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, S settings, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
@@ -80,14 +80,15 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
 - Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
-- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions)
+- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions, copy_claude_settings)
 - Workspace: built-in git worktree support (zero config), per-repo `.bc.json` overrides with custom shell commands
 - Workspace creation is non-blocking: dialog closes immediately, phantom "Creating..." entry with spinner appears in sidebar, user can keep navigating
+- Worktree creation copies `.claude/settings.local.json` from source repo (configurable via `copy_claude_settings`, default true)
 - `.bc.json` / `.bc.local.json` in repo root: `{"workspace": {"list": "cmd", "create": "cmd {{name}} {{branch}}", "destroy": "cmd {{name}}"}}`
 - Claude session resume: captures Claude session_id from hooks, uses `claude --resume <id>` on restart
 - Editor: config.editor > $EDITOR > "code" (VS Code)
 - Themes: tokyo-night (default), catppuccin-mocha, rose-pine, nord, gruvbox — configurable via settings (S key)
-- Settings dialog: S key opens settings overlay, live theme preview, auto-name toggle, auto-saves on close
+- Settings dialog: S key opens settings overlay, live theme preview, auto-name toggle, copy .claude toggle, auto-saves on close
 - Auto-naming: sessions auto-titled from user prompt via smart heuristic (filler stripping, word-boundary truncation)
 - Auto-naming pipeline: UserPromptSubmit hook → status file → HookWatcher → Session.FirstPrompt → worker cycle → naming.GenerateTitle
 - Retitle: after 3 prompts, title regenerated from latest prompt (better reflects session scope)
