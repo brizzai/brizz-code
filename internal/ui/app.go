@@ -396,8 +396,12 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		name := msg.name
 		branch := msg.branch
 		baseBranch := msg.baseBranch
+		copyClaudeSettings := h.cfg.IsCopyClaudeSettingsEnabled() && !provider.IsCustom()
 		return h, tea.Batch(func() tea.Msg {
 			info, err := provider.Create(repoPath, name, branch, baseBranch)
+			if err == nil && info != nil && copyClaudeSettings {
+				copyClaudeSettingsFile(repoPath, info.Path)
+			}
 			return workspaceCreateResultMsg{info: info, err: err, pendingID: pendingID, repoPath: repoPath}
 		}, spinnerTickCmd)
 
@@ -1467,6 +1471,20 @@ func (h *Home) fetchWorkspaceListForRepo(repoPath string) tea.Cmd {
 		defaultBranch := git.GetDefaultBranch(repoPath)
 		return workspaceListMsg{workspaces: workspaces, provider: provider, repoPath: repoPath, defaultBranch: defaultBranch, err: err}
 	}
+}
+
+// copyClaudeSettingsFile copies .claude/settings.local.json from srcRepo to dstRepo.
+func copyClaudeSettingsFile(srcRepo, dstRepo string) {
+	srcFile := filepath.Join(srcRepo, ".claude", "settings.local.json")
+	data, err := os.ReadFile(srcFile)
+	if err != nil {
+		return // source doesn't exist, nothing to copy
+	}
+	dstDir := filepath.Join(dstRepo, ".claude")
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dstDir, "settings.local.json"), data, 0600)
 }
 
 func (h *Home) fetchPreview(s *session.Session) tea.Cmd {

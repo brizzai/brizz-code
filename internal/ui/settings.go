@@ -52,7 +52,7 @@ func (d *SettingsDialog) Update(msg tea.Msg) (*SettingsDialog, tea.Cmd) {
 		return d, nil
 	}
 
-	numRows := 5 // theme, editor, tick, auto-name, auto-update
+	numRows := 6 // theme, editor, tick, auto-name, auto-update, copy-claude
 	switch keyMsg.String() {
 	case "j", "down":
 		d.cursor = (d.cursor + 1) % numRows
@@ -118,6 +118,11 @@ func (d *SettingsDialog) cycleValue(dir int) {
 		enabled := d.cfg.IsAutoUpdateEnabled()
 		enabled = !enabled
 		d.cfg.AutoUpdate = &enabled
+
+	case 5: // Copy Claude settings
+		enabled := d.cfg.IsCopyClaudeSettingsEnabled()
+		enabled = !enabled
+		d.cfg.CopyClaudeSettings = &enabled
 	}
 }
 
@@ -145,12 +150,18 @@ func (d *SettingsDialog) View() string {
 		autoUpdateValue = "off"
 	}
 
+	copyClaudeValue := "on"
+	if !d.cfg.IsCopyClaudeSettingsEnabled() {
+		copyClaudeValue = "off"
+	}
+
 	rows := []row{
 		{"Theme", PaletteDisplayName(theme)},
 		{"Editor", d.cfg.GetEditor()},
 		{"Tick (sec)", fmt.Sprintf("%d", d.cfg.TickIntervalSec)},
 		{"Auto-name", autoNameValue},
 		{"Auto-update", autoUpdateValue},
+		{"Copy .claude", copyClaudeValue},
 	}
 
 	for i, r := range rows {

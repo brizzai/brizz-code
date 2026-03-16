@@ -14,6 +14,7 @@ type Config struct {
 	Theme              string `json:"theme,omitempty"`
 	AutoNameSessions   *bool  `json:"auto_name_sessions,omitempty"`
 	AutoUpdate         *bool  `json:"auto_update,omitempty"`
+	CopyClaudeSettings *bool  `json:"copy_claude_settings,omitempty"`
 }
 
 // IsAutoNameEnabled returns whether auto-naming is enabled (default: true).
@@ -70,6 +71,14 @@ func (c *Config) Save() error {
 		return err
 	}
 	return os.WriteFile(path, data, 0600)
+}
+
+// IsCopyClaudeSettingsEnabled returns whether to copy .claude/settings.local.json to new worktrees (default: true).
+func (c *Config) IsCopyClaudeSettingsEnabled() bool {
+	if c.CopyClaudeSettings == nil {
+		return true
+	}
+	return *c.CopyClaudeSettings
 }
 
 // GetEditor returns the configured editor, falling back to $EDITOR then "code".
