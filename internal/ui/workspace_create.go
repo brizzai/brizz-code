@@ -167,7 +167,7 @@ func (d *CreateWorkspaceDialog) Update(msg tea.Msg) (*CreateWorkspaceDialog, tea
 	case "esc":
 		d.Hide()
 		repoPath := d.repoPath
-		return d, func() tea.Msg { return showWorkspacePickerMsg{repoPath: repoPath} }
+		return d, func() tea.Msg { return showWorktreeDialogMsg{repoPath: repoPath} }
 	case "tab", "down":
 		if !d.isNative {
 			d.focusIndex = (d.focusIndex + 1) % 2

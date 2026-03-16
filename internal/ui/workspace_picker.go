@@ -12,13 +12,14 @@ import (
 	"github.com/yuvalhayke/brizz-code/internal/workspace"
 )
 
-// Messages for workspace picker flow.
+// Messages for workspace/worktree flow.
 type (
 	workspaceListMsg struct {
-		workspaces []workspace.WorkspaceInfo
-		provider   workspace.Provider
-		repoPath   string
-		err        error
+		workspaces    []workspace.WorkspaceInfo
+		provider      workspace.Provider
+		repoPath      string
+		defaultBranch string
+		err           error
 	}
 	workspaceSelectedMsg struct {
 		info workspace.WorkspaceInfo
@@ -27,124 +28,98 @@ type (
 		provider workspace.Provider
 		repoPath string
 	}
-	showCustomPathMsg      struct{}
-	showWorkspacePickerMsg struct {
+	showWorktreeDialogMsg struct {
 		repoPath string
 	}
 )
 
-type pickerItem struct {
-	workspace *workspace.WorkspaceInfo // nil for action items
-	action    string                   // "create" or "custom" for action items
-}
+type worktreeFocus int
 
-// WorkspacePickerDialog shows available workspaces and action items.
-type WorkspacePickerDialog struct {
+const (
+	focusBranchInput worktreeFocus = iota
+	focusWorktreeList
+)
+
+// WorktreeDialog shows branch input + existing worktrees for creating new worktree sessions.
+type WorktreeDialog struct {
 	visible       bool
 	width, height int
+	branchInput   textinput.Model
 	workspaces    []workspace.WorkspaceInfo
-	filtered      []pickerItem
-	cursor        int
-	filterInput   textinput.Model
+	cursor        int // cursor in the worktree list
+	focus         worktreeFocus
 	loading       bool
 	err           string
-	sessionCounts map[string]int // projectPath -> count of existing sessions
-	canCreate     bool
-	provider      workspace.Provider
-	repoPath      string
 	frame         int
+	repoPath      string
+	provider      workspace.Provider
+	sessionCounts map[string]int
+	defaultBranch string
 }
 
-// NewWorkspacePickerDialog creates a new workspace picker.
-func NewWorkspacePickerDialog() *WorkspacePickerDialog {
-	fi := textinput.New()
-	fi.Placeholder = "type to filter"
-	fi.CharLimit = 64
-	fi.Width = 30
+// NewWorktreeDialog creates a new worktree dialog.
+func NewWorktreeDialog() *WorktreeDialog {
+	bi := textinput.New()
+	bi.Placeholder = "branch name (e.g. feature/login)"
+	bi.CharLimit = 128
+	bi.Width = 40
 
-	return &WorkspacePickerDialog{
-		filterInput:   fi,
+	return &WorktreeDialog{
+		branchInput:   bi,
 		sessionCounts: make(map[string]int),
 	}
 }
 
-// Show populates and shows the picker.
-func (d *WorkspacePickerDialog) Show(workspaces []workspace.WorkspaceInfo, sessions []*session.Session, provider workspace.Provider, repoPath string) {
+// Show populates and shows the dialog.
+func (d *WorktreeDialog) Show(workspaces []workspace.WorkspaceInfo, sessions []*session.Session, provider workspace.Provider, repoPath, defaultBranch string) {
 	d.visible = true
 	d.workspaces = workspaces
 	d.provider = provider
 	d.repoPath = repoPath
-	d.canCreate = provider.CanCreate()
+	d.defaultBranch = defaultBranch
 	d.cursor = 0
+	d.focus = focusBranchInput
 	d.err = ""
 	d.loading = false
-	d.filterInput.SetValue("")
-	d.filterInput.Focus()
+	d.branchInput.SetValue(defaultBranch)
+	d.branchInput.Focus()
+	d.branchInput.CursorEnd()
 
 	// Build session counts by project path.
 	d.sessionCounts = make(map[string]int)
 	for _, s := range sessions {
 		d.sessionCounts[s.ProjectPath]++
 	}
-
-	d.rebuildFiltered()
 }
 
-// ShowLoading shows the picker in loading state.
-func (d *WorkspacePickerDialog) ShowLoading() {
+// ShowLoading shows the dialog in loading state.
+func (d *WorktreeDialog) ShowLoading() {
 	d.visible = true
 	d.loading = true
 	d.err = ""
 	d.frame = 0
 }
 
-// ShowError shows an error in the picker.
-func (d *WorkspacePickerDialog) ShowError(err string) {
+// ShowError shows an error in the dialog.
+func (d *WorktreeDialog) ShowError(err string) {
 	d.loading = false
 	d.err = err
 }
 
-func (d *WorkspacePickerDialog) Hide() {
+func (d *WorktreeDialog) Hide() {
 	d.visible = false
-	d.filterInput.Blur()
+	d.branchInput.Blur()
 }
 
-func (d *WorkspacePickerDialog) IsVisible() bool { return d.visible }
+func (d *WorktreeDialog) IsVisible() bool { return d.visible }
 
-func (d *WorkspacePickerDialog) SetSize(w, h int) {
+func (d *WorktreeDialog) SetSize(w, h int) {
 	d.width = w
 	d.height = h
 }
 
-func (d *WorkspacePickerDialog) rebuildFiltered() {
-	filter := strings.ToLower(strings.TrimSpace(d.filterInput.Value()))
-	d.filtered = nil
-
-	for i := range d.workspaces {
-		ws := &d.workspaces[i]
-		if filter != "" && !strings.Contains(strings.ToLower(ws.Name), filter) {
-			continue
-		}
-		d.filtered = append(d.filtered, pickerItem{workspace: ws})
-	}
-
-	// Action items always shown.
-	if d.canCreate {
-		d.filtered = append(d.filtered, pickerItem{action: "create"})
-	}
-	d.filtered = append(d.filtered, pickerItem{action: "custom"})
-
-	// Clamp cursor.
-	if d.cursor >= len(d.filtered) {
-		d.cursor = len(d.filtered) - 1
-	}
-	if d.cursor < 0 {
-		d.cursor = 0
-	}
-}
-
 // Update handles key events.
-func (d *WorkspacePickerDialog) Update(msg tea.Msg) (*WorkspacePickerDialog, tea.Cmd) {
+func (d *WorktreeDialog) Update(msg tea.Msg) (*WorktreeDialog, tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return d, nil
@@ -161,50 +136,71 @@ func (d *WorkspacePickerDialog) Update(msg tea.Msg) (*WorkspacePickerDialog, tea
 	case "esc":
 		d.Hide()
 		return d, nil
-	case "up", "k":
-		if d.cursor > 0 {
-			d.cursor--
-		}
-		return d, nil
-	case "down", "j":
-		if d.cursor < len(d.filtered)-1 {
-			d.cursor++
-		}
-		return d, nil
-	case "enter":
-		if d.cursor < 0 || d.cursor >= len(d.filtered) {
+
+	case "down":
+		if d.focus == focusBranchInput && len(d.workspaces) > 0 {
+			d.focus = focusWorktreeList
+			d.cursor = 0
+			d.branchInput.Blur()
 			return d, nil
 		}
-		item := d.filtered[d.cursor]
-		d.Hide()
-		if item.workspace != nil {
-			info := *item.workspace
-			return d, func() tea.Msg { return workspaceSelectedMsg{info: info} }
-		}
-		switch item.action {
-		case "create":
-			provider := d.provider
-			repoPath := d.repoPath
-			return d, func() tea.Msg { return showCreateWorkspaceMsg{provider: provider, repoPath: repoPath} }
-		case "custom":
-			return d, func() tea.Msg { return showCustomPathMsg{} }
+		if d.focus == focusWorktreeList && d.cursor < len(d.workspaces)-1 {
+			d.cursor++
+			return d, nil
 		}
 		return d, nil
+
+	case "up":
+		if d.focus == focusWorktreeList {
+			if d.cursor > 0 {
+				d.cursor--
+			} else {
+				d.focus = focusBranchInput
+				d.branchInput.Focus()
+			}
+			return d, nil
+		}
+		return d, nil
+
+	case "enter":
+		if d.focus == focusWorktreeList && d.cursor >= 0 && d.cursor < len(d.workspaces) {
+			// Select existing worktree.
+			info := d.workspaces[d.cursor]
+			d.Hide()
+			return d, func() tea.Msg { return workspaceSelectedMsg{info: info} }
+		}
+		// Branch input — create new worktree.
+		branch := strings.TrimSpace(d.branchInput.Value())
+		if branch == "" {
+			d.err = "Branch cannot be empty"
+			return d, nil
+		}
+		d.err = ""
+		name := workspace.SanitizeBranchName(branch)
+		provider := d.provider
+		repoPath := d.repoPath
+		d.Hide()
+		return d, func() tea.Msg {
+			return workspaceCreateMsg{name: name, branch: branch, repoPath: repoPath, provider: provider}
+		}
 	}
 
-	// Route to filter input.
-	var cmd tea.Cmd
-	d.filterInput, cmd = d.filterInput.Update(msg)
-	d.rebuildFiltered()
-	return d, cmd
+	// Route to branch input when focused.
+	if d.focus == focusBranchInput {
+		var cmd tea.Cmd
+		d.branchInput, cmd = d.branchInput.Update(msg)
+		return d, cmd
+	}
+
+	return d, nil
 }
 
-// View renders the picker dialog.
-func (d *WorkspacePickerDialog) View() string {
+// View renders the worktree dialog.
+func (d *WorktreeDialog) View() string {
 	var b strings.Builder
 
 	// Title with repo name.
-	title := "New Session"
+	title := "New Worktree"
 	if d.repoPath != "" {
 		title += " — " + filepath.Base(d.repoPath)
 	}
@@ -213,79 +209,56 @@ func (d *WorkspacePickerDialog) View() string {
 
 	if d.loading {
 		spinner := spinnerFrames[d.frame%len(spinnerFrames)]
-		b.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render("  "+spinner) + DimStyle.Render(" Loading workspaces..."))
+		b.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render("  "+spinner) + DimStyle.Render(" Loading worktrees..."))
 		b.WriteString("\n\n")
 		b.WriteString(DimStyle.Render("esc: cancel"))
 		return d.wrapDialog(b.String())
+	}
+
+	if d.err != "" && d.focus == focusBranchInput {
+		// Show error near the input.
+	}
+
+	// Branch input.
+	b.WriteString(DimStyle.Render("Branch:"))
+	b.WriteString("\n")
+	b.WriteString(d.branchInput.View())
+	b.WriteString("\n")
+
+	// Path preview.
+	branch := strings.TrimSpace(d.branchInput.Value())
+	if branch != "" && d.focus == focusBranchInput {
+		name := workspace.SanitizeBranchName(branch)
+		preview := workspace.DeriveWorktreePathPreview(d.repoPath, name)
+		b.WriteString(DimStyle.Render("  → " + preview))
+		b.WriteString("\n")
 	}
 
 	if d.err != "" {
+		b.WriteString("\n")
 		b.WriteString(ErrorStyle.Render("  " + d.err))
-		b.WriteString("\n\n")
-		b.WriteString(DimStyle.Render("esc: cancel"))
-		return d.wrapDialog(b.String())
+		b.WriteString("\n")
 	}
 
-	// Filter input.
-	b.WriteString("  " + DimStyle.Render("/") + " " + d.filterInput.View())
-	b.WriteString("\n\n")
-
-	// Items.
-	maxVisible := 10
-	for i, item := range d.filtered {
-		if i >= maxVisible {
-			remaining := len(d.filtered) - maxVisible
-			b.WriteString(DimStyle.Render(fmt.Sprintf("  ... %d more", remaining)))
+	// Existing worktrees.
+	if len(d.workspaces) > 0 {
+		b.WriteString("\n")
+		b.WriteString(DimStyle.Render("Existing worktrees:"))
+		b.WriteString("\n")
+		for i, ws := range d.workspaces {
+			selected := d.focus == focusWorktreeList && i == d.cursor
+			b.WriteString(d.renderWorktreeRow(&ws, selected))
 			b.WriteString("\n")
-			break
 		}
-
-		selected := i == d.cursor
-		prefix := "  "
-		if selected {
-			prefix = SessionSelectionPrefix.Render("▸ ")
-		}
-
-		if item.workspace != nil {
-			b.WriteString(d.renderWorkspaceRow(item.workspace, selected))
-		} else {
-			// Separator before action items.
-			if i > 0 && d.filtered[i-1].workspace != nil {
-				b.WriteString(DimStyle.Render("  " + strings.Repeat("─", 30)))
-				b.WriteString("\n")
-			}
-			switch item.action {
-			case "create":
-				label := "+ Create workspace..."
-				if selected {
-					b.WriteString(prefix + SessionTitleSelStyle.Render(label))
-				} else {
-					b.WriteString(prefix + lipgloss.NewStyle().Foreground(ColorAccent).Render(label))
-				}
-			case "custom":
-				label := "~ Custom path..."
-				if selected {
-					b.WriteString(prefix + SessionTitleSelStyle.Render(label))
-				} else {
-					b.WriteString(prefix + DimStyle.Render(label))
-				}
-			}
-		}
-		b.WriteString("\n")
-	}
-
-	if len(d.filtered) == 0 {
-		b.WriteString(DimStyle.Render("  No workspaces found"))
-		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(DimStyle.Render("↑↓ select  enter: create  esc: cancel"))
+	b.WriteString(DimStyle.Render("enter: create  ↓ existing  esc: cancel"))
 
 	return d.wrapDialog(b.String())
 }
 
-func (d *WorkspacePickerDialog) renderWorkspaceRow(ws *workspace.WorkspaceInfo, selected bool) string {
+func (d *WorktreeDialog) renderWorktreeRow(ws *workspace.WorkspaceInfo, selected bool) string {
 	prefix := "  "
 	if selected {
 		prefix = SessionSelectionPrefix.Render("▸ ")
@@ -293,8 +266,8 @@ func (d *WorkspacePickerDialog) renderWorkspaceRow(ws *workspace.WorkspaceInfo, 
 
 	// Name.
 	name := ws.Name
-	if len(name) > 16 {
-		name = name[:16]
+	if len(name) > 20 {
+		name = name[:20]
 	}
 
 	// Branch.
@@ -303,11 +276,11 @@ func (d *WorkspacePickerDialog) renderWorkspaceRow(ws *workspace.WorkspaceInfo, 
 		branch = branch[:13] + "..."
 	}
 
-	// Session count for this workspace path.
+	// Session count.
 	count := d.sessionCounts[ws.Path]
 
 	if selected {
-		line := fmt.Sprintf("%-16s", name)
+		line := fmt.Sprintf("%-20s", name)
 		if branch != "" {
 			line += "  " + branch
 		}
@@ -317,7 +290,7 @@ func (d *WorkspacePickerDialog) renderWorkspaceRow(ws *workspace.WorkspaceInfo, 
 		return prefix + SessionTitleSelStyle.Render(line)
 	}
 
-	nameStyled := lipgloss.NewStyle().Foreground(ColorText).Render(fmt.Sprintf("%-16s", name))
+	nameStyled := lipgloss.NewStyle().Foreground(ColorText).Render(fmt.Sprintf("%-20s", name))
 	var parts []string
 	parts = append(parts, prefix+nameStyled)
 	if branch != "" {
@@ -329,7 +302,7 @@ func (d *WorkspacePickerDialog) renderWorkspaceRow(ws *workspace.WorkspaceInfo, 
 	return strings.Join(parts, "  ")
 }
 
-func (d *WorkspacePickerDialog) wrapDialog(content string) string {
+func (d *WorktreeDialog) wrapDialog(content string) string {
 	dialogWidth := d.width - 4
 	if dialogWidth > 64 {
 		dialogWidth = 64

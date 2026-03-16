@@ -98,7 +98,7 @@ type Home struct {
 	renameDialog          *RenameDialog
 	helpOverlay           *HelpOverlay
 	settingsDialog        *SettingsDialog
-	workspacePicker       *WorkspacePickerDialog
+	worktreeDialog        *WorktreeDialog
 	createWorkspaceDialog *CreateWorkspaceDialog
 	branchDialog          *BranchCheckoutDialog
 
@@ -155,7 +155,7 @@ func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 		renameDialog:          NewRenameDialog(),
 		helpOverlay:           NewHelpOverlay(),
 		settingsDialog:        NewSettingsDialog(cfg),
-		workspacePicker:       NewWorkspacePickerDialog(),
+		worktreeDialog:        NewWorktreeDialog(),
 		createWorkspaceDialog: NewCreateWorkspaceDialog(),
 		branchDialog:          NewBranchCheckoutDialog(),
 		previewCache:          make(map[string]string),
@@ -188,7 +188,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.renameDialog.SetSize(msg.Width, msg.Height)
 		h.helpOverlay.SetSize(msg.Width, msg.Height)
 		h.settingsDialog.SetSize(msg.Width, msg.Height)
-		h.workspacePicker.SetSize(msg.Width, msg.Height)
+		h.worktreeDialog.SetSize(msg.Width, msg.Height)
 		h.createWorkspaceDialog.SetSize(msg.Width, msg.Height)
 		h.branchDialog.SetSize(msg.Width, msg.Height)
 		h.syncViewport()
@@ -332,13 +332,17 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case workspaceListMsg:
 		if msg.err != nil {
-			h.workspacePicker.Hide()
-			h.setError(fmt.Errorf("workspace list: %w", msg.err))
-			// Fall back to path dialog.
-			h.newDialog.Show()
+			h.worktreeDialog.Hide()
+			h.setError(fmt.Errorf("worktree list: %w", msg.err))
 			return h, nil
 		}
-		h.workspacePicker.Show(msg.workspaces, h.sessions, msg.provider, msg.repoPath)
+		if msg.provider.IsCustom() {
+			// Custom provider: go straight to create workspace dialog.
+			h.worktreeDialog.Hide()
+			h.createWorkspaceDialog.Show(msg.provider, msg.repoPath)
+			return h, nil
+		}
+		h.worktreeDialog.Show(msg.workspaces, h.sessions, msg.provider, msg.repoPath, msg.defaultBranch)
 		return h, nil
 
 	case workspaceSelectedMsg:
@@ -349,20 +353,15 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 
 	case showCreateWorkspaceMsg:
-		h.workspacePicker.Hide()
+		h.worktreeDialog.Hide()
 		h.createWorkspaceDialog.Show(msg.provider, msg.repoPath)
 		return h, nil
 
-	case showCustomPathMsg:
-		h.workspacePicker.Hide()
-		h.newDialog.Show()
-		return h, nil
-
-	case showWorkspacePickerMsg:
+	case showWorktreeDialogMsg:
 		h.createWorkspaceDialog.Hide()
-		// Re-fetch workspace list for the same repo.
+		// Re-fetch worktree list for the same repo.
 		if msg.repoPath != "" {
-			h.workspacePicker.ShowLoading()
+			h.worktreeDialog.ShowLoading()
 			return h, tea.Batch(h.fetchWorkspaceListForRepo(msg.repoPath), spinnerTickCmd)
 		}
 		return h, nil
@@ -427,8 +426,8 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinnerTickMsg:
 		// Advance spinner in whichever dialog is active.
-		if h.workspacePicker.IsVisible() && h.workspacePicker.loading {
-			h.workspacePicker.frame++
+		if h.worktreeDialog.IsVisible() && h.worktreeDialog.loading {
+			h.worktreeDialog.frame++
 			return h, spinnerTickCmd
 		}
 		if h.branchDialog.IsVisible() && h.branchDialog.loading {
@@ -510,8 +509,8 @@ func (h *Home) View() string {
 	if h.createWorkspaceDialog.IsVisible() {
 		return h.createWorkspaceDialog.View()
 	}
-	if h.workspacePicker.IsVisible() {
-		return h.workspacePicker.View()
+	if h.worktreeDialog.IsVisible() {
+		return h.worktreeDialog.View()
 	}
 	if h.branchDialog.IsVisible() {
 		return h.branchDialog.View()
@@ -638,9 +637,9 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.createWorkspaceDialog = dialog
 		return h, cmd
 	}
-	if h.workspacePicker.IsVisible() {
-		picker, cmd := h.workspacePicker.Update(msg)
-		h.workspacePicker = picker
+	if h.worktreeDialog.IsVisible() {
+		dialog, cmd := h.worktreeDialog.Update(msg)
+		h.worktreeDialog = dialog
 		return h, cmd
 	}
 	if h.branchDialog.IsVisible() {
@@ -739,13 +738,17 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			title: repoName,
 		})
 	case "n":
-		// Workspace/worktree picker.
+		// New session at any repo path.
+		h.newDialog.Show()
+		return h, nil
+	case "w":
+		// New worktree session.
 		repoPath := h.resolveCurrentRepo()
 		if repoPath == "" {
-			h.newDialog.Show()
+			h.setError(fmt.Errorf("no repo selected"))
 			return h, nil
 		}
-		h.workspacePicker.ShowLoading()
+		h.worktreeDialog.ShowLoading()
 		return h, tea.Batch(h.fetchWorkspaceListForRepo(repoPath), spinnerTickCmd)
 	case "f":
 		return h, h.forkSelected()
@@ -1460,7 +1463,8 @@ func (h *Home) fetchWorkspaceListForRepo(repoPath string) tea.Cmd {
 	return func() tea.Msg {
 		provider := workspace.ResolveProvider(repoPath)
 		workspaces, err := provider.List(repoPath)
-		return workspaceListMsg{workspaces: workspaces, provider: provider, repoPath: repoPath, err: err}
+		defaultBranch := git.GetDefaultBranch(repoPath)
+		return workspaceListMsg{workspaces: workspaces, provider: provider, repoPath: repoPath, defaultBranch: defaultBranch, err: err}
 	}
 }
 

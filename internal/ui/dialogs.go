@@ -26,13 +26,16 @@ type forkSessionMsg struct {
 	workspaceName         string
 }
 
-// NewSessionDialog handles the new session creation flow.
+// NewSessionDialog handles the new session creation flow with directory autocomplete.
 type NewSessionDialog struct {
-	pathInput textinput.Model
-	visible   bool
-	width     int
-	height    int
-	err       string
+	pathInput        textinput.Model
+	visible          bool
+	width            int
+	height           int
+	err              string
+	suggestions      []string
+	suggestionCursor int
+	lastInput        string // track input changes for recomputing suggestions
 }
 
 // NewNewSessionDialog creates a new session dialog.
@@ -53,6 +56,9 @@ func (d *NewSessionDialog) Show() {
 	d.visible = true
 	d.pathInput.SetValue("")
 	d.err = ""
+	d.suggestions = nil
+	d.suggestionCursor = 0
+	d.lastInput = ""
 	d.pathInput.Focus()
 }
 
@@ -108,12 +114,108 @@ func (d *NewSessionDialog) Update(msg tea.Msg) (*NewSessionDialog, tea.Cmd) {
 		case "esc":
 			d.Hide()
 			return d, nil
+
+		case "tab":
+			if len(d.suggestions) > 0 {
+				d.pathInput.SetValue(d.suggestions[d.suggestionCursor] + "/")
+				d.pathInput.CursorEnd()
+				d.computeSuggestions()
+			}
+			return d, nil
+
+		case "down":
+			if len(d.suggestions) > 0 && d.suggestionCursor < len(d.suggestions)-1 {
+				d.suggestionCursor++
+			}
+			return d, nil
+
+		case "up":
+			if len(d.suggestions) > 0 && d.suggestionCursor > 0 {
+				d.suggestionCursor--
+			}
+			return d, nil
 		}
 	}
 
 	var cmd tea.Cmd
 	d.pathInput, cmd = d.pathInput.Update(msg)
+
+	// Recompute suggestions when input changes.
+	current := d.pathInput.Value()
+	if current != d.lastInput {
+		d.lastInput = current
+		d.computeSuggestions()
+	}
+
 	return d, cmd
+}
+
+func (d *NewSessionDialog) computeSuggestions() {
+	d.suggestions = nil
+	d.suggestionCursor = 0
+
+	raw := d.pathInput.Value()
+	if raw == "" {
+		return
+	}
+
+	expanded := d.expandPath(raw)
+
+	// Check if the expanded path is itself a directory (user typed a complete path with trailing /).
+	if info, err := os.Stat(expanded); err == nil && info.IsDir() && strings.HasSuffix(raw, "/") {
+		// List children of this directory.
+		entries, err := os.ReadDir(expanded)
+		if err != nil {
+			return
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			d.suggestions = append(d.suggestions, filepath.Join(expanded, entry.Name()))
+			if len(d.suggestions) >= 5 {
+				break
+			}
+		}
+		d.shortenSuggestions()
+		return
+	}
+
+	// Split into parent dir + prefix.
+	parentDir := filepath.Dir(expanded)
+	prefix := filepath.Base(expanded)
+
+	entries, err := os.ReadDir(parentDir)
+	if err != nil {
+		return
+	}
+
+	lowerPrefix := strings.ToLower(prefix)
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(entry.Name()), lowerPrefix) {
+			d.suggestions = append(d.suggestions, filepath.Join(parentDir, entry.Name()))
+			if len(d.suggestions) >= 5 {
+				break
+			}
+		}
+	}
+	d.shortenSuggestions()
+}
+
+// shortenSuggestions replaces home dir prefix with ~ for display.
+func (d *NewSessionDialog) shortenSuggestions() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	for i, s := range d.suggestions {
+		if strings.HasPrefix(s, home+"/") {
+			d.suggestions[i] = "~" + s[len(home):]
+		}
+	}
 }
 
 // View renders the dialog.
@@ -127,6 +229,18 @@ func (d *NewSessionDialog) View() string {
 	b.WriteString(d.pathInput.View())
 	b.WriteString("\n")
 
+	if len(d.suggestions) > 0 {
+		b.WriteString("\n")
+		for i, s := range d.suggestions {
+			if i == d.suggestionCursor {
+				b.WriteString(SessionSelectionPrefix.Render("▸ ") + SessionTitleSelStyle.Render(s))
+			} else {
+				b.WriteString("  " + DimStyle.Render(s))
+			}
+			b.WriteString("\n")
+		}
+	}
+
 	if d.err != "" {
 		b.WriteString("\n")
 		b.WriteString(ErrorStyle.Render("  " + d.err))
@@ -134,7 +248,7 @@ func (d *NewSessionDialog) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(DimStyle.Render("enter: create • esc: cancel"))
+	b.WriteString(DimStyle.Render("tab: complete  enter: create  esc: cancel"))
 
 	// Center the dialog.
 	dialogWidth := d.width - 4
@@ -153,8 +267,11 @@ func (d *NewSessionDialog) View() string {
 
 func (d *NewSessionDialog) expandPath(path string) string {
 	path = strings.TrimSpace(path)
-	if strings.HasPrefix(path, "~/") {
+	if strings.HasPrefix(path, "~/") || path == "~" {
 		home, _ := os.UserHomeDir()
+		if path == "~" {
+			return home
+		}
 		path = filepath.Join(home, path[2:])
 	}
 	abs, err := filepath.Abs(path)

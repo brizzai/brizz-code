@@ -133,6 +133,25 @@ func CheckoutBranch(repoPath, branch string) error {
 	return nil
 }
 
+// GetDefaultBranch returns the default branch name for the given repo.
+// Tries origin HEAD, then checks for "main" or "master" locally. Falls back to "main".
+func GetDefaultBranch(repoPath string) string {
+	// Try origin HEAD reference first.
+	cmd := exec.Command("git", "-C", repoPath, "symbolic-ref", "refs/remotes/origin/HEAD")
+	if output, err := cmd.Output(); err == nil {
+		ref := strings.TrimSpace(string(output))
+		return strings.TrimPrefix(ref, "refs/remotes/origin/")
+	}
+	// Fallback: check if "main" or "master" exists.
+	for _, name := range []string{"main", "master"} {
+		cmd := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "refs/heads/"+name)
+		if cmd.Run() == nil {
+			return name
+		}
+	}
+	return "main"
+}
+
 // IsWorktree returns true if the given path is a git worktree (not the main repo).
 func IsWorktree(repoPath string) bool {
 	gitDir := exec.Command("git", "-C", repoPath, "rev-parse", "--git-dir")
