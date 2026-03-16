@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/yuvalhayke/brizz-code/internal/git"
@@ -31,7 +32,11 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 	b.WriteString("\n")
 
 	// Metadata.
-	b.WriteString(DimStyle.Render(fmt.Sprintf("  %s", s.ProjectPath)))
+	metaLine := s.ProjectPath
+	if !s.LastAccessedAt.IsZero() {
+		metaLine += "  ·  last used " + relativeTime(s.LastAccessedAt)
+	}
+	b.WriteString(DimStyle.Render(fmt.Sprintf("  %s", metaLine)))
 	b.WriteString("\n")
 
 	// Git info line.
@@ -95,6 +100,29 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 	}
 
 	return b.String()
+}
+
+// relativeTime formats a time as a human-readable relative duration (e.g., "5m ago", "2h ago").
+func relativeTime(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		if h == 1 {
+			return "1h ago"
+		}
+		return fmt.Sprintf("%dh ago", h)
+	default:
+		days := int(d.Hours() / 24)
+		if days == 1 {
+			return "1d ago"
+		}
+		return fmt.Sprintf("%dd ago", days)
+	}
 }
 
 // renderGitInfoLine renders a line with branch, dirty status, and PR info.
