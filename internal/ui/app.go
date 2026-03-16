@@ -395,8 +395,9 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		repoPath := msg.repoPath
 		name := msg.name
 		branch := msg.branch
+		baseBranch := msg.baseBranch
 		return h, tea.Batch(func() tea.Msg {
-			info, err := provider.Create(repoPath, name, branch)
+			info, err := provider.Create(repoPath, name, branch, baseBranch)
 			return workspaceCreateResultMsg{info: info, err: err, pendingID: pendingID, repoPath: repoPath}
 		}, spinnerTickCmd)
 

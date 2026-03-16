@@ -30,9 +30,9 @@ func generatePendingID() string {
 // Messages for workspace creation flow.
 type (
 	workspaceCreateMsg struct {
-		name, branch string
-		repoPath     string
-		provider     workspace.Provider
+		name, branch, baseBranch string
+		repoPath                 string
+		provider                 workspace.Provider
 	}
 	workspaceCreateResultMsg struct {
 		info      *workspace.WorkspaceInfo

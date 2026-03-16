@@ -36,37 +36,45 @@ type (
 type worktreeFocus int
 
 const (
-	focusBranchInput worktreeFocus = iota
+	focusBaseBranch worktreeFocus = iota
+	focusNewBranch
 	focusWorktreeList
 )
 
-// WorktreeDialog shows branch input + existing worktrees for creating new worktree sessions.
+// WorktreeDialog shows base branch + new branch inputs + existing worktrees.
 type WorktreeDialog struct {
-	visible       bool
-	width, height int
-	branchInput   textinput.Model
-	workspaces    []workspace.WorkspaceInfo
-	cursor        int // cursor in the worktree list
-	focus         worktreeFocus
-	loading       bool
-	err           string
-	frame         int
-	repoPath      string
-	provider      workspace.Provider
-	sessionCounts map[string]int
-	defaultBranch string
+	visible         bool
+	width, height   int
+	baseBranchInput textinput.Model
+	newBranchInput  textinput.Model
+	workspaces      []workspace.WorkspaceInfo
+	cursor          int // cursor in the worktree list
+	focus           worktreeFocus
+	loading         bool
+	err             string
+	frame           int
+	repoPath        string
+	provider        workspace.Provider
+	sessionCounts   map[string]int
+	defaultBranch   string
 }
 
 // NewWorktreeDialog creates a new worktree dialog.
 func NewWorktreeDialog() *WorktreeDialog {
-	bi := textinput.New()
-	bi.Placeholder = "branch name (e.g. feature/login)"
-	bi.CharLimit = 128
-	bi.Width = 40
+	base := textinput.New()
+	base.Placeholder = "main"
+	base.CharLimit = 128
+	base.Width = 40
+
+	branch := textinput.New()
+	branch.Placeholder = "feature/my-feature"
+	branch.CharLimit = 128
+	branch.Width = 40
 
 	return &WorktreeDialog{
-		branchInput:   bi,
-		sessionCounts: make(map[string]int),
+		baseBranchInput: base,
+		newBranchInput:  branch,
+		sessionCounts:   make(map[string]int),
 	}
 }
 
@@ -78,12 +86,13 @@ func (d *WorktreeDialog) Show(workspaces []workspace.WorkspaceInfo, sessions []*
 	d.repoPath = repoPath
 	d.defaultBranch = defaultBranch
 	d.cursor = 0
-	d.focus = focusBranchInput
+	d.focus = focusNewBranch
 	d.err = ""
 	d.loading = false
-	d.branchInput.SetValue(defaultBranch)
-	d.branchInput.Focus()
-	d.branchInput.CursorEnd()
+	d.baseBranchInput.SetValue(defaultBranch)
+	d.baseBranchInput.Blur()
+	d.newBranchInput.SetValue("")
+	d.newBranchInput.Focus()
 
 	// Build session counts by project path.
 	d.sessionCounts = make(map[string]int)
@@ -108,7 +117,8 @@ func (d *WorktreeDialog) ShowError(err string) {
 
 func (d *WorktreeDialog) Hide() {
 	d.visible = false
-	d.branchInput.Blur()
+	d.baseBranchInput.Blur()
+	d.newBranchInput.Blur()
 }
 
 func (d *WorktreeDialog) IsVisible() bool { return d.visible }
@@ -116,6 +126,17 @@ func (d *WorktreeDialog) IsVisible() bool { return d.visible }
 func (d *WorktreeDialog) SetSize(w, h int) {
 	d.width = w
 	d.height = h
+}
+
+func (d *WorktreeDialog) updateFocus() {
+	d.baseBranchInput.Blur()
+	d.newBranchInput.Blur()
+	switch d.focus {
+	case focusBaseBranch:
+		d.baseBranchInput.Focus()
+	case focusNewBranch:
+		d.newBranchInput.Focus()
+	}
 }
 
 // Update handles key events.
@@ -137,28 +158,38 @@ func (d *WorktreeDialog) Update(msg tea.Msg) (*WorktreeDialog, tea.Cmd) {
 		d.Hide()
 		return d, nil
 
-	case "down":
-		if d.focus == focusBranchInput && len(d.workspaces) > 0 {
-			d.focus = focusWorktreeList
-			d.cursor = 0
-			d.branchInput.Blur()
-			return d, nil
-		}
-		if d.focus == focusWorktreeList && d.cursor < len(d.workspaces)-1 {
-			d.cursor++
-			return d, nil
+	case "tab", "down":
+		switch d.focus {
+		case focusBaseBranch:
+			d.focus = focusNewBranch
+			d.updateFocus()
+		case focusNewBranch:
+			if len(d.workspaces) > 0 {
+				d.focus = focusWorktreeList
+				d.cursor = 0
+				d.updateFocus()
+			}
+		case focusWorktreeList:
+			if d.cursor < len(d.workspaces)-1 {
+				d.cursor++
+			}
 		}
 		return d, nil
 
-	case "up":
-		if d.focus == focusWorktreeList {
+	case "shift+tab", "up":
+		switch d.focus {
+		case focusBaseBranch:
+			// Already at top, no-op.
+		case focusNewBranch:
+			d.focus = focusBaseBranch
+			d.updateFocus()
+		case focusWorktreeList:
 			if d.cursor > 0 {
 				d.cursor--
 			} else {
-				d.focus = focusBranchInput
-				d.branchInput.Focus()
+				d.focus = focusNewBranch
+				d.updateFocus()
 			}
-			return d, nil
 		}
 		return d, nil
 
@@ -169,30 +200,36 @@ func (d *WorktreeDialog) Update(msg tea.Msg) (*WorktreeDialog, tea.Cmd) {
 			d.Hide()
 			return d, func() tea.Msg { return workspaceSelectedMsg{info: info} }
 		}
-		// Branch input — create new worktree.
-		branch := strings.TrimSpace(d.branchInput.Value())
-		if branch == "" {
-			d.err = "Branch cannot be empty"
+		// Create new worktree from inputs.
+		newBranch := strings.TrimSpace(d.newBranchInput.Value())
+		if newBranch == "" {
+			d.err = "Branch name cannot be empty"
+			return d, nil
+		}
+		baseBranch := strings.TrimSpace(d.baseBranchInput.Value())
+		if baseBranch == "" {
+			d.err = "Base branch cannot be empty"
 			return d, nil
 		}
 		d.err = ""
-		name := workspace.SanitizeBranchName(branch)
+		name := workspace.SanitizeBranchName(newBranch)
 		provider := d.provider
 		repoPath := d.repoPath
 		d.Hide()
 		return d, func() tea.Msg {
-			return workspaceCreateMsg{name: name, branch: branch, repoPath: repoPath, provider: provider}
+			return workspaceCreateMsg{name: name, branch: newBranch, baseBranch: baseBranch, repoPath: repoPath, provider: provider}
 		}
 	}
 
-	// Route to branch input when focused.
-	if d.focus == focusBranchInput {
-		var cmd tea.Cmd
-		d.branchInput, cmd = d.branchInput.Update(msg)
-		return d, cmd
+	// Route to focused input.
+	var cmd tea.Cmd
+	switch d.focus {
+	case focusBaseBranch:
+		d.baseBranchInput, cmd = d.baseBranchInput.Update(msg)
+	case focusNewBranch:
+		d.newBranchInput, cmd = d.newBranchInput.Update(msg)
 	}
-
-	return d, nil
+	return d, cmd
 }
 
 // View renders the worktree dialog.
@@ -215,20 +252,22 @@ func (d *WorktreeDialog) View() string {
 		return d.wrapDialog(b.String())
 	}
 
-	if d.err != "" && d.focus == focusBranchInput {
-		// Show error near the input.
-	}
-
-	// Branch input.
-	b.WriteString(DimStyle.Render("Branch:"))
+	// Base branch input.
+	b.WriteString(DimStyle.Render("Base branch:"))
 	b.WriteString("\n")
-	b.WriteString(d.branchInput.View())
+	b.WriteString(d.baseBranchInput.View())
+	b.WriteString("\n\n")
+
+	// New branch input.
+	b.WriteString(DimStyle.Render("New branch:"))
+	b.WriteString("\n")
+	b.WriteString(d.newBranchInput.View())
 	b.WriteString("\n")
 
 	// Path preview.
-	branch := strings.TrimSpace(d.branchInput.Value())
-	if branch != "" && d.focus == focusBranchInput {
-		name := workspace.SanitizeBranchName(branch)
+	newBranch := strings.TrimSpace(d.newBranchInput.Value())
+	if newBranch != "" {
+		name := workspace.SanitizeBranchName(newBranch)
 		preview := workspace.DeriveWorktreePathPreview(d.repoPath, name)
 		b.WriteString(DimStyle.Render("  → " + preview))
 		b.WriteString("\n")
@@ -253,7 +292,7 @@ func (d *WorktreeDialog) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(DimStyle.Render("enter: create  ↓ existing  esc: cancel"))
+	b.WriteString(DimStyle.Render("tab: next  enter: create  esc: cancel"))
 
 	return d.wrapDialog(b.String())
 }

@@ -21,7 +21,7 @@ type WorkspaceInfo struct {
 // Provider is the interface for workspace operations.
 type Provider interface {
 	List(repoPath string) ([]WorkspaceInfo, error)
-	Create(repoPath, name, branch string) (*WorkspaceInfo, error)
+	Create(repoPath, name, branch, baseBranch string) (*WorkspaceInfo, error)
 	Destroy(repoPath, name string) error
 	CanCreate() bool
 	CanDestroy() bool
@@ -61,17 +61,22 @@ func (g *GitWorktreeProvider) List(repoPath string) ([]WorkspaceInfo, error) {
 	return result, nil
 }
 
-func (g *GitWorktreeProvider) Create(repoPath, name, branch string) (*WorkspaceInfo, error) {
+func (g *GitWorktreeProvider) Create(repoPath, name, branch, baseBranch string) (*WorkspaceInfo, error) {
 	path := deriveWorktreePath(repoPath, name)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Try creating with new branch first.
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "add", path, "-b", branch)
+	// Build args: git worktree add <path> -b <branch> [<start-point>]
+	args := []string{"-C", repoPath, "worktree", "add", path, "-b", branch}
+	if baseBranch != "" {
+		args = append(args, baseBranch)
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		// Branch might already exist — retry without -b.
-		cmd2 := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "add", path, branch)
+		args2 := []string{"-C", repoPath, "worktree", "add", path, branch}
+		cmd2 := exec.CommandContext(ctx, "git", args2...)
 		if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
 			// Return the more informative error.
 			errMsg := strings.TrimSpace(string(out))
@@ -178,7 +183,7 @@ func (p *ShellProvider) List(repoPath string) ([]WorkspaceInfo, error) {
 	return workspaces, nil
 }
 
-func (p *ShellProvider) Create(repoPath, name, branch string) (*WorkspaceInfo, error) {
+func (p *ShellProvider) Create(repoPath, name, branch, baseBranch string) (*WorkspaceInfo, error) {
 	if p.CreateCmd == "" {
 		return nil, fmt.Errorf("create command not configured")
 	}
