@@ -1349,10 +1349,11 @@ func (h *Home) statusWorkerCycle() {
 				if s.ClaudeSessionID != oldClaudeSessionID && s.ClaudeSessionID != "" {
 					_ = h.storage.UpdateClaudeSessionID(s.ID, s.ClaudeSessionID)
 				}
-				// Persist prompt changes and trigger retitle at threshold.
+				// Persist prompt changes and reset title on every new prompt
+				// (for non-manually-renamed, non-Claude-named sessions).
 				if s.PromptCount != oldPromptCount {
 					_ = h.storage.UpdatePromptCount(s.ID, s.PromptCount)
-					if h.cfg.IsAutoNameEnabled() && s.PromptCount >= naming.RetitlePromptThreshold && s.TitleGenerated && !s.ManuallyRenamed {
+					if h.cfg.IsAutoNameEnabled() && s.TitleGenerated && !s.ManuallyRenamed && s.ClaudeSessionName == "" {
 						s.TitleGenerated = false
 						_ = h.storage.ResetTitleGenerated(s.ID)
 					}
@@ -1367,11 +1368,33 @@ func (h *Home) statusWorkerCycle() {
 	}
 
 	// 3b. Auto-name: generate title for ONE session per cycle.
+	// Priority: manual (R key) > Claude session name > last prompt heuristic.
 	if h.cfg.IsAutoNameEnabled() {
 		for _, s := range sessions {
-			if s.FirstPrompt != "" && !s.ManuallyRenamed && !s.TitleGenerated {
+			if s.ManuallyRenamed {
+				continue
+			}
+
+			// Periodically re-read Claude's session name from JSONL (~every 30s per session).
+			if s.ClaudeSessionID != "" && time.Since(s.ClaudeNameLastChecked) > 30*time.Second {
+				s.ClaudeNameLastChecked = time.Now()
+				name := session.ReadClaudeSessionName(s.ClaudeSessionID, s.ProjectPath)
+				if name != "" && name != s.ClaudeSessionName {
+					s.ClaudeSessionName = name
+					s.Title = name
+					_ = h.storage.UpdateTitle(s.ID, name)
+					s.TitleGenerated = true
+					_ = h.storage.MarkTitleGenerated(s.ID)
+				}
+			}
+			if s.ClaudeSessionName != "" {
+				continue
+			}
+
+			// Fallback: prompt-based title heuristic.
+			if s.FirstPrompt != "" && !s.TitleGenerated {
 				title := naming.GenerateTitle(s.FirstPrompt)
-				if title != "" {
+				if title != "" && title != s.Title {
 					s.Title = title
 					_ = h.storage.UpdateTitle(s.ID, title)
 				}

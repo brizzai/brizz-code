@@ -54,6 +54,29 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 		usedLines++
 	}
 
+	// Last prompt.
+	if s.FirstPrompt != "" {
+		prompt := s.FirstPrompt
+		// Take first line only.
+		if idx := strings.IndexByte(prompt, '\n'); idx != -1 {
+			prompt = prompt[:idx]
+			if len(prompt) < len(s.FirstPrompt) {
+				prompt += "…"
+			}
+		}
+		// Truncate to fit width.
+		maxLen := width - 6
+		if maxLen > 80 {
+			maxLen = 80
+		}
+		if maxLen > 0 && len(prompt) > maxLen {
+			prompt = prompt[:maxLen] + "…"
+		}
+		b.WriteString(DimStyle.Render(fmt.Sprintf("  > %s", prompt)))
+		b.WriteString("\n")
+		usedLines++
+	}
+
 	// Separator.
 	sep := strings.Repeat("─", width-2)
 	if len(sep) > 0 {

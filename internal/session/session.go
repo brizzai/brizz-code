@@ -37,8 +37,10 @@ type Session struct {
 	CreatedAt       time.Time
 	LastAccessedAt  time.Time
 	Acknowledged    bool
-	ClaudeSessionID string
-	WorkspaceName   string
+	ClaudeSessionID  string
+	ClaudeSessionName      string    // Transient: read from Claude's JSONL, not persisted to SQLite.
+	ClaudeNameLastChecked  time.Time // Transient: last time we read the JSONL for Claude name.
+	WorkspaceName          string
 	ManuallyRenamed bool
 	FirstPrompt     string
 	TitleGenerated  bool

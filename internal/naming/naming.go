@@ -4,10 +4,6 @@ import "strings"
 
 const (
 	maxTitleLen = 50
-
-	// RetitlePromptThreshold is the prompt count at which a session is retitled
-	// from the latest prompt (the later prompt better reflects the session's scope).
-	RetitlePromptThreshold = 3
 )
 
 // fillerPrefixes are common conversational prefixes to strip from prompts.
