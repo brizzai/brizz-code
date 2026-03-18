@@ -88,25 +88,25 @@ func (d *BugReportDialog) openGitHubIssue() tea.Cmd {
 	body := d.report.FormatMarkdown()
 
 	return func() tea.Msg {
-		// Write body to temp file to avoid shell escaping issues.
+		// Write body to temp file (don't delete — gh needs it, OS cleans /tmp).
 		tmpFile, err := os.CreateTemp("", "brizz-bug-*.md")
 		if err != nil {
 			return bugReportClosedMsg{}
 		}
-		defer os.Remove(tmpFile.Name())
-
 		if _, err := tmpFile.WriteString(body); err != nil {
 			tmpFile.Close()
 			return bugReportClosedMsg{}
 		}
 		tmpFile.Close()
 
+		// --title and --body-file are required with --web in non-interactive mode.
 		cmd := exec.Command("gh", "issue", "create",
 			"--repo", "brizzai/brizz-code",
 			"--web",
+			"--title", "Bug Report",
 			"--body-file", tmpFile.Name(),
 		)
-		_ = cmd.Run()
+		_ = cmd.Start()
 		return bugReportClosedMsg{}
 	}
 }
