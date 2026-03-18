@@ -50,8 +50,17 @@ func Collect(version string, sessionCount int) *Report {
 	return r
 }
 
+// FormatMarkdownWithDesc formats the report with a user-provided description.
+func (r *Report) FormatMarkdownWithDesc(description string) string {
+	return r.formatMarkdown(description)
+}
+
 // FormatMarkdown formats the report as a GitHub issue body.
 func (r *Report) FormatMarkdown() string {
+	return r.formatMarkdown("")
+}
+
+func (r *Report) formatMarkdown(description string) string {
 	home, _ := os.UserHomeDir()
 	sanitize := func(s string) string {
 		if home != "" {
@@ -63,7 +72,12 @@ func (r *Report) FormatMarkdown() string {
 	var b strings.Builder
 
 	b.WriteString("## Bug Report\n\n")
-	b.WriteString("### Description\n<!-- Please describe what happened -->\n\n")
+	b.WriteString("### Description\n")
+	if description != "" {
+		b.WriteString(sanitize(description) + "\n\n")
+	} else {
+		b.WriteString("<!-- Please describe what happened -->\n\n")
+	}
 
 	// Recent Errors.
 	if len(r.RecentErrors) > 0 {

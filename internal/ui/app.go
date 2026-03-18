@@ -295,6 +295,10 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bugReportClosedMsg:
 		return h, nil
 
+	case bugReportOpenErrMsg:
+		h.setError(msg.err)
+		return h, nil
+
 	case openEditorMsg:
 		if msg.err != nil {
 			h.setError(fmt.Errorf("editor: %w", msg.err))

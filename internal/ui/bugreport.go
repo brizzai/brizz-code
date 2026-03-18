@@ -7,13 +7,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/diagnostics"
 )
 
 // bugReportClosedMsg is sent when the bug report dialog closes.
 type bugReportClosedMsg struct{}
+
+// bugReportOpenErrMsg is sent when opening the GitHub issue fails.
+type bugReportOpenErrMsg struct{ err error }
 
 // BugReportDialog displays diagnostics and recent errors for bug reporting.
 type BugReportDialog struct {
@@ -22,21 +27,30 @@ type BugReportDialog struct {
 	height  int
 	scroll  int // scroll offset for content
 
-	report       *diagnostics.Report
-	errorEntries []ErrorEntry
+	descInput     textinput.Model
+	report        *diagnostics.Report
+	errorEntries  []ErrorEntry
 	actionEntries []ActionEntry
-	contentLines int // total rendered content lines
+	contentLines  int // total rendered content lines
+	submitting    bool
 }
 
 // NewBugReportDialog creates a bug report dialog.
 func NewBugReportDialog() *BugReportDialog {
-	return &BugReportDialog{}
+	ti := textinput.New()
+	ti.Placeholder = "Describe what happened..."
+	ti.CharLimit = 256
+	ti.Width = 48
+	return &BugReportDialog{descInput: ti}
 }
 
 // Show collects diagnostics and shows the dialog.
 func (d *BugReportDialog) Show(version string, sessionCount int, errors *ErrorHistory, actions *ActionLog) {
 	d.visible = true
 	d.scroll = 0
+	d.submitting = false
+	d.descInput.SetValue("")
+	d.descInput.Focus()
 
 	d.report = diagnostics.Collect(version, sessionCount)
 	d.errorEntries = errors.Entries()
@@ -62,51 +76,75 @@ func (d *BugReportDialog) Update(msg tea.Msg) (*BugReportDialog, tea.Cmd) {
 	}
 
 	switch keyMsg.String() {
-	case "j", "down":
-		if d.scroll < d.contentLines-1 {
-			d.scroll++
-		}
-	case "k", "up":
-		if d.scroll > 0 {
-			d.scroll--
-		}
-	case "g":
-		return d, d.openGitHubIssue()
-	case "esc", "q":
+	case "esc":
 		d.Hide()
 		return d, func() tea.Msg { return bugReportClosedMsg{} }
+	case "enter":
+		if d.submitting {
+			return d, nil
+		}
+		desc := strings.TrimSpace(d.descInput.Value())
+		if desc == "" {
+			return d, nil
+		}
+		d.submitting = true
+		return d, d.openGitHubIssue(desc)
+	default:
+		if d.submitting {
+			return d, nil
+		}
+		var cmd tea.Cmd
+		d.descInput, cmd = d.descInput.Update(msg)
+		return d, cmd
 	}
-
-	return d, nil
 }
 
-func (d *BugReportDialog) openGitHubIssue() tea.Cmd {
+func (d *BugReportDialog) openGitHubIssue(description string) tea.Cmd {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return nil
 	}
 
-	body := d.report.FormatMarkdown()
+	// Build title from description, truncated.
+	title := truncate(description, 60)
+
+	// Inject user description into the report.
+	body := d.report.FormatMarkdownWithDesc(description)
 
 	return func() tea.Msg {
-		// Write body to temp file (don't delete — gh needs it, OS cleans /tmp).
+		debuglog.Logger.Info("bug report: creating GitHub issue via API")
+
+		// Write body to temp file.
 		tmpFile, err := os.CreateTemp("", "brizz-bug-*.md")
 		if err != nil {
-			return bugReportClosedMsg{}
+			debuglog.Logger.Error("bug report: failed to create temp file", "err", err)
+			return bugReportOpenErrMsg{err: err}
 		}
 		if _, err := tmpFile.WriteString(body); err != nil {
 			tmpFile.Close()
-			return bugReportClosedMsg{}
+			return bugReportOpenErrMsg{err: err}
 		}
 		tmpFile.Close()
+		defer os.Remove(tmpFile.Name())
 
-		// --title and --body-file are required with --web in non-interactive mode.
+		// Create issue via API (no URL length limit), then open in browser.
 		cmd := exec.Command("gh", "issue", "create",
 			"--repo", "brizzai/brizz-code",
-			"--web",
-			"--title", "Bug Report",
+			"--title", title,
+			"--label", "bug",
 			"--body-file", tmpFile.Name(),
 		)
-		_ = cmd.Start()
+		out, err := cmd.Output()
+		if err != nil {
+			debuglog.Logger.Error("bug report: gh create failed", "err", err)
+			return bugReportOpenErrMsg{err: fmt.Errorf("gh issue create: %w", err)}
+		}
+
+		// gh outputs the issue URL on stdout.
+		issueURL := strings.TrimSpace(string(out))
+		debuglog.Logger.Info("bug report: issue created", "url", issueURL)
+		if issueURL != "" {
+			_ = exec.Command("open", issueURL).Start()
+		}
 		return bugReportClosedMsg{}
 	}
 }
@@ -132,11 +170,19 @@ func (d *BugReportDialog) View() string {
 	b.WriteString(titleStyle.Render("Bug Report"))
 	b.WriteString("\n")
 
+	// Description input.
+	b.WriteString("\n")
+	b.WriteString(sectionStyle.Render("Description"))
+	b.WriteString("\n")
+	d.descInput.Width = innerWidth - 2
+	b.WriteString("  " + d.descInput.View())
+	b.WriteString("\n")
+
 	// Recent Errors.
 	b.WriteString("\n")
 	errCount := len(d.errorEntries)
-	if errCount > 10 {
-		errCount = 10
+	if errCount > 5 {
+		errCount = 5
 	}
 	b.WriteString(sectionStyle.Render(fmt.Sprintf("Recent Errors (%d)", len(d.errorEntries))))
 	b.WriteString("\n")
@@ -156,8 +202,8 @@ func (d *BugReportDialog) View() string {
 	// Recent Actions.
 	b.WriteString("\n")
 	actionCount := len(d.actionEntries)
-	if actionCount > 10 {
-		actionCount = 10
+	if actionCount > 5 {
+		actionCount = 5
 	}
 	b.WriteString(sectionStyle.Render("Recent Actions"))
 	b.WriteString("\n")
@@ -206,14 +252,23 @@ func (d *BugReportDialog) View() string {
 	b.WriteString("\n")
 
 	// Controls.
-	ghAvailable := true
-	if _, err := exec.LookPath("gh"); err != nil {
-		ghAvailable = false
-	}
-	if ghAvailable {
-		b.WriteString(dimStyle.Render("g") + " Open GitHub issue    " + dimStyle.Render("esc") + " Close")
+	if d.submitting {
+		b.WriteString(lipgloss.NewStyle().Foreground(ColorAccent).Render("Creating issue..."))
 	} else {
-		b.WriteString(dimStyle.Render("gh CLI not found") + "    " + dimStyle.Render("esc") + " Close")
+		ghAvailable := true
+		if _, err := exec.LookPath("gh"); err != nil {
+			ghAvailable = false
+		}
+		if ghAvailable {
+			hasDesc := strings.TrimSpace(d.descInput.Value()) != ""
+			if hasDesc {
+				b.WriteString(dimStyle.Render("enter") + " Submit    " + dimStyle.Render("esc") + " Close")
+			} else {
+				b.WriteString(dimStyle.Render("Type a description, then press enter") + "    " + dimStyle.Render("esc") + " Close")
+			}
+		} else {
+			b.WriteString(dimStyle.Render("gh CLI not found") + "    " + dimStyle.Render("esc") + " Close")
+		}
 	}
 
 	content := b.String()
