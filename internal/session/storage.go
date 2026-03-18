@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	_ "modernc.org/sqlite"
 )
 
@@ -41,12 +42,16 @@ func DefaultDBPath() string {
 
 // Open opens or creates the SQLite database with WAL mode.
 func Open(dbPath string) (*StateDB, error) {
+	debuglog.Logger.Info("opening database", "path", dbPath)
+
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
+		debuglog.Logger.Error("failed to create db directory", "path", dbPath, "error", err)
 		return nil, fmt.Errorf("create db directory: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
+		debuglog.Logger.Error("failed to open database", "path", dbPath, "error", err)
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
@@ -58,6 +63,7 @@ func Open(dbPath string) (*StateDB, error) {
 	}
 	for _, p := range pragmas {
 		if _, err := db.Exec(p); err != nil {
+			debuglog.Logger.Error("failed to set pragma", "pragma", p, "error", err)
 			db.Close()
 			return nil, fmt.Errorf("set pragma %q: %w", p, err)
 		}
@@ -65,10 +71,12 @@ func Open(dbPath string) (*StateDB, error) {
 
 	s := &StateDB{db: db}
 	if err := s.migrate(); err != nil {
+		debuglog.Logger.Error("database migration failed", "error", err)
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
+	debuglog.Logger.Info("database opened successfully", "path", dbPath)
 	return s, nil
 }
 
@@ -92,6 +100,7 @@ func (s *StateDB) migrate() error {
 		)
 	`)
 	if err != nil {
+		debuglog.Logger.Error("migration failed: create sessions table", "error", err)
 		return err
 	}
 
@@ -99,6 +108,7 @@ func (s *StateDB) migrate() error {
 	if !s.hasColumn("sessions", "claude_session_id") {
 		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN claude_session_id TEXT NOT NULL DEFAULT ''`)
 		if err != nil {
+			debuglog.Logger.Error("migration failed: add claude_session_id column", "error", err)
 			return err
 		}
 	}
@@ -107,6 +117,7 @@ func (s *StateDB) migrate() error {
 	if !s.hasColumn("sessions", "workspace_name") {
 		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN workspace_name TEXT NOT NULL DEFAULT ''`)
 		if err != nil {
+			debuglog.Logger.Error("migration failed: add workspace_name column", "error", err)
 			return err
 		}
 	}
@@ -115,24 +126,28 @@ func (s *StateDB) migrate() error {
 	if !s.hasColumn("sessions", "manually_renamed") {
 		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN manually_renamed INTEGER NOT NULL DEFAULT 0`)
 		if err != nil {
+			debuglog.Logger.Error("migration failed: add manually_renamed column", "error", err)
 			return err
 		}
 	}
 	if !s.hasColumn("sessions", "first_prompt") {
 		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN first_prompt TEXT NOT NULL DEFAULT ''`)
 		if err != nil {
+			debuglog.Logger.Error("migration failed: add first_prompt column", "error", err)
 			return err
 		}
 	}
 	if !s.hasColumn("sessions", "title_generated") {
 		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN title_generated INTEGER NOT NULL DEFAULT 0`)
 		if err != nil {
+			debuglog.Logger.Error("migration failed: add title_generated column", "error", err)
 			return err
 		}
 	}
 	if !s.hasColumn("sessions", "prompt_count") {
 		_, err = s.db.Exec(`ALTER TABLE sessions ADD COLUMN prompt_count INTEGER NOT NULL DEFAULT 0`)
 		if err != nil {
+			debuglog.Logger.Error("migration failed: add prompt_count column", "error", err)
 			return err
 		}
 	}
@@ -174,6 +189,9 @@ func (s *StateDB) SaveSession(row *SessionRow) error {
 		boolToInt(row.ManuallyRenamed), row.FirstPrompt, boolToInt(row.TitleGenerated),
 		row.PromptCount,
 	)
+	if err != nil {
+		debuglog.Logger.Error("failed to save session", "id", row.ID, "error", err)
+	}
 	return err
 }
 
@@ -184,6 +202,7 @@ func (s *StateDB) LoadSessions() ([]*SessionRow, error) {
 		FROM sessions ORDER BY created_at
 	`)
 	if err != nil {
+		debuglog.Logger.Error("failed to query sessions", "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -194,6 +213,7 @@ func (s *StateDB) LoadSessions() ([]*SessionRow, error) {
 		var createdAt, lastAccessed int64
 		var ack, manuallyRenamed, titleGenerated int
 		if err := rows.Scan(&r.ID, &r.Title, &r.ProjectPath, &r.Status, &r.TmuxSession, &createdAt, &lastAccessed, &ack, &r.ClaudeSessionID, &r.WorkspaceName, &manuallyRenamed, &r.FirstPrompt, &titleGenerated, &r.PromptCount); err != nil {
+			debuglog.Logger.Error("failed to scan session row", "error", err)
 			return nil, err
 		}
 		r.CreatedAt = time.Unix(createdAt, 0)
@@ -203,12 +223,21 @@ func (s *StateDB) LoadSessions() ([]*SessionRow, error) {
 		r.TitleGenerated = titleGenerated != 0
 		sessions = append(sessions, &r)
 	}
-	return sessions, rows.Err()
+	if err := rows.Err(); err != nil {
+		debuglog.Logger.Error("error iterating session rows", "error", err)
+		return sessions, err
+	}
+	debuglog.Logger.Debug("loaded sessions from database", "count", len(sessions))
+	return sessions, nil
 }
 
 // DeleteSession removes a session by ID.
 func (s *StateDB) DeleteSession(id string) error {
+	debuglog.Logger.Info("deleting session from storage", "id", id)
 	_, err := s.db.Exec("DELETE FROM sessions WHERE id = ?", id)
+	if err != nil {
+		debuglog.Logger.Error("failed to delete session", "id", id, "error", err)
+	}
 	return err
 }
 
@@ -219,6 +248,9 @@ func (s *StateDB) UpdateStatus(id, status string) error {
 			acknowledged = CASE WHEN ? = 'running' THEN 0 ELSE acknowledged END
 		WHERE id = ?
 	`, status, status, id)
+	if err != nil {
+		debuglog.Logger.Error("failed to update session status", "id", id, "status", status, "error", err)
+	}
 	return err
 }
 
@@ -243,12 +275,18 @@ func (s *StateDB) UpdateTmuxSession(id, tmuxSession string) error {
 // UpdateClaudeSessionID updates the Claude conversation session ID.
 func (s *StateDB) UpdateClaudeSessionID(id, claudeSessionID string) error {
 	_, err := s.db.Exec("UPDATE sessions SET claude_session_id = ? WHERE id = ?", claudeSessionID, id)
+	if err != nil {
+		debuglog.Logger.Error("failed to update claude session ID", "id", id, "claude_session_id", claudeSessionID, "error", err)
+	}
 	return err
 }
 
 // UpdateTitle updates the session title.
 func (s *StateDB) UpdateTitle(id, title string) error {
 	_, err := s.db.Exec("UPDATE sessions SET title = ? WHERE id = ?", title, id)
+	if err != nil {
+		debuglog.Logger.Error("failed to update session title", "id", id, "title", title, "error", err)
+	}
 	return err
 }
 

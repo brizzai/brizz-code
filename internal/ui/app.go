@@ -272,8 +272,12 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update storage with new status and tmux session name.
 		if s, ok := h.sessionByID[msg.id]; ok {
-			_ = h.storage.UpdateStatus(s.ID, string(s.GetStatus()))
-			_ = h.storage.UpdateTmuxSession(s.ID, s.TmuxSessionName)
+			if err := h.storage.UpdateStatus(s.ID, string(s.GetStatus())); err != nil {
+				debuglog.Logger.Error("storage: UpdateStatus after restart", "id", s.ID, "err", err)
+			}
+			if err := h.storage.UpdateTmuxSession(s.ID, s.TmuxSessionName); err != nil {
+				debuglog.Logger.Error("storage: UpdateTmuxSession after restart", "id", s.ID, "err", err)
+			}
 		}
 		h.rebuildFlatItems()
 		return h, nil
@@ -282,8 +286,12 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s, ok := h.sessionByID[msg.id]; ok {
 			s.Title = msg.newTitle
 			s.ManuallyRenamed = true
-			_ = h.storage.UpdateTitle(s.ID, msg.newTitle)
-			_ = h.storage.MarkManuallyRenamed(s.ID)
+			if err := h.storage.UpdateTitle(s.ID, msg.newTitle); err != nil {
+				debuglog.Logger.Error("storage: UpdateTitle (rename)", "id", s.ID, "err", err)
+			}
+			if err := h.storage.MarkManuallyRenamed(s.ID); err != nil {
+				debuglog.Logger.Error("storage: MarkManuallyRenamed", "id", s.ID, "err", err)
+			}
 			h.rebuildFlatItems()
 		}
 		return h, nil
@@ -870,8 +878,12 @@ func (h *Home) attachSelected() tea.Cmd {
 
 	s.MarkAccessed()
 	s.Acknowledge()
-	_ = h.storage.SetAcknowledged(s.ID, true)
-	_ = h.storage.UpdateLastAccessed(s.ID)
+	if err := h.storage.SetAcknowledged(s.ID, true); err != nil {
+		debuglog.Logger.Error("storage: SetAcknowledged", "id", s.ID, "err", err)
+	}
+	if err := h.storage.UpdateLastAccessed(s.ID); err != nil {
+		debuglog.Logger.Error("storage: UpdateLastAccessed", "id", s.ID, "err", err)
+	}
 
 	h.isAttaching.Store(true)
 
@@ -900,10 +912,12 @@ func (h *Home) handleSessionCreate(msg sessionCreateMsg) (tea.Model, tea.Cmd) {
 		h.setError(fmt.Errorf("claude CLI not found — install Claude Code to create sessions"))
 		return h, nil
 	}
+	debuglog.Logger.Info("creating session", "title", msg.title, "path", msg.path)
 	s := session.NewSession(msg.title, msg.path)
 	s.WorkspaceName = msg.workspaceName
 	return h, func() tea.Msg {
 		if err := s.Start(); err != nil {
+			debuglog.Logger.Error("session Start() failed", "title", msg.title, "path", msg.path, "err", err)
 			return sessionCreateResultMsg{err: err}
 		}
 		return sessionCreateResultMsg{session: s}
@@ -990,14 +1004,22 @@ func (h *Home) restartSelected() tea.Cmd {
 	}
 
 	id := s.ID
+	title := s.Title
+	debuglog.Logger.Info("restarting session", "id", id, "title", title)
 	return func() tea.Msg {
 		var err error
 		if s.IsAlive() && !s.GetTmuxSession().IsPaneDead() {
 			// Tmux session alive, just respawn the pane.
 			err = s.RespawnClaude()
+			if err != nil {
+				debuglog.Logger.Error("RespawnClaude failed", "id", id, "err", err)
+			}
 		} else {
 			// Tmux session dead or pane dead — full restart.
 			err = s.Restart()
+			if err != nil {
+				debuglog.Logger.Error("Restart failed", "id", id, "err", err)
+			}
 		}
 		return sessionRestartMsg{id: id, err: err}
 	}
@@ -1191,12 +1213,20 @@ func (h *Home) openEditorSelected() tea.Cmd {
 		return nil
 	}
 	parts := strings.Fields(h.cfg.GetEditor())
+	if len(parts) == 0 {
+		return func() tea.Msg {
+			return openEditorMsg{err: fmt.Errorf("no editor configured")}
+		}
+	}
 	projectPath := s.ProjectPath
 	return func() tea.Msg {
 		args := append(parts[1:], projectPath)
 		cmd := exec.Command(parts[0], args...)
-		err := cmd.Start()
-		return openEditorMsg{err: err}
+		if err := cmd.Start(); err != nil {
+			debuglog.Logger.Error("editor launch failed", "editor", parts[0], "args", args, "err", err)
+			return openEditorMsg{err: err}
+		}
+		return openEditorMsg{}
 	}
 }
 
@@ -1213,6 +1243,7 @@ func (h *Home) quickApproveSelected() tea.Cmd {
 		return nil
 	}
 	ts := s.GetTmuxSession()
+	debuglog.Logger.Info("quick approve", "id", s.ID, "title", s.Title)
 	return func() tea.Msg {
 		// Send "y" then Enter: menu-style prompts ignore "y" and Enter confirms;
 		// (Y/n) and (y/N) prompts accept "y" as approval, Enter submits.
@@ -1225,12 +1256,14 @@ func (h *Home) quickApproveSelected() tea.Cmd {
 func (h *Home) openPRInBrowser() tea.Cmd {
 	repo := h.resolveCurrentRepo()
 	if repo == "" {
+		debuglog.Logger.Debug("openPR: no repo selected")
 		h.setError(fmt.Errorf("no repo selected"))
 		return nil
 	}
 
 	info := h.gitInfoCache[repo]
 	if info == nil || info.PR == nil || info.PR.URL == "" {
+		debuglog.Logger.Debug("openPR: no PR for branch", "repo", repo)
 		h.setError(fmt.Errorf("no PR for this branch"))
 		return nil
 	}
@@ -1253,6 +1286,7 @@ func (h *Home) openPRInBrowser() tea.Cmd {
 			// Fallback to macOS open command.
 			debuglog.Logger.Debug("chrome extension unavailable, falling back to open", "err", err)
 			if openErr := exec.Command("open", prURL).Start(); openErr != nil {
+				debuglog.Logger.Error("failed to open PR in browser", "url", prURL, "err", openErr)
 				return openPRMsg{err: fmt.Errorf("open PR: %w", openErr)}
 			}
 		}
@@ -1266,16 +1300,24 @@ func (h *Home) deleteSession(id string) {
 		return
 	}
 
+	debuglog.Logger.Info("deleting session", "id", id, "title", s.Title)
+
 	// Kill tmux session if alive.
 	if s.IsAlive() {
-		_ = s.Kill()
+		if err := s.Kill(); err != nil {
+			debuglog.Logger.Error("failed to kill tmux session", "id", id, "err", err)
+		}
 	}
 
 	// Remove from storage.
-	_ = h.storage.DeleteSession(id)
+	if err := h.storage.DeleteSession(id); err != nil {
+		debuglog.Logger.Error("failed to delete session from storage", "id", id, "err", err)
+	}
 
 	// Remove hook status file.
-	_ = os.Remove(filepath.Join(hooks.GetHooksDir(), id+".json"))
+	if err := os.Remove(filepath.Join(hooks.GetHooksDir(), id+".json")); err != nil && !os.IsNotExist(err) {
+		debuglog.Logger.Error("failed to remove hook status file", "id", id, "err", err)
+	}
 
 	// Remove from list.
 	var remaining []*session.Session
@@ -1361,7 +1403,7 @@ func (h *Home) statusWorkerCycle() {
 	// Recover from panics to keep the worker alive.
 	defer func() {
 		if r := recover(); r != nil {
-			_ = r // Swallow panic, worker continues next cycle.
+			debuglog.Logger.Error("statusWorkerCycle panic recovered", "panic", r)
 		}
 	}()
 
@@ -1395,22 +1437,28 @@ func (h *Home) statusWorkerCycle() {
 				})
 				// Persist new Claude session ID if it changed.
 				if s.ClaudeSessionID != oldClaudeSessionID && s.ClaudeSessionID != "" {
-					_ = h.storage.UpdateClaudeSessionID(s.ID, s.ClaudeSessionID)
+					if err := h.storage.UpdateClaudeSessionID(s.ID, s.ClaudeSessionID); err != nil {
+						debuglog.Logger.Error("storage: UpdateClaudeSessionID", "id", s.ID, "err", err)
+					}
 				}
 				// Persist prompt changes and reset title on every new prompt
 				// (for non-manually-renamed, non-Claude-named sessions).
 				if s.PromptCount != oldPromptCount {
-					_ = h.storage.UpdatePromptCount(s.ID, s.PromptCount)
+					if err := h.storage.UpdatePromptCount(s.ID, s.PromptCount); err != nil {
+						debuglog.Logger.Error("storage: UpdatePromptCount", "id", s.ID, "err", err)
+					}
 					if h.cfg.IsAutoNameEnabled() && s.TitleGenerated && !s.ManuallyRenamed && s.ClaudeSessionName == "" {
 						s.TitleGenerated = false
-						_ = h.storage.ResetTitleGenerated(s.ID)
+						if err := h.storage.ResetTitleGenerated(s.ID); err != nil {
+							debuglog.Logger.Error("storage: ResetTitleGenerated", "id", s.ID, "err", err)
+						}
 					}
 				}
 				if s.FirstPrompt != "" && s.FirstPrompt != oldFirstPrompt {
-					_ = h.storage.UpdateFirstPrompt(s.ID, s.FirstPrompt)
+					if err := h.storage.UpdateFirstPrompt(s.ID, s.FirstPrompt); err != nil {
+						debuglog.Logger.Error("storage: UpdateFirstPrompt", "id", s.ID, "err", err)
+					}
 				}
-			} else {
-				debuglog.Logger.Debug("worker: no hook data for session", "session", s.ID)
 			}
 		}
 	}
@@ -1430,9 +1478,13 @@ func (h *Home) statusWorkerCycle() {
 				if name != "" && name != s.ClaudeSessionName {
 					s.ClaudeSessionName = name
 					s.Title = name
-					_ = h.storage.UpdateTitle(s.ID, name)
+					if err := h.storage.UpdateTitle(s.ID, name); err != nil {
+						debuglog.Logger.Error("storage: UpdateTitle (claude name)", "id", s.ID, "err", err)
+					}
 					s.TitleGenerated = true
-					_ = h.storage.MarkTitleGenerated(s.ID)
+					if err := h.storage.MarkTitleGenerated(s.ID); err != nil {
+						debuglog.Logger.Error("storage: MarkTitleGenerated", "id", s.ID, "err", err)
+					}
 				}
 			}
 			if s.ClaudeSessionName != "" {
@@ -1444,10 +1496,14 @@ func (h *Home) statusWorkerCycle() {
 				title := naming.GenerateTitle(s.FirstPrompt)
 				if title != "" && title != s.Title {
 					s.Title = title
-					_ = h.storage.UpdateTitle(s.ID, title)
+					if err := h.storage.UpdateTitle(s.ID, title); err != nil {
+						debuglog.Logger.Error("storage: UpdateTitle (auto-name)", "id", s.ID, "err", err)
+					}
 				}
 				s.TitleGenerated = true
-				_ = h.storage.MarkTitleGenerated(s.ID)
+				if err := h.storage.MarkTitleGenerated(s.ID); err != nil {
+					debuglog.Logger.Error("storage: MarkTitleGenerated", "id", s.ID, "err", err)
+				}
 				break // one per cycle
 			}
 		}
@@ -1465,7 +1521,9 @@ func (h *Home) statusWorkerCycle() {
 		s.UpdateStatus()
 		newStatus := s.GetStatus()
 		if oldStatus != newStatus {
-			_ = h.storage.UpdateStatus(s.ID, string(newStatus))
+			if err := h.storage.UpdateStatus(s.ID, string(newStatus)); err != nil {
+				debuglog.Logger.Error("storage: UpdateStatus", "id", s.ID, "status", newStatus, "err", err)
+			}
 		}
 	}
 	h.statusRRIndex = (h.statusRRIndex + count) % len(sessions)
@@ -1553,9 +1611,12 @@ func copyClaudeSettingsFile(srcRepo, dstRepo string) {
 	}
 	dstDir := filepath.Join(dstRepo, ".claude")
 	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		debuglog.Logger.Error("copyClaudeSettings: failed to create .claude dir", "dst", dstDir, "err", err)
 		return
 	}
-	_ = os.WriteFile(filepath.Join(dstDir, "settings.local.json"), data, 0600)
+	if err := os.WriteFile(filepath.Join(dstDir, "settings.local.json"), data, 0600); err != nil {
+		debuglog.Logger.Error("copyClaudeSettings: failed to write settings file", "dst", dstRepo, "err", err)
+	}
 }
 
 func (h *Home) fetchPreview(s *session.Session) tea.Cmd {
@@ -1710,6 +1771,7 @@ func (h *Home) syncViewport() {
 func (h *Home) loadSessions() tea.Msg {
 	rows, err := h.storage.LoadSessions()
 	if err != nil {
+		debuglog.Logger.Error("failed to load sessions from database", "err", err)
 		return loadSessionsMsg{err: err}
 	}
 

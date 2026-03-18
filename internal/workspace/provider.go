@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 )
 
 // WorkspaceInfo represents a workspace from the provider.
@@ -41,8 +43,10 @@ func (g *GitWorktreeProvider) List(repoPath string) ([]WorkspaceInfo, error) {
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			debuglog.Logger.Error("git worktree list failed", "repo", repoPath, "err", strings.TrimSpace(string(exitErr.Stderr)))
 			return nil, fmt.Errorf("git worktree list: %s", strings.TrimSpace(string(exitErr.Stderr)))
 		}
+		debuglog.Logger.Error("git worktree list failed", "repo", repoPath, "err", err)
 		return nil, fmt.Errorf("git worktree list: %w", err)
 	}
 
@@ -64,6 +68,8 @@ func (g *GitWorktreeProvider) List(repoPath string) ([]WorkspaceInfo, error) {
 func (g *GitWorktreeProvider) Create(repoPath, name, branch, baseBranch string) (*WorkspaceInfo, error) {
 	path := deriveWorktreePath(repoPath, name)
 
+	debuglog.Logger.Info("git worktree create", "repo", repoPath, "name", name, "branch", branch, "baseBranch", baseBranch, "path", path)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -74,6 +80,7 @@ func (g *GitWorktreeProvider) Create(repoPath, name, branch, baseBranch string) 
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		debuglog.Logger.Debug("git worktree add with -b failed, retrying without -b", "name", name, "branch", branch, "err", strings.TrimSpace(string(out)))
 		// Branch might already exist — retry without -b.
 		args2 := []string{"-C", repoPath, "worktree", "add", path, branch}
 		cmd2 := exec.CommandContext(ctx, "git", args2...)
@@ -83,10 +90,12 @@ func (g *GitWorktreeProvider) Create(repoPath, name, branch, baseBranch string) 
 			if errMsg == "" {
 				errMsg = strings.TrimSpace(string(out2))
 			}
+			debuglog.Logger.Error("git worktree create failed", "name", name, "branch", branch, "err", errMsg)
 			return nil, fmt.Errorf("git worktree add: %s", errMsg)
 		}
 	}
 
+	debuglog.Logger.Info("git worktree created", "name", name, "branch", branch, "path", path)
 	return &WorkspaceInfo{
 		Name:   name,
 		Path:   path,
@@ -95,6 +104,8 @@ func (g *GitWorktreeProvider) Create(repoPath, name, branch, baseBranch string) 
 }
 
 func (g *GitWorktreeProvider) Destroy(repoPath, name string) error {
+	debuglog.Logger.Info("git worktree destroy", "repo", repoPath, "name", name)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -104,12 +115,15 @@ func (g *GitWorktreeProvider) Destroy(repoPath, name string) error {
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			debuglog.Logger.Error("git worktree destroy: list failed", "name", name, "err", strings.TrimSpace(string(exitErr.Stderr)))
 			return fmt.Errorf("git worktree list: %s", strings.TrimSpace(string(exitErr.Stderr)))
 		}
+		debuglog.Logger.Error("git worktree destroy: list failed", "name", name, "err", err)
 		return fmt.Errorf("git worktree list: %w", err)
 	}
 	all := parseWorktreePorcelain(string(out))
 	if len(all) == 0 {
+		debuglog.Logger.Error("git worktree destroy: not found", "name", name)
 		return fmt.Errorf("worktree %q not found", name)
 	}
 
@@ -135,13 +149,16 @@ func (g *GitWorktreeProvider) Destroy(repoPath, name string) error {
 		}
 	}
 	if wtPath == "" {
+		debuglog.Logger.Error("git worktree destroy: not found after search", "name", name, "repo", repoPath)
 		return fmt.Errorf("worktree %q not found", name)
 	}
 
 	cmd = exec.CommandContext(ctx, "git", "-C", mainPath, "worktree", "remove", "--force", wtPath)
 	if rmOut, err := cmd.CombinedOutput(); err != nil {
+		debuglog.Logger.Error("git worktree destroy failed", "name", name, "path", wtPath, "err", strings.TrimSpace(string(rmOut)))
 		return fmt.Errorf("git worktree remove: %s", strings.TrimSpace(string(rmOut)))
 	}
+	debuglog.Logger.Info("git worktree destroyed", "name", name, "path", wtPath)
 	return nil
 }
 
@@ -171,13 +188,16 @@ func (p *ShellProvider) List(repoPath string) ([]WorkspaceInfo, error) {
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			debuglog.Logger.Error("shell workspace list failed", "repo", repoPath, "cmd", p.ListCmd, "err", strings.TrimSpace(string(exitErr.Stderr)))
 			return nil, fmt.Errorf("list command failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
 		}
+		debuglog.Logger.Error("shell workspace list failed", "repo", repoPath, "cmd", p.ListCmd, "err", err)
 		return nil, fmt.Errorf("list command failed: %w", err)
 	}
 
 	var workspaces []WorkspaceInfo
 	if err := json.Unmarshal(out, &workspaces); err != nil {
+		debuglog.Logger.Error("shell workspace list: parse output failed", "repo", repoPath, "err", err)
 		return nil, fmt.Errorf("parse list output: %w", err)
 	}
 	return workspaces, nil
@@ -187,6 +207,8 @@ func (p *ShellProvider) Create(repoPath, name, branch, baseBranch string) (*Work
 	if p.CreateCmd == "" {
 		return nil, fmt.Errorf("create command not configured")
 	}
+
+	debuglog.Logger.Info("shell workspace create", "repo", repoPath, "name", name, "branch", branch)
 
 	cmdStr := strings.ReplaceAll(p.CreateCmd, "{{name}}", name)
 	if branch == "" {
@@ -206,14 +228,17 @@ func (p *ShellProvider) Create(repoPath, name, branch, baseBranch string) (*Work
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			debuglog.Logger.Error("shell workspace create failed", "name", name, "branch", branch, "err", strings.TrimSpace(string(exitErr.Stderr)))
 			return nil, fmt.Errorf("create command failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
 		}
+		debuglog.Logger.Error("shell workspace create failed", "name", name, "branch", branch, "err", err)
 		return nil, fmt.Errorf("create command failed: %w", err)
 	}
 
 	// Try parsing output as JSON first.
 	var info WorkspaceInfo
 	if err := json.Unmarshal(out, &info); err == nil {
+		debuglog.Logger.Info("shell workspace created", "name", info.Name, "path", info.Path, "branch", info.Branch)
 		return &info, nil
 	}
 
@@ -223,6 +248,7 @@ func (p *ShellProvider) Create(repoPath, name, branch, baseBranch string) (*Work
 		if listErr == nil {
 			for _, ws := range workspaces {
 				if ws.Name == name {
+					debuglog.Logger.Info("shell workspace created (found via list)", "name", ws.Name, "path", ws.Path)
 					return &ws, nil
 				}
 			}
@@ -230,6 +256,7 @@ func (p *ShellProvider) Create(repoPath, name, branch, baseBranch string) (*Work
 	}
 
 	// Fall back to name-only info.
+	debuglog.Logger.Info("shell workspace created (name-only fallback)", "name", name, "branch", branch)
 	return &WorkspaceInfo{Name: name, Branch: branch}, nil
 }
 
@@ -237,6 +264,8 @@ func (p *ShellProvider) Destroy(repoPath, name string) error {
 	if p.DestroyCmd == "" {
 		return fmt.Errorf("destroy command not configured")
 	}
+
+	debuglog.Logger.Info("shell workspace destroy", "repo", repoPath, "name", name)
 
 	cmdStr := strings.ReplaceAll(p.DestroyCmd, "{{name}}", name)
 
@@ -246,8 +275,10 @@ func (p *ShellProvider) Destroy(repoPath, name string) error {
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	cmd.Dir = repoPath
 	if out, err := cmd.CombinedOutput(); err != nil {
+		debuglog.Logger.Error("shell workspace destroy failed", "name", name, "err", strings.TrimSpace(string(out)))
 		return fmt.Errorf("destroy command failed: %s", strings.TrimSpace(string(out)))
 	}
+	debuglog.Logger.Info("shell workspace destroyed", "name", name)
 	return nil
 }
 

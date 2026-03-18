@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 )
 
 // GetBranchName returns the current branch name for the given repo path.
@@ -48,6 +50,7 @@ func ListBranches(repoPath string) ([]BranchInfo, error) {
 		"refs/heads/", "refs/remotes/origin/")
 	output, err := cmd.Output()
 	if err != nil {
+		debuglog.Logger.Debug("ListBranches failed", "path", repoPath, "error", err)
 		return nil, fmt.Errorf("git for-each-ref: %w", err)
 	}
 
@@ -128,6 +131,7 @@ func CheckoutBranch(repoPath, branch string) error {
 	cmd := exec.Command("git", "-C", repoPath, "checkout", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		debuglog.Logger.Debug("CheckoutBranch failed", "path", repoPath, "branch", branch, "error", strings.TrimSpace(string(output)))
 		return fmt.Errorf("%s", strings.TrimSpace(string(output)))
 	}
 	return nil
@@ -141,6 +145,8 @@ func GetDefaultBranch(repoPath string) string {
 	if output, err := cmd.Output(); err == nil {
 		ref := strings.TrimSpace(string(output))
 		return strings.TrimPrefix(ref, "refs/remotes/origin/")
+	} else {
+		debuglog.Logger.Debug("GetDefaultBranch symbolic-ref failed, trying fallback", "path", repoPath, "error", err)
 	}
 	// Fallback: check if "main" or "master" exists.
 	for _, name := range []string{"main", "master"} {
@@ -149,6 +155,7 @@ func GetDefaultBranch(repoPath string) string {
 			return name
 		}
 	}
+	debuglog.Logger.Debug("GetDefaultBranch no default branch found, using 'main'", "path", repoPath)
 	return "main"
 }
 

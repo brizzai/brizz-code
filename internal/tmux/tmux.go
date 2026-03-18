@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -79,8 +80,10 @@ func (s *Session) Start(command string, env ...string) error {
 	}
 	cmd := exec.Command("tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
+		debuglog.Logger.Error("tmux start failed", "session", s.Name, "workdir", s.WorkDir, "err", err)
 		return fmt.Errorf("tmux new-session failed: %s: %w", string(output), err)
 	}
+	debuglog.Logger.Info("tmux session started", "session", s.Name, "workdir", s.WorkDir)
 
 	// Batch set options.
 	optArgs := []string{
@@ -125,25 +128,33 @@ func (s *Session) ConfigureStatusBar() {
 		"set-option", "-t", s.Name, "status-right", rightStatus, ";",
 		"set-option", "-t", s.Name, "status-right-length", "80",
 	)
-	_ = cmd.Run()
+	if err := cmd.Run(); err != nil {
+		debuglog.Logger.Error("tmux configure status bar failed", "session", s.Name, "err", err)
+	}
 }
 
 // RespawnPane kills the current pane process and restarts with the given command.
 // Optional env vars are set via -e flags on the respawned pane.
 func (s *Session) RespawnPane(command string, env ...string) error {
+	debuglog.Logger.Info("tmux respawning pane", "session", s.Name, "command", command)
 	args := []string{"respawn-pane", "-k", "-t", s.Name + ":"}
 	for _, e := range env {
 		args = append(args, "-e", e)
 	}
 	args = append(args, command)
 	cmd := exec.Command("tmux", args...)
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		debuglog.Logger.Error("tmux respawn failed", "session", s.Name, "err", err)
+		return err
+	}
+	return nil
 }
 
 // IsPaneDead checks if the pane's process has exited.
 func (s *Session) IsPaneDead() bool {
 	out, err := exec.Command("tmux", "list-panes", "-t", s.Name+":0.0", "-F", "#{pane_dead}").Output()
 	if err != nil {
+		debuglog.Logger.Error("tmux IsPaneDead check failed", "session", s.Name, "err", err)
 		return false
 	}
 	return strings.TrimSpace(string(out)) == "1"
@@ -167,15 +178,22 @@ func (s *Session) Exists() bool {
 
 // SendKeys sends keystrokes to the tmux pane.
 func (s *Session) SendKeys(keys ...string) error {
+	debuglog.Logger.Debug("tmux sending keys", "session", s.Name, "keys", keys)
 	args := append([]string{"send-keys", "-t", s.Name}, keys...)
 	cmd := exec.Command("tmux", args...)
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		debuglog.Logger.Error("tmux send-keys failed", "session", s.Name, "keys", keys, "err", err)
+		return err
+	}
+	return nil
 }
 
 // Kill terminates the tmux session.
 func (s *Session) Kill() error {
+	debuglog.Logger.Info("tmux killing session", "session", s.Name)
 	cmd := exec.Command("tmux", "kill-session", "-t", s.Name)
 	if err := cmd.Run(); err != nil {
+		debuglog.Logger.Error("tmux kill failed", "session", s.Name, "err", err)
 		return fmt.Errorf("tmux kill-session failed: %w", err)
 	}
 
@@ -207,6 +225,7 @@ func (s *Session) CapturePane() (string, error) {
 		output, err := cmd.Output()
 		if err != nil {
 			if ctx.Err() == context.DeadlineExceeded {
+				debuglog.Logger.Error("tmux capture-pane timeout", "session", s.Name)
 				// On timeout, return cached content if available.
 				s.cacheMu.RLock()
 				cached := s.cacheContent
@@ -215,6 +234,7 @@ func (s *Session) CapturePane() (string, error) {
 					return cached, nil
 				}
 			}
+			debuglog.Logger.Error("tmux capture-pane failed", "session", s.Name, "err", err)
 			return "", fmt.Errorf("capture-pane failed: %w", err)
 		}
 

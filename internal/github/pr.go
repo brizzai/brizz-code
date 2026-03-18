@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 )
 
 // PR represents a GitHub pull request.
@@ -54,12 +56,13 @@ func GetPRForBranch(repoPath, branch string) (*PR, error) {
 	cmd.Dir = repoPath
 	output, err := cmd.Output()
 	if err != nil {
-		// gh returns exit code 1 when no PR exists for the branch.
+		// gh returns exit code 1 when no PR exists for the branch — expected, not an error.
 		return nil, nil
 	}
 
 	var resp ghPRResponse
 	if err := json.Unmarshal(output, &resp); err != nil {
+		debuglog.Logger.Debug("GetPRForBranch JSON parse failed", "path", repoPath, "branch", branch, "error", err)
 		return nil, nil
 	}
 
@@ -83,6 +86,7 @@ func getUnresolvedThreadCount(repoPath string, prNumber int, prURL string) int {
 	trimmed := strings.TrimPrefix(prURL, "https://github.com/")
 	parts := strings.Split(trimmed, "/")
 	if len(parts) < 3 {
+		debuglog.Logger.Debug("getUnresolvedThreadCount failed to parse PR URL", "url", prURL)
 		return 0
 	}
 	owner, repo := parts[0], parts[1]
@@ -101,6 +105,7 @@ func getUnresolvedThreadCount(repoPath string, prNumber int, prURL string) int {
 	cmd.Dir = repoPath
 	output, err := cmd.Output()
 	if err != nil {
+		debuglog.Logger.Debug("getUnresolvedThreadCount GraphQL query failed", "pr", prNumber, "error", err)
 		return 0
 	}
 
@@ -118,6 +123,7 @@ func getUnresolvedThreadCount(repoPath string, prNumber int, prURL string) int {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
+		debuglog.Logger.Debug("getUnresolvedThreadCount JSON parse failed", "pr", prNumber, "error", err)
 		return 0
 	}
 

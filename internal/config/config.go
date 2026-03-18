@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 )
 
 // Config holds user-configurable settings.
@@ -45,12 +47,18 @@ func Load() *Config {
 		TickIntervalSec: 2,
 	}
 
-	data, err := os.ReadFile(DefaultConfigPath())
+	path := DefaultConfigPath()
+	data, err := os.ReadFile(path)
 	if err != nil {
+		debuglog.Logger.Info("config file not found, using defaults", "path", path)
 		return cfg
 	}
 
-	_ = json.Unmarshal(data, cfg)
+	if err := json.Unmarshal(data, cfg); err != nil {
+		debuglog.Logger.Error("failed to parse config file", "path", path, "error", err)
+	} else {
+		debuglog.Logger.Info("config loaded", "path", path)
+	}
 
 	// Enforce minimums.
 	if cfg.TickIntervalSec < 1 {
@@ -64,13 +72,19 @@ func Load() *Config {
 func (c *Config) Save() error {
 	path := DefaultConfigPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		debuglog.Logger.Error("failed to create config directory", "path", path, "error", err)
 		return err
 	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
+		debuglog.Logger.Error("failed to marshal config", "error", err)
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		debuglog.Logger.Error("failed to write config file", "path", path, "error", err)
+		return err
+	}
+	return nil
 }
 
 // IsCopyClaudeSettingsEnabled returns whether to copy .claude/settings.local.json to new worktrees (default: true).

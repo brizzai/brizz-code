@@ -3,6 +3,7 @@ package git
 import (
 	"time"
 
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 	"github.com/yuvalhayke/brizz-code/internal/github"
 )
 
@@ -30,7 +31,10 @@ func RefreshGitInfo(repoPath string) *RepoInfo {
 // RefreshPRInfo fetches PR info via gh CLI and updates the RepoInfo.
 // Slower operation (~200ms, network call).
 func RefreshPRInfo(info *RepoInfo, repoPath string) {
-	pr, _ := github.GetPRForBranch(repoPath, info.Branch)
+	pr, err := github.GetPRForBranch(repoPath, info.Branch)
+	if err != nil {
+		debuglog.Logger.Debug("RefreshPRInfo failed", "path", repoPath, "branch", info.Branch, "error", err)
+	}
 	info.PR = pr
 	info.LastPRRefresh = time.Now()
 }

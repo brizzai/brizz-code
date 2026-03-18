@@ -7,6 +7,9 @@ import (
 	"sync"
 )
 
+const maxLogSize = 1 << 20 // 1 MB
+const keepBytes = 512 << 10 // keep last 512 KB after truncation
+
 var (
 	mu      sync.Mutex
 	logFile *os.File
@@ -23,16 +26,22 @@ func LogPath() string {
 }
 
 // Init opens the debug log file and configures the global Logger.
+// On startup, if the log file exceeds maxLogSize, it is truncated to the last keepBytes.
 func Init() {
 	path := LogPath()
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	truncateIfNeeded(path)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return
 	}
 	mu.Lock()
 	logFile = f
-	Logger = slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	level := slog.LevelInfo
+	if os.Getenv("BRIZZ_DEBUG") != "" {
+		level = slog.LevelDebug
+	}
+	Logger = slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: level}))
 	mu.Unlock()
 }
 
@@ -44,4 +53,28 @@ func Close() {
 		logFile.Close()
 		logFile = nil
 	}
+}
+
+// truncateIfNeeded keeps only the last keepBytes of the log file if it exceeds maxLogSize.
+func truncateIfNeeded(path string) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= maxLogSize {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	tail := data
+	if len(data) > keepBytes {
+		tail = data[len(data)-keepBytes:]
+	}
+	// Advance to the first newline so we don't start mid-line.
+	for i, b := range tail {
+		if b == '\n' {
+			tail = tail[i+1:]
+			break
+		}
+	}
+	_ = os.WriteFile(path, tail, 0644)
 }

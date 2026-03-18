@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 )
 
 const hookDebounce = 100 * time.Millisecond
@@ -50,16 +51,19 @@ func NewHookWatcher() (*HookWatcher, error) {
 	hooksDir := GetHooksDir()
 
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		debuglog.Logger.Error("hook watcher: failed to create hooks dir", "dir", hooksDir, "err", err)
 		return nil, err
 	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
+		debuglog.Logger.Error("hook watcher: fsnotify watcher creation failed", "err", err)
 		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	debuglog.Logger.Info("hook watcher created", "dir", hooksDir)
 	return &HookWatcher{
 		hooksDir: hooksDir,
 		watcher:  watcher,
@@ -72,6 +76,7 @@ func NewHookWatcher() (*HookWatcher, error) {
 // Start begins watching the hooks directory. Blocks; run in a goroutine.
 func (w *HookWatcher) Start() {
 	if err := w.watcher.Add(w.hooksDir); err != nil {
+		debuglog.Logger.Error("hook watcher: failed to watch hooks dir", "dir", w.hooksDir, "err", err)
 		return
 	}
 
@@ -118,10 +123,11 @@ func (w *HookWatcher) Start() {
 			})
 			pendingMu.Unlock()
 
-		case _, ok := <-w.watcher.Errors:
+		case watchErr, ok := <-w.watcher.Errors:
 			if !ok {
 				return
 			}
+			debuglog.Logger.Error("hook watcher: fsnotify error", "err", watchErr)
 		}
 	}
 }
@@ -143,21 +149,26 @@ func (w *HookWatcher) GetStatus(sessionID string) *HookStatus {
 func (w *HookWatcher) loadExisting() {
 	entries, err := os.ReadDir(w.hooksDir)
 	if err != nil {
+		debuglog.Logger.Error("hook watcher: loadExisting ReadDir failed", "dir", w.hooksDir, "err", err)
 		return
 	}
 
+	count := 0
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		w.processFile(filepath.Join(w.hooksDir, entry.Name()))
+		count++
 	}
+	debuglog.Logger.Debug("hook watcher: loaded existing status files", "count", count)
 }
 
 // processFile reads a status file and updates the internal map.
 func (w *HookWatcher) processFile(filePath string) {
 	sf, err := ReadStatusFile(filePath)
 	if err != nil {
+		debuglog.Logger.Error("hook watcher: failed to parse status file", "file", filePath, "err", err)
 		return
 	}
 

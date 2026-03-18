@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 )
 
 // brizzCodeHookMarker is the substring used to identify brizz-code hooks in settings.json.
@@ -83,11 +85,13 @@ func InjectClaudeHooks(configDir string) (bool, error) {
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
+			debuglog.Logger.Error("claude hooks: failed to read settings.json", "path", settingsPath, "err", err)
 			return false, fmt.Errorf("read settings.json: %w", err)
 		}
 		rawSettings = make(map[string]json.RawMessage)
 	} else {
 		if err := json.Unmarshal(data, &rawSettings); err != nil {
+			debuglog.Logger.Error("claude hooks: failed to parse settings.json", "path", settingsPath, "err", err)
 			return false, fmt.Errorf("parse settings.json: %w", err)
 		}
 	}
@@ -95,6 +99,7 @@ func InjectClaudeHooks(configDir string) (bool, error) {
 	var existingHooks map[string]json.RawMessage
 	if raw, ok := rawSettings["hooks"]; ok {
 		if err := json.Unmarshal(raw, &existingHooks); err != nil {
+			debuglog.Logger.Error("claude hooks: failed to parse hooks section", "err", err)
 			existingHooks = make(map[string]json.RawMessage)
 		}
 	} else {
@@ -102,6 +107,7 @@ func InjectClaudeHooks(configDir string) (bool, error) {
 	}
 
 	if hooksAlreadyInstalled(existingHooks) && !hooksNeedUpdate(existingHooks) && !hasStaleHookEvents(existingHooks) {
+		debuglog.Logger.Debug("claude hooks: already installed and up to date")
 		return false, nil
 	}
 
@@ -133,36 +139,44 @@ func InjectClaudeHooks(configDir string) (bool, error) {
 	}
 	if err := os.Rename(tmpPath, settingsPath); err != nil {
 		os.Remove(tmpPath)
+		debuglog.Logger.Error("claude hooks: failed to rename settings.json.tmp", "err", err)
 		return false, fmt.Errorf("rename settings.json: %w", err)
 	}
 
+	debuglog.Logger.Info("claude hooks injected", "path", settingsPath)
 	return true, nil
 }
 
 // RemoveClaudeHooks removes brizz-code hook entries from Claude Code's settings.json.
 func RemoveClaudeHooks(configDir string) (bool, error) {
+	debuglog.Logger.Debug("claude hooks: removing hooks", "configDir", configDir)
 	settingsPath := filepath.Join(configDir, "settings.json")
 
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			debuglog.Logger.Debug("claude hooks remove: settings.json not found, nothing to remove")
 			return false, nil
 		}
+		debuglog.Logger.Error("claude hooks remove: failed to read settings.json", "path", settingsPath, "err", err)
 		return false, fmt.Errorf("read settings.json: %w", err)
 	}
 
 	var rawSettings map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawSettings); err != nil {
+		debuglog.Logger.Error("claude hooks remove: failed to parse settings.json", "path", settingsPath, "err", err)
 		return false, fmt.Errorf("parse settings.json: %w", err)
 	}
 
 	hooksRaw, ok := rawSettings["hooks"]
 	if !ok {
+		debuglog.Logger.Debug("claude hooks remove: no hooks section found")
 		return false, nil
 	}
 
 	var existingHooks map[string]json.RawMessage
 	if err := json.Unmarshal(hooksRaw, &existingHooks); err != nil {
+		debuglog.Logger.Error("claude hooks remove: failed to parse hooks section", "err", err)
 		return false, nil
 	}
 
@@ -182,6 +196,7 @@ func RemoveClaudeHooks(configDir string) (bool, error) {
 	}
 
 	if !removed {
+		debuglog.Logger.Debug("claude hooks remove: no brizz-code hooks found to remove")
 		return false, nil
 	}
 
@@ -199,13 +214,16 @@ func RemoveClaudeHooks(configDir string) (bool, error) {
 
 	tmpPath := settingsPath + ".tmp"
 	if err := os.WriteFile(tmpPath, finalData, 0644); err != nil {
+		debuglog.Logger.Error("claude hooks remove: failed to write settings.json.tmp", "err", err)
 		return false, fmt.Errorf("write settings.json.tmp: %w", err)
 	}
 	if err := os.Rename(tmpPath, settingsPath); err != nil {
 		os.Remove(tmpPath)
+		debuglog.Logger.Error("claude hooks remove: failed to rename settings.json.tmp", "err", err)
 		return false, fmt.Errorf("rename settings.json: %w", err)
 	}
 
+	debuglog.Logger.Info("claude hooks removed", "path", settingsPath)
 	return true, nil
 }
 

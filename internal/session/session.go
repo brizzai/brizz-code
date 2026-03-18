@@ -94,6 +94,7 @@ func (s *Session) sessionEnv() []string {
 
 // Start launches the Claude Code session in tmux.
 func (s *Session) Start() error {
+	debuglog.Logger.Info("session start", "id", s.ID, "title", s.Title, "path", s.ProjectPath)
 	s.mu.Lock()
 	s.Status = StatusStarting
 	s.mu.Unlock()
@@ -103,6 +104,7 @@ func (s *Session) Start() error {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
+		debuglog.Logger.Error("session start failed", "id", s.ID, "title", s.Title, "err", err)
 		return err
 	}
 
@@ -110,11 +112,13 @@ func (s *Session) Start() error {
 	s.Status = StatusRunning
 	s.ForkFromID = "" // Clear after first start so restarts use session's own ClaudeSessionID.
 	s.mu.Unlock()
+	debuglog.Logger.Info("session started", "id", s.ID, "title", s.Title)
 	return nil
 }
 
 // Kill terminates the tmux session.
 func (s *Session) Kill() error {
+	debuglog.Logger.Info("session kill", "id", s.ID, "title", s.Title)
 	err := s.tmuxSession.Kill()
 	s.mu.Lock()
 	s.Status = StatusError
@@ -213,6 +217,7 @@ func (s *Session) UpdateHookStatus(hs *HookStatus) {
 
 // Restart kills and recreates the tmux session with the same config.
 func (s *Session) Restart() error {
+	debuglog.Logger.Info("session restart", "id", s.ID, "title", s.Title)
 	// Kill old tmux session if it still exists.
 	if s.tmuxSession.Exists() {
 		_ = s.tmuxSession.Kill()
@@ -230,17 +235,21 @@ func (s *Session) Restart() error {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
+		debuglog.Logger.Error("session restart failed", "id", s.ID, "title", s.Title, "err", err)
 		return err
 	}
 
 	s.mu.Lock()
 	s.Status = StatusRunning
 	s.mu.Unlock()
+	debuglog.Logger.Info("session restarted", "id", s.ID, "title", s.Title)
 	return nil
 }
 
 // RespawnClaude restarts the claude process in an existing tmux session.
 func (s *Session) RespawnClaude() error {
+	resuming := s.ClaudeSessionID != ""
+	debuglog.Logger.Info("session respawn", "id", s.ID, "title", s.Title, "resuming", resuming)
 	s.mu.Lock()
 	s.Status = StatusStarting
 	s.mu.Unlock()
@@ -250,6 +259,7 @@ func (s *Session) RespawnClaude() error {
 		s.mu.Lock()
 		s.Status = StatusError
 		s.mu.Unlock()
+		debuglog.Logger.Error("session respawn failed", "id", s.ID, "title", s.Title, "err", err)
 		return err
 	}
 
@@ -259,6 +269,7 @@ func (s *Session) RespawnClaude() error {
 	s.mu.Lock()
 	s.Status = StatusRunning
 	s.mu.Unlock()
+	debuglog.Logger.Info("session respawned", "id", s.ID, "title", s.Title)
 	return nil
 }
 
