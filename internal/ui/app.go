@@ -1190,10 +1190,11 @@ func (h *Home) openEditorSelected() tea.Cmd {
 	if s == nil {
 		return nil
 	}
-	editor := h.cfg.GetEditor()
+	parts := strings.Fields(h.cfg.GetEditor())
 	projectPath := s.ProjectPath
 	return func() tea.Msg {
-		cmd := exec.Command(editor, projectPath)
+		args := append(parts[1:], projectPath)
+		cmd := exec.Command(parts[0], args...)
 		err := cmd.Start()
 		return openEditorMsg{err: err}
 	}
