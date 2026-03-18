@@ -97,7 +97,7 @@ func runTUI() {
 	}
 	defer storage.Close()
 
-	model := ui.NewHome(storage, cfg)
+	model := ui.NewHome(storage, cfg, version)
 	p := tea.NewProgram(
 		model,
 		tea.WithAltScreen(),

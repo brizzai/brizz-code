@@ -121,7 +121,13 @@ type Home struct {
 	filterText   string
 
 	// Config.
-	cfg *config.Config
+	cfg     *config.Config
+	version string
+
+	// Bug report / diagnostics.
+	errorHistory *ErrorHistory
+	actionLog    *ActionLog
+	bugReport    *BugReportDialog
 
 	// Background worker for async status/git/PR updates.
 	statusTrigger chan struct{} // buffered(1), triggers worker
@@ -133,7 +139,7 @@ type Home struct {
 }
 
 // NewHome creates the main TUI model.
-func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
+func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	fi := textinput.New()
@@ -158,11 +164,15 @@ func NewHome(storage *session.StateDB, cfg *config.Config) *Home {
 		worktreeDialog:        NewWorktreeDialog(),
 		createWorkspaceDialog: NewCreateWorkspaceDialog(),
 		branchDialog:          NewBranchCheckoutDialog(),
+		bugReport:             NewBugReportDialog(),
 		previewCache:          make(map[string]string),
 		previewCacheTime:      make(map[string]time.Time),
 		gitInfoCache:          make(map[string]*git.RepoInfo),
 		filterInput:           fi,
 		cfg:                   cfg,
+		version:               version,
+		errorHistory:          NewErrorHistory(50),
+		actionLog:             NewActionLog(100),
 		statusTrigger:         make(chan struct{}, 1),
 		ctx:                   ctx,
 		cancel:                cancel,
@@ -191,6 +201,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.worktreeDialog.SetSize(msg.Width, msg.Height)
 		h.createWorkspaceDialog.SetSize(msg.Width, msg.Height)
 		h.branchDialog.SetSize(msg.Width, msg.Height)
+		h.bugReport.SetSize(msg.Width, msg.Height)
 		h.syncViewport()
 		return h, nil
 
@@ -279,6 +290,9 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case settingsClosedMsg:
 		// Re-read tick interval from config after settings change.
+		return h, nil
+
+	case bugReportClosedMsg:
 		return h, nil
 
 	case openEditorMsg:
@@ -508,6 +522,9 @@ func (h *Home) View() string {
 	if h.helpOverlay.IsVisible() {
 		return h.helpOverlay.View()
 	}
+	if h.bugReport.IsVisible() {
+		return h.bugReport.View()
+	}
 	if h.settingsDialog.IsVisible() {
 		return h.settingsDialog.View()
 	}
@@ -632,6 +649,11 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.helpOverlay = overlay
 		return h, cmd
 	}
+	if h.bugReport.IsVisible() {
+		dialog, cmd := h.bugReport.Update(msg)
+		h.bugReport = dialog
+		return h, cmd
+	}
 	if h.settingsDialog.IsVisible() {
 		dialog, cmd := h.settingsDialog.Update(msg)
 		h.settingsDialog = dialog
@@ -719,6 +741,9 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			h.toggleRepoGroup()
 			return h, nil
 		}
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("attach session", s.Title, true)
+		}
 		return h, h.attachSelected()
 	case " ":
 		// Jump to next waiting (or finished) session.
@@ -738,6 +763,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return h, nil
 		}
 		repoName := filepath.Base(repoPath)
+		h.actionLog.Add("create session", repoPath, true)
 		return h.handleSessionCreate(sessionCreateMsg{
 			path:  repoPath,
 			title: repoName,
@@ -758,16 +784,29 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		return h, h.forkSelected()
 	case "d":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("delete session", s.Title, true)
+		}
 		return h, h.confirmDeleteSelected()
 	case "r":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("restart session", s.Title, true)
+		}
 		return h, h.restartSelected()
 	case "R":
 		return h, h.renameSelected()
 	case "e":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("open editor", fmt.Sprintf("%q at %s", h.cfg.GetEditor(), s.ProjectPath), true)
+		}
 		return h, h.openEditorSelected()
 	case "p":
+		h.actionLog.Add("open PR", "", true)
 		return h, h.openPRInBrowser()
 	case "Y":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("quick approve", s.Title, true)
+		}
 		return h, h.quickApproveSelected()
 	case "b":
 		repoPath := h.resolveCurrentRepo()
@@ -795,6 +834,10 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, nil
 	case "S":
 		h.settingsDialog.Show()
+		return h, nil
+	case "!":
+		h.actionLog.Add("open bug report", "", true)
+		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog)
 		return h, nil
 	case "?":
 		h.helpOverlay.Show()
@@ -1688,6 +1731,9 @@ func (h *Home) loadSessions() tea.Msg {
 func (h *Home) setError(err error) {
 	h.err = err
 	h.errTime = time.Now()
+	if err != nil {
+		h.errorHistory.Add(err.Error())
+	}
 }
 
 // ensureExactHeight pads or truncates content to exactly n lines.

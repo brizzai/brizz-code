@@ -29,7 +29,7 @@ func TestHomeInitializes(t *testing.T) {
 	}
 
 	// Should not panic.
-	home := NewHome(storage, cfg)
+	home := NewHome(storage, cfg, "test")
 	if home == nil {
 		t.Fatal("NewHome returned nil")
 	}

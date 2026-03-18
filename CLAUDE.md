@@ -45,9 +45,13 @@ internal/workspace/repo_config.go  # Per-repo .bc.json loading + ResolveProvider
 internal/config/config.go    # JSON config (~/.config/brizz-code/config.json)
 internal/naming/naming.go    # Auto-name sessions via smart heuristic (filler stripping, title-case)
 internal/debuglog/           # slog-based debug logging to ~/.config/brizz-code/debug.log
+internal/diagnostics/diagnostics.go  # System diagnostics collector for bug reports
 internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, styles)
 internal/ui/palette.go       # Theme palette definitions (5 built-in themes)
 internal/ui/settings.go      # Settings dialog (S key)
+internal/ui/bugreport.go     # Bug report dialog (! key) with diagnostics, error history, action log
+internal/ui/actionlog.go     # Ring buffer tracking user actions (steps to reproduce)
+internal/ui/errors.go        # Ring buffer keeping error history (errors that flash and vanish)
 internal/ui/keybindings.go   # Centralized keybinding definitions
 internal/ui/workspace_picker.go  # Worktree dialog (base branch + new branch + existing worktrees)
 internal/ui/workspace_create.go  # Create workspace sub-dialog + PendingWorkspace phantom entries
@@ -65,7 +69,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, S settings, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, S settings, ! bug report/diagnostics, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
@@ -89,6 +93,10 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Editor: config.editor > $EDITOR > "code" (VS Code)
 - Themes: tokyo-night (default), catppuccin-mocha, rose-pine, nord, gruvbox — configurable via settings (S key)
 - Settings dialog: S key opens settings overlay, live theme preview, auto-name toggle, copy .claude toggle, auto-saves on close
+- Bug report: `!` key opens dialog showing error history, action log, system diagnostics; `g` opens GitHub issue with pre-filled markdown via `gh issue create --web`
+- Error history: ring buffer (max 50) of errors that flash for 5s — persists for bug reporting
+- Action log: ring buffer (max 100) of user actions (attach, delete, restart, editor, approve, etc.) for "steps to reproduce"
+- Diagnostics: app version, macOS version, tmux/claude/gh versions, config, last 100 lines of debug.log; home dir sanitized to `~`
 - Auto-naming: sessions auto-titled from user prompt via smart heuristic (filler stripping, word-boundary truncation)
 - Auto-naming pipeline: UserPromptSubmit hook → status file → HookWatcher → Session.FirstPrompt → worker cycle → naming.GenerateTitle
 - Retitle: after 3 prompts, title regenerated from latest prompt (better reflects session scope)
