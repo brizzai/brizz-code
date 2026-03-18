@@ -83,10 +83,17 @@ func runTUI() {
 
 	// Auto-update: check for newer version on launch.
 	if cfg.IsAutoUpdateEnabled() && version != "dev" && update.ShouldCheck() {
-		if newVer, err := update.Update(version); err == nil && newVer != "" {
+		debuglog.Logger.Info("checking for updates", "current", version)
+		newVer, err := update.Update(version)
+		if err != nil {
+			debuglog.Logger.Error("auto-update failed", "err", err)
+		} else if newVer != "" {
+			debuglog.Logger.Info("auto-updated", "from", version, "to", newVer)
 			fmt.Printf("Updated brizz-code to %s, restarting...\n", newVer)
 			exe, _ := os.Executable()
 			syscall.Exec(exe, os.Args, os.Environ())
+		} else {
+			debuglog.Logger.Info("already up to date", "version", version)
 		}
 	}
 
