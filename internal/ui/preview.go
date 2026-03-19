@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brizzai/brizz-code/internal/git"
+	"github.com/brizzai/brizz-code/internal/session"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/yuvalhayke/brizz-code/internal/git"
-	"github.com/yuvalhayke/brizz-code/internal/session"
 )
 
 // RenderPreview renders the preview pane for the selected session.

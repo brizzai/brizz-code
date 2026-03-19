@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/debuglog"
 )
 
 // PR represents a GitHub pull request.
@@ -29,13 +29,13 @@ func IsGHAvailable() bool {
 
 // ghPRResponse matches the JSON output of gh pr view.
 type ghPRResponse struct {
-	Number              int                `json:"number"`
-	Title               string             `json:"title"`
-	URL                 string             `json:"url"`
-	State               string             `json:"state"`
-	ReviewDecision      string             `json:"reviewDecision"`
-	StatusCheckRollup   []statusCheckEntry `json:"statusCheckRollup"`
-	Mergeable           string             `json:"mergeable"` // MERGEABLE, CONFLICTING, UNKNOWN
+	Number            int                `json:"number"`
+	Title             string             `json:"title"`
+	URL               string             `json:"url"`
+	State             string             `json:"state"`
+	ReviewDecision    string             `json:"reviewDecision"`
+	StatusCheckRollup []statusCheckEntry `json:"statusCheckRollup"`
+	Mergeable         string             `json:"mergeable"` // MERGEABLE, CONFLICTING, UNKNOWN
 }
 
 type statusCheckEntry struct {

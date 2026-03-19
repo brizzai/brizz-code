@@ -1,0 +1,68 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+
+  settings:
+    errcheck:
+      exclude-functions:
+        # Standard close/cleanup — universally accepted Go patterns
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (net.Conn).Close
+        - (net.Conn).SetDeadline
+        - (*net.UnixConn).CloseWrite
+        - (*net.UnixListener).Close
+        - (*compress/gzip.Reader).Close
+        # Best-effort cleanup
+        - os.Remove
+        - os.RemoveAll
+        - os.Setenv
+        - os.Unsetenv
+        - os.Chmod
+        # Print to writer (strings.Builder, tabwriter, etc.)
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+        - fmt.Sscanf
+        # Fire-and-forget I/O
+        - io.Copy
+        - (net.Conn).Write
+        - (*text/tabwriter.Writer).Flush
+        # System
+        - syscall.Exec
+
+  exclusions:
+    rules:
+      # Tests can ignore unchecked errors for cleanup/setup
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Custom Close() methods follow the same defer pattern
+      - text: "Error return value of `.*\\.Close`"
+        linters:
+          - errcheck
+      # Fire-and-forget tmux key sending (UI can't recover)
+      - text: "Error return value of `.*\\.(SendKeys|SendLiteralKeys|writeCommand)`"
+        linters:
+          - errcheck
+      # Best-effort hook injection on startup
+      - text: "Error return value of `.*InjectClaudeHooks"
+        linters:
+          - errcheck
+    paths:
+      - chrome-extension
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    paths:
+      - chrome-extension

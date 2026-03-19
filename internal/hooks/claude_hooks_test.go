@@ -2,6 +2,8 @@ package hooks
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -110,6 +112,416 @@ func TestRemoveBrizzCodeFromEvent(t *testing.T) {
 		_, removed := removeBrizzCodeFromEvent(raw)
 		if removed {
 			t.Error("expected removed=false")
+		}
+	})
+}
+
+func TestWriteAndReadStatusFile(t *testing.T) {
+	t.Run("round trip", func(t *testing.T) {
+		dir := t.TempDir()
+		sf := &StatusFile{
+			Status:      "running",
+			SessionID:   "claude-sess-123",
+			Event:       "Stop",
+			Timestamp:   1700000000,
+			UserPrompt:  "fix the bug",
+			PromptCount: 2,
+		}
+
+		if err := WriteStatusFile(dir, "instance-001", sf); err != nil {
+			t.Fatalf("WriteStatusFile failed: %v", err)
+		}
+
+		filePath := filepath.Join(dir, "instance-001.json")
+		got, err := ReadStatusFile(filePath)
+		if err != nil {
+			t.Fatalf("ReadStatusFile failed: %v", err)
+		}
+
+		if got.Status != sf.Status {
+			t.Errorf("Status: got %q, want %q", got.Status, sf.Status)
+		}
+		if got.SessionID != sf.SessionID {
+			t.Errorf("SessionID: got %q, want %q", got.SessionID, sf.SessionID)
+		}
+		if got.Event != sf.Event {
+			t.Errorf("Event: got %q, want %q", got.Event, sf.Event)
+		}
+		if got.Timestamp != sf.Timestamp {
+			t.Errorf("Timestamp: got %d, want %d", got.Timestamp, sf.Timestamp)
+		}
+		if got.UserPrompt != sf.UserPrompt {
+			t.Errorf("UserPrompt: got %q, want %q", got.UserPrompt, sf.UserPrompt)
+		}
+		if got.PromptCount != sf.PromptCount {
+			t.Errorf("PromptCount: got %d, want %d", got.PromptCount, sf.PromptCount)
+		}
+	})
+
+	t.Run("creates directory if needed", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "nested", "hooks")
+		sf := &StatusFile{Status: "waiting", Event: "PermissionRequest", Timestamp: 1700000001}
+
+		if err := WriteStatusFile(dir, "instance-002", sf); err != nil {
+			t.Fatalf("WriteStatusFile failed: %v", err)
+		}
+
+		filePath := filepath.Join(dir, "instance-002.json")
+		got, err := ReadStatusFile(filePath)
+		if err != nil {
+			t.Fatalf("ReadStatusFile failed: %v", err)
+		}
+		if got.Status != "waiting" {
+			t.Errorf("Status: got %q, want %q", got.Status, "waiting")
+		}
+	})
+
+	t.Run("overwrite existing file", func(t *testing.T) {
+		dir := t.TempDir()
+		sf1 := &StatusFile{Status: "running", Event: "Stop", Timestamp: 1700000000}
+		sf2 := &StatusFile{Status: "finished", Event: "SessionEnd", Timestamp: 1700000010}
+
+		if err := WriteStatusFile(dir, "instance-003", sf1); err != nil {
+			t.Fatalf("WriteStatusFile (first) failed: %v", err)
+		}
+		if err := WriteStatusFile(dir, "instance-003", sf2); err != nil {
+			t.Fatalf("WriteStatusFile (second) failed: %v", err)
+		}
+
+		filePath := filepath.Join(dir, "instance-003.json")
+		got, err := ReadStatusFile(filePath)
+		if err != nil {
+			t.Fatalf("ReadStatusFile failed: %v", err)
+		}
+		if got.Status != "finished" {
+			t.Errorf("Status: got %q, want %q (expected overwrite)", got.Status, "finished")
+		}
+	})
+
+	t.Run("read missing file returns error", func(t *testing.T) {
+		_, err := ReadStatusFile("/nonexistent/path/missing.json")
+		if err == nil {
+			t.Error("expected error for missing file")
+		}
+	})
+
+	t.Run("read invalid JSON returns error", func(t *testing.T) {
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, "bad.json")
+		if err := os.WriteFile(filePath, []byte("not valid json"), 0644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+
+		_, err := ReadStatusFile(filePath)
+		if err == nil {
+			t.Error("expected error for invalid JSON")
+		}
+	})
+}
+
+func TestEventHasBrizzCodeHook(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{
+			"has brizz-code hook",
+			`[{"hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`,
+			true,
+		},
+		{
+			"has brizz-code hook with path",
+			`[{"hooks":[{"type":"command","command":"/usr/local/bin/brizz-code hook-handler"}]}]`,
+			true,
+		},
+		{
+			"no brizz-code hook",
+			`[{"hooks":[{"type":"command","command":"other-tool"}]}]`,
+			false,
+		},
+		{
+			"empty hooks",
+			`[{"hooks":[]}]`,
+			false,
+		},
+		{
+			"invalid JSON",
+			`invalid`,
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := eventHasBrizzCodeHook(json.RawMessage(tt.raw))
+			if got != tt.want {
+				t.Errorf("eventHasBrizzCodeHook = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEventHasBrizzCodeHookWithMatcher(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		matcher string
+		want    bool
+	}{
+		{
+			"matching matcher with brizz-code",
+			`[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`,
+			"permission_prompt",
+			true,
+		},
+		{
+			"wrong matcher",
+			`[{"matcher":"other","hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`,
+			"permission_prompt",
+			false,
+		},
+		{
+			"correct matcher but no brizz-code hook",
+			`[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"other-tool"}]}]`,
+			"permission_prompt",
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := eventHasBrizzCodeHookWithMatcher(json.RawMessage(tt.raw), tt.matcher)
+			if got != tt.want {
+				t.Errorf("eventHasBrizzCodeHookWithMatcher = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// buildHooksMapWithMarker builds a hooks map using literal JSON with the brizz-code marker.
+// This is needed because mergeHookEvent uses GetHookCommand() which resolves to the test binary path.
+func buildHooksMapWithMarker() map[string]json.RawMessage {
+	brizzHook := `[{"hooks":[{"type":"command","command":"brizz-code hook-handler","async":true}]}]`
+	notificationHook := `[{"matcher":"permission_prompt|elicitation_dialog","hooks":[{"type":"command","command":"brizz-code hook-handler","async":true}]},{"matcher":"idle_prompt","hooks":[{"type":"command","command":"brizz-code hook-handler","async":true}]}]`
+
+	hooks := map[string]json.RawMessage{
+		"UserPromptSubmit":  json.RawMessage(brizzHook),
+		"Stop":              json.RawMessage(brizzHook),
+		"PermissionRequest": json.RawMessage(brizzHook),
+		"Notification":      json.RawMessage(notificationHook),
+		"SessionStart":      json.RawMessage(brizzHook),
+		"SessionEnd":        json.RawMessage(brizzHook),
+	}
+	return hooks
+}
+
+func TestHooksAlreadyInstalled(t *testing.T) {
+	t.Run("empty hooks map returns false", func(t *testing.T) {
+		hooks := make(map[string]json.RawMessage)
+		if hooksAlreadyInstalled(hooks) {
+			t.Error("expected false for empty hooks")
+		}
+	})
+
+	t.Run("all events present returns true", func(t *testing.T) {
+		hooks := buildHooksMapWithMarker()
+		if !hooksAlreadyInstalled(hooks) {
+			t.Error("expected true when all hooks are installed")
+		}
+	})
+
+	t.Run("missing one event returns false", func(t *testing.T) {
+		hooks := buildHooksMapWithMarker()
+		delete(hooks, "UserPromptSubmit")
+		if hooksAlreadyInstalled(hooks) {
+			t.Error("expected false when UserPromptSubmit is missing")
+		}
+	})
+}
+
+func TestHasStaleHookEvents(t *testing.T) {
+	t.Run("no stale events", func(t *testing.T) {
+		hooks := buildHooksMapWithMarker()
+		if hasStaleHookEvents(hooks) {
+			t.Error("expected false when no stale events exist")
+		}
+	})
+
+	t.Run("stale event detected", func(t *testing.T) {
+		hooks := make(map[string]json.RawMessage)
+		// Add a hook for an event we don't subscribe to anymore.
+		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`)
+		if !hasStaleHookEvents(hooks) {
+			t.Error("expected true when stale event exists")
+		}
+	})
+
+	t.Run("non-brizz event in unknown key is not stale", func(t *testing.T) {
+		hooks := make(map[string]json.RawMessage)
+		hooks["SomeOtherEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"other-tool"}]}]`)
+		if hasStaleHookEvents(hooks) {
+			t.Error("expected false when unknown event has no brizz-code hooks")
+		}
+	})
+}
+
+func TestCleanStaleHookEvents(t *testing.T) {
+	t.Run("removes stale brizz-code hooks", func(t *testing.T) {
+		hooks := make(map[string]json.RawMessage)
+		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`)
+
+		cleanStaleHookEvents(hooks)
+
+		if _, ok := hooks["ObsoleteEvent"]; ok {
+			t.Error("expected ObsoleteEvent to be removed")
+		}
+	})
+
+	t.Run("preserves non-brizz hooks in stale events", func(t *testing.T) {
+		hooks := make(map[string]json.RawMessage)
+		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"other-tool"},{"type":"command","command":"brizz-code hook-handler"}]}]`)
+
+		cleanStaleHookEvents(hooks)
+
+		raw, ok := hooks["ObsoleteEvent"]
+		if !ok {
+			t.Fatal("expected ObsoleteEvent to remain (has non-brizz hooks)")
+		}
+
+		var matchers []claudeHookMatcher
+		if err := json.Unmarshal(raw, &matchers); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(matchers) != 1 || len(matchers[0].Hooks) != 1 {
+			t.Errorf("expected 1 remaining hook, got %d matchers", len(matchers))
+		}
+		if matchers[0].Hooks[0].Command != "other-tool" {
+			t.Errorf("remaining hook: got %q, want %q", matchers[0].Hooks[0].Command, "other-tool")
+		}
+	})
+
+	t.Run("does not touch active events", func(t *testing.T) {
+		hooks := buildHooksMapWithMarker()
+		before := len(hooks)
+		cleanStaleHookEvents(hooks)
+		after := len(hooks)
+		if before != after {
+			t.Errorf("expected active events to be preserved: before=%d, after=%d", before, after)
+		}
+	})
+}
+
+func TestInjectAndRemoveClaudeHooks(t *testing.T) {
+	t.Run("inject into empty dir creates settings with hooks", func(t *testing.T) {
+		dir := t.TempDir()
+		installed, err := InjectClaudeHooks(dir)
+		if err != nil {
+			t.Fatalf("InjectClaudeHooks failed: %v", err)
+		}
+		if !installed {
+			t.Error("expected installed=true for fresh install")
+		}
+
+		// Verify file was created with hooks section.
+		settingsPath := filepath.Join(dir, "settings.json")
+		data, err := os.ReadFile(settingsPath)
+		if err != nil {
+			t.Fatalf("settings.json not created: %v", err)
+		}
+
+		var settings map[string]json.RawMessage
+		if err := json.Unmarshal(data, &settings); err != nil {
+			t.Fatalf("parse settings: %v", err)
+		}
+		if _, ok := settings["hooks"]; !ok {
+			t.Error("expected hooks section in settings.json")
+		}
+	})
+
+	t.Run("remove from nonexistent file", func(t *testing.T) {
+		dir := t.TempDir()
+		removed, err := RemoveClaudeHooks(dir)
+		if err != nil {
+			t.Fatalf("RemoveClaudeHooks failed: %v", err)
+		}
+		if removed {
+			t.Error("expected removed=false for nonexistent file")
+		}
+	})
+
+	t.Run("inject preserves existing settings", func(t *testing.T) {
+		dir := t.TempDir()
+		settingsPath := filepath.Join(dir, "settings.json")
+
+		// Write existing settings with a custom key.
+		existing := map[string]interface{}{
+			"apiKey": "sk-test-123",
+		}
+		data, _ := json.MarshalIndent(existing, "", "  ")
+		if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+
+		_, err := InjectClaudeHooks(dir)
+		if err != nil {
+			t.Fatalf("InjectClaudeHooks failed: %v", err)
+		}
+
+		// Verify existing key is preserved.
+		settingsData, err := os.ReadFile(settingsPath)
+		if err != nil {
+			t.Fatalf("ReadFile failed: %v", err)
+		}
+
+		var settings map[string]json.RawMessage
+		if err := json.Unmarshal(settingsData, &settings); err != nil {
+			t.Fatalf("Unmarshal failed: %v", err)
+		}
+
+		if _, ok := settings["apiKey"]; !ok {
+			t.Error("expected apiKey to be preserved after injection")
+		}
+		if _, ok := settings["hooks"]; !ok {
+			t.Error("expected hooks to be present after injection")
+		}
+	})
+
+	t.Run("AreHooksInstalled returns false for empty dir", func(t *testing.T) {
+		dir := t.TempDir()
+		if AreHooksInstalled(dir) {
+			t.Error("expected false for empty dir")
+		}
+	})
+
+	t.Run("AreHooksInstalled returns false for settings without hooks", func(t *testing.T) {
+		dir := t.TempDir()
+		settingsPath := filepath.Join(dir, "settings.json")
+		data := []byte(`{"apiKey": "test"}`)
+		if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+		if AreHooksInstalled(dir) {
+			t.Error("expected false for settings without hooks")
+		}
+	})
+
+	t.Run("AreHooksInstalled returns true for manually installed hooks", func(t *testing.T) {
+		dir := t.TempDir()
+		settingsPath := filepath.Join(dir, "settings.json")
+
+		hooks := buildHooksMapWithMarker()
+		hooksData, _ := json.Marshal(hooks)
+		settings := map[string]json.RawMessage{
+			"hooks": hooksData,
+		}
+		data, _ := json.MarshalIndent(settings, "", "  ")
+		if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+
+		if !AreHooksInstalled(dir) {
+			t.Error("expected true for settings with all hooks")
 		}
 	})
 }

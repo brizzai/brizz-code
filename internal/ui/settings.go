@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/brizzai/brizz-code/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yuvalhayke/brizz-code/internal/config"
 )
 
 // settingsClosedMsg is sent when the settings dialog closes.
@@ -19,11 +19,11 @@ var (
 
 // SettingsDialog provides a UI for configuring brizz-code settings.
 type SettingsDialog struct {
-	visible bool
-	width   int
-	height  int
-	cursor  int // 0=theme, 1=editor, 2=tick
-	cfg     *config.Config
+	visible   bool
+	width     int
+	height    int
+	cursor    int // 0=theme, 1=editor, 2=tick
+	cfg       *config.Config
 	origTheme string
 }
 
@@ -38,7 +38,7 @@ func (d *SettingsDialog) Show() {
 	d.origTheme = d.cfg.Theme
 }
 
-func (d *SettingsDialog) Hide()          { d.visible = false }
+func (d *SettingsDialog) Hide()           { d.visible = false }
 func (d *SettingsDialog) IsVisible() bool { return d.visible }
 func (d *SettingsDialog) SetSize(w, h int) {
 	d.width = w

@@ -7,10 +7,10 @@ import (
 
 // Action constants for the command protocol.
 const (
-	ActionOpenOrFocus  = "open_or_focus"
-	ActionCloseTab     = "close_tab"
-	ActionCreateGroup  = "create_tab_group"
-	ActionPing         = "ping"
+	ActionOpenOrFocus = "open_or_focus"
+	ActionCloseTab    = "close_tab"
+	ActionCreateGroup = "create_tab_group"
+	ActionPing        = "ping"
 )
 
 // Command represents a request sent to the Chrome extension.
@@ -25,9 +25,9 @@ type Command struct {
 
 // Response represents a response from the Chrome extension.
 type Response struct {
-	ID      string                 `json:"id"`
-	Success bool                   `json:"success"`
-	Error   string                 `json:"error,omitempty"`
+	ID      string         `json:"id"`
+	Success bool           `json:"success"`
+	Error   string         `json:"error,omitempty"`
 	Data    map[string]any `json:"data,omitempty"`
 }
 

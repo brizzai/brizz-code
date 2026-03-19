@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/debuglog"
 )
 
 // brizzCodeHookMarker is the substring used to identify brizz-code hooks in settings.json.

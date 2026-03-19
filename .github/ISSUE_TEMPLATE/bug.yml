@@ -1,0 +1,75 @@
+name: Bug Report
+description: Report a bug in brizz-code
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: brizz-code version
+      description: "Run `brizz-code --version`"
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: "Run `sw_vers -productVersion`"
+      placeholder: "15.3"
+    validations:
+      required: true
+
+  - type: input
+    id: tmux-version
+    attributes:
+      label: tmux version
+      description: "Run `tmux -V`"
+      placeholder: "tmux 3.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce this?
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug log
+      description: "Relevant lines from `~/.config/brizz-code/debug.log` (optional)"
+      render: text
+    validations:
+      required: false

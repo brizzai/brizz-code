@@ -8,13 +8,13 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/brizzai/brizz-code/internal/config"
+	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/session"
+	"github.com/brizzai/brizz-code/internal/tmux"
+	"github.com/brizzai/brizz-code/internal/ui"
+	"github.com/brizzai/brizz-code/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/yuvalhayke/brizz-code/internal/config"
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
-	"github.com/yuvalhayke/brizz-code/internal/session"
-	"github.com/yuvalhayke/brizz-code/internal/tmux"
-	"github.com/yuvalhayke/brizz-code/internal/ui"
-	"github.com/yuvalhayke/brizz-code/internal/update"
 )
 
 // version is set via -ldflags at build time. GoReleaser populates this automatically.

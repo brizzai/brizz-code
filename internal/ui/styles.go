@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
+	"github.com/brizzai/brizz-code/internal/session"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yuvalhayke/brizz-code/internal/session"
 )
 
 // Tokyo Night dark theme colors.

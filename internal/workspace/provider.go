@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/debuglog"
 )
 
 // WorkspaceInfo represents a workspace from the provider.

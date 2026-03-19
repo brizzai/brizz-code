@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/brizzai/brizz-code/internal/workspace"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yuvalhayke/brizz-code/internal/workspace"
 )
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

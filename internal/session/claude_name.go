@@ -20,7 +20,7 @@ func ReadClaudeSessionName(claudeSessionID, projectPath string) string {
 		return ""
 	}
 
-	// Convert project path to Claude's dir format: /Users/yuval/code/foo → -Users-yuval-code-foo
+	// Convert project path to Claude's dir format: /home/user/code/foo → -home-user-code-foo
 	dirName := strings.ReplaceAll(projectPath, "/", "-")
 
 	jsonlPath := filepath.Join(homeDir, ".claude", "projects", dirName, claudeSessionID+".jsonl")

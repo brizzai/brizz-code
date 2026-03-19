@@ -13,19 +13,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/brizzai/brizz-code/internal/chrome"
+	"github.com/brizzai/brizz-code/internal/config"
+	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/git"
+	"github.com/brizzai/brizz-code/internal/github"
+	"github.com/brizzai/brizz-code/internal/hooks"
+	"github.com/brizzai/brizz-code/internal/naming"
+	"github.com/brizzai/brizz-code/internal/session"
+	"github.com/brizzai/brizz-code/internal/tmux"
+	"github.com/brizzai/brizz-code/internal/workspace"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yuvalhayke/brizz-code/internal/chrome"
-	"github.com/yuvalhayke/brizz-code/internal/config"
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
-	"github.com/yuvalhayke/brizz-code/internal/git"
-	"github.com/yuvalhayke/brizz-code/internal/github"
-	"github.com/yuvalhayke/brizz-code/internal/hooks"
-	"github.com/yuvalhayke/brizz-code/internal/naming"
-	"github.com/yuvalhayke/brizz-code/internal/session"
-	"github.com/yuvalhayke/brizz-code/internal/tmux"
-	"github.com/yuvalhayke/brizz-code/internal/workspace"
 )
 
 const (
@@ -39,8 +39,8 @@ const (
 
 // Message types.
 type (
-	tickMsg         time.Time
-	statusUpdateMsg struct{ attachedSessionID string }
+	tickMsg          time.Time
+	statusUpdateMsg  struct{ attachedSessionID string }
 	sessionDeleteMsg struct {
 		id               string
 		err              error
@@ -65,11 +65,11 @@ type (
 		warning     string
 		err         error
 	}
-	openEditorMsg    struct{ err error }
-	openPRMsg        struct{ err error }
-	quickApproveMsg  struct{ err error }
-	spinnerTickMsg struct{}
-	focusTickMsg   time.Time
+	openEditorMsg   struct{ err error }
+	openPRMsg       struct{ err error }
+	quickApproveMsg struct{ err error }
+	spinnerTickMsg  struct{}
+	focusTickMsg    time.Time
 )
 
 func spinnerTickCmd() tea.Msg {
@@ -117,10 +117,10 @@ type Home struct {
 	hookWatcher *hooks.HookWatcher
 
 	// Focus mode (split view).
-	focusMode      bool
-	controlClient  *tmux.ControlClient
-	cachedSidebar  string // cached sidebar render for focus mode
-	sidebarDirty   bool   // true when sidebar needs rebuild
+	focusMode     bool
+	controlClient *tmux.ControlClient
+	cachedSidebar string // cached sidebar render for focus mode
+	sidebarDirty  bool   // true when sidebar needs rebuild
 
 	// Filter.
 	filterInput  textinput.Model
@@ -138,11 +138,10 @@ type Home struct {
 
 	// Background worker for async status/git/PR updates.
 	statusTrigger chan struct{} // buffered(1), triggers worker
-	workerMu      sync.Mutex   // protects sessions/gitInfoCache from concurrent worker access
+	workerMu      sync.Mutex    // protects sessions/gitInfoCache from concurrent worker access
 	ctx           context.Context
 	cancel        context.CancelFunc
 	workerStarted bool
-
 }
 
 // NewHome creates the main TUI model.
@@ -1176,7 +1175,6 @@ func (h *Home) collapseRepoAtCursor() {
 	h.syncViewport()
 }
 
-
 // jumpToNextAttentionSession cycles through sessions needing attention:
 // waiting first, then finished. Wraps around, auto-expands collapsed groups.
 func (h *Home) jumpToNextAttentionSession() {
@@ -2021,4 +2019,3 @@ func ensureExactWidth(content string, width int) string {
 	}
 	return strings.Join(result, "\n")
 }
-

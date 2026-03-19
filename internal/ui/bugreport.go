@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/diagnostics"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
-	"github.com/yuvalhayke/brizz-code/internal/diagnostics"
 )
 
 // bugReportClosedMsg is sent when the bug report dialog closes.
@@ -61,7 +61,7 @@ func (d *BugReportDialog) Show(version string, sessionCount int, errors *ErrorHi
 	d.report.RecentActions = d.formatActions()
 }
 
-func (d *BugReportDialog) Hide()          { d.visible = false }
+func (d *BugReportDialog) Hide()           { d.visible = false }
 func (d *BugReportDialog) IsVisible() bool { return d.visible }
 func (d *BugReportDialog) SetSize(w, h int) {
 	d.width = w

@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-const maxLogSize = 1 << 20 // 1 MB
+const maxLogSize = 1 << 20  // 1 MB
 const keepBytes = 512 << 10 // keep last 512 KB after truncation
 
 var (

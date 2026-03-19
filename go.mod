@@ -1,4 +1,4 @@
-module github.com/yuvalhayke/brizz-code
+module github.com/brizzai/brizz-code
 
 go 1.24.2
 

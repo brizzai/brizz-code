@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/brizzai/brizz-code/internal/git"
+	"github.com/brizzai/brizz-code/internal/github"
+	"github.com/brizzai/brizz-code/internal/session"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yuvalhayke/brizz-code/internal/git"
-	"github.com/yuvalhayke/brizz-code/internal/github"
-	"github.com/yuvalhayke/brizz-code/internal/session"
 )
 
 // Tree drawing characters.
@@ -24,9 +24,9 @@ type SidebarItem struct {
 	IsRepoHeader bool
 	RepoPath     string
 	Session      *session.Session
-	IsLast       bool // last session in its repo group
-	Expanded     bool // only for repo headers
-	SessionCount int  // only for repo headers: total sessions in group
+	IsLast       bool              // last session in its repo group
+	Expanded     bool              // only for repo headers
+	SessionCount int               // only for repo headers: total sessions in group
 	Pending      *PendingWorkspace // non-nil for phantom "creating..." entries
 }
 

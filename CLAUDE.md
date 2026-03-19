@@ -1,5 +1,7 @@
 # brizz-code
 
+> This file provides context for AI-assisted development with Claude Code.
+
 TUI tool for managing multiple Claude Code sessions in parallel using tmux.
 
 ## Tech Stack
@@ -11,9 +13,9 @@ make build    # build to build/brizz-code
 make run      # go run
 make test     # go test -race
 make fmt      # go fmt
+make lint     # golangci-lint
+make coverage # test coverage report
 ```
-
-- No pre-commit hooks configured — do not run `pre-commit run`
 
 ## Commit Convention
 Use [conventional commits](https://www.conventionalcommits.org/). This drives automatic version bumps on merge to main:

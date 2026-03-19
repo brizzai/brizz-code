@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brizzai/brizz-code/internal/debuglog"
 	"github.com/fsnotify/fsnotify"
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 )
 
 const hookDebounce = 100 * time.Millisecond

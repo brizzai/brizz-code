@@ -16,8 +16,8 @@ type Palette struct {
 	Blue    lipgloss.Color
 	Red     lipgloss.Color
 	Gray    lipgloss.Color
-	Orange lipgloss.Color
-	Purple lipgloss.Color
+	Orange  lipgloss.Color
+	Purple  lipgloss.Color
 }
 
 // Built-in palette definitions.

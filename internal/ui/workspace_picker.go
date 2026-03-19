@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/brizzai/brizz-code/internal/session"
+	"github.com/brizzai/brizz-code/internal/workspace"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yuvalhayke/brizz-code/internal/session"
-	"github.com/yuvalhayke/brizz-code/internal/workspace"
 )
 
 // Messages for workspace/worktree flow.

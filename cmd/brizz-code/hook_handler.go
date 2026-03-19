@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
-	"github.com/yuvalhayke/brizz-code/internal/hooks"
+	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/hooks"
 )
 
 // hookPayload represents the JSON payload Claude Code sends to hooks via stdin.

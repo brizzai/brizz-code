@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
-	"github.com/yuvalhayke/brizz-code/internal/tmux"
+	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/tmux"
 )
 
 // Status represents the current state of a session.
@@ -29,23 +29,23 @@ const (
 
 // Session represents a managed Claude Code session.
 type Session struct {
-	ID              string
-	Title           string
-	ProjectPath     string
-	Status          Status
-	TmuxSessionName string
-	CreatedAt       time.Time
-	LastAccessedAt  time.Time
-	Acknowledged    bool
-	ClaudeSessionID  string
-	ClaudeSessionName      string    // Transient: read from Claude's JSONL, not persisted to SQLite.
-	ClaudeNameLastChecked  time.Time // Transient: last time we read the JSONL for Claude name.
-	WorkspaceName          string
-	ManuallyRenamed bool
-	FirstPrompt     string
-	TitleGenerated  bool
-	PromptCount     int
-	ForkFromID      string // Transient: if set, start with --resume <id> --fork-session (cleared after start)
+	ID                    string
+	Title                 string
+	ProjectPath           string
+	Status                Status
+	TmuxSessionName       string
+	CreatedAt             time.Time
+	LastAccessedAt        time.Time
+	Acknowledged          bool
+	ClaudeSessionID       string
+	ClaudeSessionName     string    // Transient: read from Claude's JSONL, not persisted to SQLite.
+	ClaudeNameLastChecked time.Time // Transient: last time we read the JSONL for Claude name.
+	WorkspaceName         string
+	ManuallyRenamed       bool
+	FirstPrompt           string
+	TitleGenerated        bool
+	PromptCount           int
+	ForkFromID            string // Transient: if set, start with --resume <id> --fork-session (cleared after start)
 
 	hookStatus    string
 	hookUpdatedAt time.Time
@@ -505,8 +505,8 @@ var (
 	// Patterns in recent lines that indicate Claude is idle at the prompt.
 	idlePatterns = []string{
 		"⏵⏵",            // Claude Code permission mode bar (appears below the prompt)
-		"esc to cancel",  // Claude Code text input prompt (commit message, etc.)
-		"tab to amend",   // Claude Code text input prompt
+		"esc to cancel", // Claude Code text input prompt (commit message, etc.)
+		"tab to amend",  // Claude Code text input prompt
 	}
 )
 

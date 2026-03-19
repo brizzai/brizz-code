@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/debuglog"
 )
 
 const nmhName = "com.brizzcode.tabcontrol"

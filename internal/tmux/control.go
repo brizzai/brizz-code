@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/brizzai/brizz-code/internal/debuglog"
 	"github.com/creack/pty"
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
 )
 
 // ControlClient maintains a persistent tmux control mode connection

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yuvalhayke/brizz-code/internal/config"
-	"github.com/yuvalhayke/brizz-code/internal/session"
+	"github.com/brizzai/brizz-code/internal/config"
+	"github.com/brizzai/brizz-code/internal/session"
 )
 
 func TestHomeInitializes(t *testing.T) {

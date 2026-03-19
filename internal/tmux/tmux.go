@@ -10,15 +10,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/debuglog"
 	"golang.org/x/sync/singleflight"
 )
 
 const (
-	SessionPrefix    = "brizzcode_"
-	captureCacheTTL  = 500 * time.Millisecond
-	captureTimeout   = 3 * time.Second
-	sessionCacheTTL  = 2 * time.Second
+	SessionPrefix   = "brizzcode_"
+	captureCacheTTL = 500 * time.Millisecond
+	captureTimeout  = 3 * time.Second
+	sessionCacheTTL = 2 * time.Second
 )
 
 // Session represents a tmux session managed by brizz-code.

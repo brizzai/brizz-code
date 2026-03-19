@@ -8,6 +8,13 @@
     <br />
     See which agents need you. Jump in, direct, jump out.
   </p>
+  <p align="center">
+    <a href="https://goreportcard.com/report/github.com/brizzai/brizz-code"><img src="https://goreportcard.com/badge/github.com/brizzai/brizz-code" alt="Go Report Card"></a>
+    <a href="https://github.com/brizzai/brizz-code/releases/latest"><img src="https://img.shields.io/github/v/release/brizzai/brizz-code" alt="GitHub release"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+    <a href="https://golang.org/doc/devel/release.html"><img src="https://img.shields.io/github/go-mod/go-version/brizzai/brizz-code" alt="Go version"></a>
+    <a href="https://github.com/brizzai/brizz-code/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/brizzai/brizz-code/ci.yml?branch=main" alt="Build Status"></a>
+  </p>
 </p>
 
 <br />

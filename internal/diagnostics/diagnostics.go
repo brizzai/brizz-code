@@ -14,19 +14,19 @@ import (
 
 // Report holds collected diagnostic information.
 type Report struct {
-	Version      string
-	GoVersion    string
-	OS           string
-	Arch         string
-	MacOSVersion string
-	TmuxVersion  string
+	Version       string
+	GoVersion     string
+	OS            string
+	Arch          string
+	MacOSVersion  string
+	TmuxVersion   string
 	ClaudeVersion string
-	GhVersion    string
-	Config       string
-	SessionCount int
-	RecentErrors []string // pre-formatted from ErrorHistory
+	GhVersion     string
+	Config        string
+	SessionCount  int
+	RecentErrors  []string // pre-formatted from ErrorHistory
 	RecentActions []string // pre-formatted from ActionLog
-	RecentLogs   string   // last 100 lines of debug.log
+	RecentLogs    string   // last 100 lines of debug.log
 }
 
 // Collect gathers system diagnostics.
@@ -101,22 +101,22 @@ func (r *Report) formatMarkdown(description string) string {
 
 	// Diagnostics.
 	b.WriteString("### Diagnostics\n")
-	b.WriteString(fmt.Sprintf("- **Version**: %s\n", r.Version))
+	fmt.Fprintf(&b, "- **Version**: %s\n", r.Version)
 	if r.MacOSVersion != "" {
-		b.WriteString(fmt.Sprintf("- **macOS**: %s (%s)\n", r.MacOSVersion, r.Arch))
+		fmt.Fprintf(&b, "- **macOS**: %s (%s)\n", r.MacOSVersion, r.Arch)
 	} else {
-		b.WriteString(fmt.Sprintf("- **OS**: %s/%s\n", r.OS, r.Arch))
+		fmt.Fprintf(&b, "- **OS**: %s/%s\n", r.OS, r.Arch)
 	}
 	if r.TmuxVersion != "" {
-		b.WriteString(fmt.Sprintf("- **tmux**: %s\n", r.TmuxVersion))
+		fmt.Fprintf(&b, "- **tmux**: %s\n", r.TmuxVersion)
 	}
 	if r.ClaudeVersion != "" {
-		b.WriteString(fmt.Sprintf("- **Claude CLI**: %s\n", sanitize(r.ClaudeVersion)))
+		fmt.Fprintf(&b, "- **Claude CLI**: %s\n", sanitize(r.ClaudeVersion))
 	}
 	if r.GhVersion != "" {
-		b.WriteString(fmt.Sprintf("- **gh CLI**: %s\n", r.GhVersion))
+		fmt.Fprintf(&b, "- **gh CLI**: %s\n", r.GhVersion)
 	}
-	b.WriteString(fmt.Sprintf("- **Sessions**: %d\n", r.SessionCount))
+	fmt.Fprintf(&b, "- **Sessions**: %d\n", r.SessionCount)
 	b.WriteString("\n")
 
 	// Debug logs.

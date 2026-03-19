@@ -318,7 +318,7 @@ func (d *RenameDialog) Show(sessionID, currentTitle string) {
 	d.titleInput.CursorEnd()
 }
 
-func (d *RenameDialog) Hide()          { d.visible = false; d.titleInput.Blur() }
+func (d *RenameDialog) Hide()           { d.visible = false; d.titleInput.Blur() }
 func (d *RenameDialog) IsVisible() bool { return d.visible }
 func (d *RenameDialog) SetSize(w, h int) {
 	d.width = w
@@ -385,17 +385,17 @@ func (d *RenameDialog) View() string {
 
 // ConfirmDialog handles confirmation prompts (e.g., delete session).
 type ConfirmDialog struct {
-	visible         bool
-	width           int
-	height          int
-	onYes           func() tea.Msg
-	onYesWorkspace  func() tea.Msg
-	dialogType      string // "danger", "warning", "info"
-	title           string
-	subject         string
-	details         []string
-	hasWorkspace    bool
-	workspaceName   string
+	visible        bool
+	width          int
+	height         int
+	onYes          func() tea.Msg
+	onYesWorkspace func() tea.Msg
+	dialogType     string // "danger", "warning", "info"
+	title          string
+	subject        string
+	details        []string
+	hasWorkspace   bool
+	workspaceName  string
 }
 
 // NewConfirmDialog creates a new confirmation dialog.

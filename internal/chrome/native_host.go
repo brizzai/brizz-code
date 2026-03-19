@@ -11,7 +11,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/debuglog"
 )
 
 // RunNativeHost runs the native messaging host process.

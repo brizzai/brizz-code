@@ -46,11 +46,9 @@ func GenerateTitle(prompt string) string {
 	}
 
 	// Strip filler prefixes (case-insensitive).
-	lower := strings.ToLower(prompt)
 	for _, prefix := range fillerPrefixes {
-		if strings.HasPrefix(lower, prefix) {
+		if strings.HasPrefix(strings.ToLower(prompt), prefix) {
 			prompt = prompt[len(prefix):]
-			lower = strings.ToLower(prompt)
 			break
 		}
 	}
@@ -81,4 +79,3 @@ func GenerateTitle(prompt string) string {
 
 	return prompt
 }
-

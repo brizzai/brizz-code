@@ -3,8 +3,8 @@ package git
 import (
 	"time"
 
-	"github.com/yuvalhayke/brizz-code/internal/debuglog"
-	"github.com/yuvalhayke/brizz-code/internal/github"
+	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/brizz-code/internal/github"
 )
 
 // RepoInfo holds cached git and PR metadata for a repository.

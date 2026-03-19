@@ -19,10 +19,10 @@ func NewHelpOverlay() *HelpOverlay {
 	return &HelpOverlay{}
 }
 
-func (h *HelpOverlay) Show()              { h.visible = true }
-func (h *HelpOverlay) Hide()              { h.visible = false }
-func (h *HelpOverlay) IsVisible() bool    { return h.visible }
-func (h *HelpOverlay) SetSize(w, ht int)  { h.width = w; h.height = ht }
+func (h *HelpOverlay) Show()             { h.visible = true }
+func (h *HelpOverlay) Hide()             { h.visible = false }
+func (h *HelpOverlay) IsVisible() bool   { return h.visible }
+func (h *HelpOverlay) SetSize(w, ht int) { h.width = w; h.height = ht }
 
 // Update dismisses on any key press.
 func (h *HelpOverlay) Update(msg tea.Msg) (*HelpOverlay, tea.Cmd) {
