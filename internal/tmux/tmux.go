@@ -188,6 +188,26 @@ func (s *Session) SendKeys(keys ...string) error {
 	return nil
 }
 
+// SendLiteralKeys sends literal text to the tmux pane (uses -l flag, no key-name interpretation).
+func (s *Session) SendLiteralKeys(text string) error {
+	debuglog.Logger.Debug("tmux sending literal keys", "session", s.Name, "text", text)
+	cmd := exec.Command("tmux", "send-keys", "-t", s.Name, "-l", text)
+	if err := cmd.Run(); err != nil {
+		debuglog.Logger.Error("tmux send-literal-keys failed", "session", s.Name, "text", text, "err", err)
+		return err
+	}
+	return nil
+}
+
+// CapturePaneFresh invalidates the cache before capturing, ensuring fresh output.
+func (s *Session) CapturePaneFresh() (string, error) {
+	s.cacheMu.Lock()
+	s.cacheContent = ""
+	s.cacheTime = time.Time{}
+	s.cacheMu.Unlock()
+	return s.CapturePane()
+}
+
 // Kill terminates the tmux session.
 func (s *Session) Kill() error {
 	debuglog.Logger.Info("tmux killing session", "session", s.Name)

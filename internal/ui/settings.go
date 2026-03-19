@@ -52,7 +52,7 @@ func (d *SettingsDialog) Update(msg tea.Msg) (*SettingsDialog, tea.Cmd) {
 		return d, nil
 	}
 
-	numRows := 6 // theme, editor, tick, auto-name, auto-update, copy-claude
+	numRows := 7 // theme, editor, tick, auto-name, auto-update, copy-claude, enter-mode
 	switch keyMsg.String() {
 	case "j", "down":
 		d.cursor = (d.cursor + 1) % numRows
@@ -123,6 +123,13 @@ func (d *SettingsDialog) cycleValue(dir int) {
 		enabled := d.cfg.IsCopyClaudeSettingsEnabled()
 		enabled = !enabled
 		d.cfg.CopyClaudeSettings = &enabled
+
+	case 6: // Enter mode
+		if d.cfg.GetEnterMode() == "attach" {
+			d.cfg.EnterMode = "split"
+		} else {
+			d.cfg.EnterMode = "attach"
+		}
 	}
 }
 
@@ -162,6 +169,7 @@ func (d *SettingsDialog) View() string {
 		{"Auto-name", autoNameValue},
 		{"Auto-update", autoUpdateValue},
 		{"Copy .claude", copyClaudeValue},
+		{"Enter mode", d.cfg.GetEnterMode()},
 	}
 
 	for i, r := range rows {

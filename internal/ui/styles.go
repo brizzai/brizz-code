@@ -182,6 +182,16 @@ func RenderPanelTitle(title string, width int) string {
 	return titleLine + "\n" + underline
 }
 
+// RenderFocusedPanelTitle renders a panel title with accent-colored underline (for focus mode).
+func RenderFocusedPanelTitle(title string, width int) string {
+	titleLine := lipgloss.NewStyle().Bold(true).Foreground(ColorAccent).Render(title)
+	if width < 1 {
+		width = 1
+	}
+	underline := lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("─", width))
+	return titleLine + "\n" + underline
+}
+
 // StatusSymbol returns a styled status indicator.
 func StatusSymbol(status session.Status) string {
 	switch status {

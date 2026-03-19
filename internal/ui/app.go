@@ -69,6 +69,7 @@ type (
 	openPRMsg        struct{ err error }
 	quickApproveMsg  struct{ err error }
 	spinnerTickMsg struct{}
+	focusTickMsg   time.Time
 )
 
 func spinnerTickCmd() tea.Msg {
@@ -114,6 +115,12 @@ type Home struct {
 	ghAvailable  bool                     // cached gh CLI availability
 
 	hookWatcher *hooks.HookWatcher
+
+	// Focus mode (split view).
+	focusMode      bool
+	controlClient  *tmux.ControlClient
+	cachedSidebar  string // cached sidebar render for focus mode
+	sidebarDirty   bool   // true when sidebar needs rebuild
 
 	// Filter.
 	filterInput  textinput.Model
@@ -193,6 +200,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		h.width = msg.Width
 		h.height = msg.Height
+		h.sidebarDirty = true
 		h.newDialog.SetSize(msg.Width, msg.Height)
 		h.confirmDialog.SetSize(msg.Width, msg.Height)
 		h.renameDialog.SetSize(msg.Width, msg.Height)
@@ -455,6 +463,18 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return h, nil
 
+	case focusTickMsg:
+		if !h.focusMode {
+			return h, nil
+		}
+		s := h.selectedSession()
+		if s == nil || !s.IsAlive() {
+			h.focusMode = false
+			h.sidebarDirty = true
+			return h, nil
+		}
+		return h, tea.Batch(h.fetchPreviewFresh(s), h.focusTick())
+
 	case spinnerTickMsg:
 		// Advance spinner in whichever dialog is active.
 		if h.worktreeDialog.IsVisible() && h.worktreeDialog.loading {
@@ -588,7 +608,7 @@ func (h *Home) View() string {
 		b.WriteString(DimStyle.Render(strings.Repeat("─", h.width)))
 		b.WriteString("\n")
 		s, content := h.selectedPreview()
-		preview := RenderPreview(s, content, h.selectedRepoInfo(), h.width, previewHeight)
+		preview := RenderPreview(s, content, h.selectedRepoInfo(), h.width, previewHeight, h.focusMode)
 		b.WriteString(preview)
 	default: // dual
 		sidebarWidth := h.width * 35 / 100
@@ -597,12 +617,27 @@ func (h *Home) View() string {
 		}
 		previewWidth := h.width - sidebarWidth - 3 // 3 for separator " │ "
 
-		leftPanel := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+		// In focus mode, reuse cached sidebar to avoid expensive rebuild on every keystroke.
+		var leftPanel string
+		if h.focusMode && !h.sidebarDirty && h.cachedSidebar != "" {
+			leftPanel = h.cachedSidebar
+		} else {
+			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+			leftPanel = ensureExactHeight(leftPanel, contentHeight)
+			leftPanel = ensureExactWidth(leftPanel, sidebarWidth)
+			h.cachedSidebar = leftPanel
+			h.sidebarDirty = false
+		}
+
 		s, content := h.selectedPreview()
-		rightPanel := RenderPreview(s, content, h.selectedRepoInfo(), previewWidth, contentHeight)
+		rightPanel := RenderPreview(s, content, h.selectedRepoInfo(), previewWidth, contentHeight, h.focusMode)
 
 		// Build separator as explicit lines.
-		sepStyle := lipgloss.NewStyle().Foreground(ColorBorder)
+		sepColor := ColorBorder
+		if h.focusMode {
+			sepColor = ColorAccent
+		}
+		sepStyle := lipgloss.NewStyle().Foreground(sepColor)
 		sepLines := make([]string, contentHeight)
 		for i := range sepLines {
 			sepLines[i] = sepStyle.Render(" │ ")
@@ -610,9 +645,7 @@ func (h *Home) View() string {
 		separator := strings.Join(sepLines, "\n")
 
 		// Ensure exact dimensions before joining (prevents ANSI misalignment).
-		leftPanel = ensureExactHeight(leftPanel, contentHeight)
 		rightPanel = ensureExactHeight(rightPanel, contentHeight)
-		leftPanel = ensureExactWidth(leftPanel, sidebarWidth)
 		rightPanel = ensureExactWidth(rightPanel, previewWidth)
 
 		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, separator, rightPanel))
@@ -625,8 +658,14 @@ func (h *Home) View() string {
 		lines++
 	}
 
-	// Filter bar (when active, replaces help bar).
-	if h.filterActive {
+	// Focus mode bar / Filter bar / Help bar.
+	if h.focusMode {
+		border := lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("─", h.width))
+		b.WriteString("\n")
+		b.WriteString(border + "\n")
+		b.WriteString(" " + HelpKeyStyle.Render("esc") + " " + HelpDescStyle.Render("Unfocus") + "  " +
+			DimStyle.Render("all keys forwarded to session"))
+	} else if h.filterActive {
 		border := lipgloss.NewStyle().Foreground(ColorBorder).Render(strings.Repeat("─", h.width))
 		b.WriteString("\n")
 		b.WriteString(border + "\n")
@@ -702,6 +741,11 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, cmd
 	}
 
+	// Focus mode: forward keys to tmux session.
+	if h.focusMode {
+		return h.handleFocusKey(msg)
+	}
+
 	// Filter mode: route keys to filter input.
 	if h.filterActive {
 		switch msg.String() {
@@ -753,10 +797,24 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			h.toggleRepoGroup()
 			return h, nil
 		}
+		if h.cfg.GetEnterMode() == "split" {
+			return h, h.enterFocusMode()
+		}
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("attach session", s.Title, true)
 		}
 		return h, h.attachSelected()
+	case "tab":
+		if h.cursor >= 0 && h.cursor < len(h.flatItems) && h.flatItems[h.cursor].IsRepoHeader {
+			return h, nil
+		}
+		if h.cfg.GetEnterMode() == "split" {
+			if s := h.selectedSession(); s != nil {
+				h.actionLog.Add("attach session", s.Title, true)
+			}
+			return h, h.attachSelected()
+		}
+		return h, h.enterFocusMode()
 	case " ":
 		// Jump to next waiting (or finished) session.
 		h.jumpToNextAttentionSession()
@@ -858,6 +916,9 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.cancel() // stops background worker
 		if h.hookWatcher != nil {
 			h.hookWatcher.Stop()
+		}
+		if h.controlClient != nil {
+			h.controlClient.Close()
 		}
 		return h, tea.Quit
 	}
@@ -1250,6 +1311,123 @@ func (h *Home) quickApproveSelected() tea.Cmd {
 		_ = ts.SendKeys("y")
 		err := ts.SendKeys("Enter")
 		return quickApproveMsg{err: err}
+	}
+}
+
+// --- Focus mode (split preview) ---
+
+func (h *Home) getControlClient() *tmux.ControlClient {
+	if h.controlClient == nil || h.controlClient.IsClosed() {
+		cc, err := tmux.NewControlClient()
+		if err != nil {
+			debuglog.Logger.Error("failed to create control client", "err", err)
+			return nil
+		}
+		h.controlClient = cc
+	}
+	return h.controlClient
+}
+
+func (h *Home) enterFocusMode() tea.Cmd {
+	s := h.selectedSession()
+	if s == nil || !s.IsAlive() {
+		h.setError(fmt.Errorf("cannot focus: session not running"))
+		return nil
+	}
+	h.focusMode = true
+	h.sidebarDirty = true // separator color changes
+	h.actionLog.Add("focus preview", s.Title, true)
+	return h.focusTick()
+}
+
+func (h *Home) focusTick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return focusTickMsg(t)
+	})
+}
+
+func (h *Home) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	s := h.selectedSession()
+	if s == nil || !s.IsAlive() {
+		h.focusMode = false
+		h.sidebarDirty = true
+		return h, nil
+	}
+
+	if msg.Type == tea.KeyEsc {
+		h.focusMode = false
+		h.sidebarDirty = true
+		h.actionLog.Add("unfocus preview", s.Title, true)
+		return h, nil
+	}
+
+	cc := h.getControlClient()
+	if cc == nil {
+		h.setError(fmt.Errorf("failed to connect to tmux"))
+		h.focusMode = false
+		h.sidebarDirty = true
+		return h, nil
+	}
+
+	target := s.GetTmuxSession().Name
+
+	switch msg.Type {
+	case tea.KeyEnter:
+		cc.SendKeys(target, "Enter")
+	case tea.KeyBackspace:
+		cc.SendKeys(target, "BSpace")
+	case tea.KeyTab:
+		cc.SendKeys(target, "Tab")
+	case tea.KeySpace:
+		cc.SendKeys(target, "Space")
+	case tea.KeyUp:
+		cc.SendKeys(target, "Up")
+	case tea.KeyDown:
+		cc.SendKeys(target, "Down")
+	case tea.KeyLeft:
+		cc.SendKeys(target, "Left")
+	case tea.KeyRight:
+		cc.SendKeys(target, "Right")
+	case tea.KeyHome:
+		cc.SendKeys(target, "Home")
+	case tea.KeyEnd:
+		cc.SendKeys(target, "End")
+	case tea.KeyPgUp:
+		cc.SendKeys(target, "PageUp")
+	case tea.KeyPgDown:
+		cc.SendKeys(target, "PageDown")
+	case tea.KeyDelete:
+		cc.SendKeys(target, "DC")
+	case tea.KeyCtrlC:
+		cc.SendKeys(target, "C-c")
+	case tea.KeyCtrlD:
+		cc.SendKeys(target, "C-d")
+	case tea.KeyCtrlA:
+		cc.SendKeys(target, "C-a")
+	case tea.KeyCtrlU:
+		cc.SendKeys(target, "C-u")
+	case tea.KeyCtrlL:
+		cc.SendKeys(target, "C-l")
+	case tea.KeyCtrlW:
+		cc.SendKeys(target, "C-w")
+	case tea.KeyCtrlK:
+		cc.SendKeys(target, "C-k")
+	case tea.KeyRunes:
+		cc.SendLiteralKeys(target, string(msg.Runes))
+	default:
+		if str := msg.String(); str != "" {
+			cc.SendLiteralKeys(target, str)
+		}
+	}
+	return h, nil
+}
+
+func (h *Home) fetchPreviewFresh(s *session.Session) tea.Cmd {
+	id := s.ID
+	ts := s.GetTmuxSession()
+	return func() tea.Msg {
+		content, _ := ts.CapturePaneFresh()
+		return previewMsg{sessionID: id, content: content}
 	}
 }
 
@@ -1725,6 +1903,7 @@ func (h *Home) selectedRepoInfo() *git.RepoInfo {
 
 func (h *Home) rebuildFlatItems() {
 	h.flatItems = BuildFlatItems(h.sessions, h.pendingWorkspaces, h.repoExpanded, h.filterText)
+	h.sidebarDirty = true
 }
 
 func (h *Home) removePendingWorkspace(id string) {

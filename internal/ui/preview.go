@@ -11,7 +11,7 @@ import (
 )
 
 // RenderPreview renders the preview pane for the selected session.
-func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, width, height int) string {
+func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, width, height int, focused bool) string {
 	if s == nil {
 		return RenderPanelTitle(" PREVIEW", width) + "\n" + DimStyle.Render("  No session selected")
 	}
@@ -19,7 +19,11 @@ func RenderPreview(s *session.Session, content string, repoInfo *git.RepoInfo, w
 	var b strings.Builder
 
 	// Panel title.
-	b.WriteString(RenderPanelTitle(" PREVIEW", width))
+	if focused {
+		b.WriteString(RenderFocusedPanelTitle(" PREVIEW [FOCUSED]", width))
+	} else {
+		b.WriteString(RenderPanelTitle(" PREVIEW", width))
+	}
 	b.WriteString("\n")
 
 	// Header: title + status.

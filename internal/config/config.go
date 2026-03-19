@@ -17,6 +17,7 @@ type Config struct {
 	AutoNameSessions   *bool  `json:"auto_name_sessions,omitempty"`
 	AutoUpdate         *bool  `json:"auto_update,omitempty"`
 	CopyClaudeSettings *bool  `json:"copy_claude_settings,omitempty"`
+	EnterMode          string `json:"enter_mode,omitempty"` // "attach" or "split"
 }
 
 // IsAutoNameEnabled returns whether auto-naming is enabled (default: true).
@@ -93,6 +94,14 @@ func (c *Config) IsCopyClaudeSettingsEnabled() bool {
 		return true
 	}
 	return *c.CopyClaudeSettings
+}
+
+// GetEnterMode returns the configured Enter key mode ("attach" or "split").
+func (c *Config) GetEnterMode() string {
+	if c.EnterMode == "split" {
+		return "split"
+	}
+	return "attach"
 }
 
 // GetEditor returns the configured editor, falling back to $EDITOR then "code".

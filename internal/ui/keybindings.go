@@ -20,6 +20,7 @@ var allKeyBindings = []KeyBinding{
 
 	// Session actions.
 	{Key: "Enter", BarKey: "⏎", BarDesc: "Open", Desc: "Attach / toggle group", Section: "session"},
+	{Key: "Tab", BarKey: "⇥", BarDesc: "Focus", Desc: "Focus preview / attach (swap)", Section: "session"},
 	{Key: "Space", BarKey: "␣", BarDesc: "Next", Desc: "Jump to next waiting/finished", Section: "session"},
 	{Key: "← / h", Desc: "Collapse group", Section: "session"},
 	{Key: "→ / l", Desc: "Expand group", Section: "session"},
@@ -41,6 +42,10 @@ var allKeyBindings = []KeyBinding{
 	{Key: "!", BarKey: "!", BarDesc: "Bug", Desc: "Bug report / diagnostics", Section: "global"},
 	{Key: "?", BarKey: "?", BarDesc: "Help", Desc: "Toggle help", Section: "global"},
 	{Key: "q", BarKey: "q", BarDesc: "Quit", Desc: "Quit", Section: "global"},
+
+	// Focus mode (shown in overlay only, separated by blank line).
+	{Key: "Esc", Desc: "Unfocus preview", Section: "focus"},
+	{Key: "all keys", Desc: "Forwarded to session", Section: "focus"},
 
 	// Attach mode (shown in overlay only, separated by blank line).
 	{Key: "Ctrl+Q", Desc: "Detach from session", Section: "attach"},
@@ -69,7 +74,7 @@ func HelpOverlayBindings() []struct{ Key, Desc string } {
 	var result []struct{ Key, Desc string }
 	prevSection := ""
 	for _, kb := range allKeyBindings {
-		if kb.Section == "attach" && prevSection != "attach" {
+		if (kb.Section == "focus" || kb.Section == "attach") && prevSection != kb.Section {
 			result = append(result, struct{ Key, Desc string }{"", ""})
 		}
 		result = append(result, struct{ Key, Desc string }{kb.Key, kb.Desc})
