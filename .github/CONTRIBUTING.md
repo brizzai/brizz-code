@@ -13,7 +13,7 @@ Bug fixes and small improvements can go straight to a PR.
 ### Requirements
 
 - **macOS** (brizz-code is macOS-only)
-- **Go 1.24+**
+- **Go 1.26+**
 - **tmux** (`brew install tmux`)
 - **Claude Code** (for end-to-end testing)
 - **Git**

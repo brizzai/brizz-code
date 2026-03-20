@@ -62,7 +62,7 @@ Requires [`gh`](https://cli.github.com/) authenticated with repo access.
 go install github.com/brizzai/brizz-code/cmd/brizz-code@latest
 ```
 
-Requires Go 1.24+.
+Requires Go 1.26+.
 
 ### Requirements
 

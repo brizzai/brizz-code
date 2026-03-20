@@ -17,3 +17,4 @@
 - [ ] Linter passes (`make lint`)
 - [ ] Commit message follows [conventional commits](https://www.conventionalcommits.org/)
 - [ ] Documentation updated (if applicable)
+- [ ] `CHANGELOG.md` updated under `[Unreleased]` (if user-facing change)
