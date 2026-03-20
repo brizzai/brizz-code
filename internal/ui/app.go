@@ -1837,32 +1837,42 @@ func (h *Home) renderHeader() string {
 		statusCounts[s.GetStatus()]++
 	}
 
-	logo := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render("✦")
-	title := logo + " " + TitleStyle.Render("brizz-code")
+	bg := ColorSurface
+	logo := lipgloss.NewStyle().Foreground(ColorBrand).Background(bg).Bold(true).Render(">_")
+	title := logo + lipgloss.NewStyle().Background(bg).Render(" ") + TitleStyle.Background(bg).Render("brizz-code")
 
 	// Build status indicators — only show non-zero.
 	var indicators []string
 	if n := statusCounts[session.StatusRunning] + statusCounts[session.StatusStarting]; n > 0 {
-		indicators = append(indicators, StatusRunningStyle.Render(fmt.Sprintf("● %d running", n)))
+		indicators = append(indicators, StatusRunningStyle.Background(bg).Render(fmt.Sprintf("● %d running", n)))
 	}
 	if n := statusCounts[session.StatusWaiting]; n > 0 {
-		indicators = append(indicators, StatusWaitingStyle.Render(fmt.Sprintf("◐ %d waiting", n)))
+		indicators = append(indicators, StatusWaitingStyle.Background(bg).Render(fmt.Sprintf("◐ %d waiting", n)))
 	}
 	if n := statusCounts[session.StatusFinished]; n > 0 {
-		indicators = append(indicators, StatusFinishedStyle.Render(fmt.Sprintf("● %d finished", n)))
+		indicators = append(indicators, StatusFinishedStyle.Background(bg).Render(fmt.Sprintf("● %d finished", n)))
 	}
 	if n := statusCounts[session.StatusIdle]; n > 0 {
-		indicators = append(indicators, StatusIdleStyle.Render(fmt.Sprintf("○ %d idle", n)))
+		indicators = append(indicators, StatusIdleStyle.Background(bg).Render(fmt.Sprintf("○ %d idle", n)))
 	}
 	if n := statusCounts[session.StatusError]; n > 0 {
-		indicators = append(indicators, StatusErrorStyle.Render(fmt.Sprintf("✕ %d error", n)))
+		indicators = append(indicators, StatusErrorStyle.Background(bg).Render(fmt.Sprintf("✕ %d error", n)))
 	}
 
-	sep := lipgloss.NewStyle().Foreground(ColorBorder).Render(" • ")
+	sep := lipgloss.NewStyle().Foreground(ColorBorder).Background(bg).Render(" • ")
 	stats := strings.Join(indicators, sep)
 
-	content := " " + title + "  " + stats
-	return HeaderBarStyle.Width(h.width).Render(content)
+	sp := lipgloss.NewStyle().Background(bg).Render
+	content := title + sp("  ") + stats
+
+	// Manually pad to full width with background-styled spaces to avoid ANSI reset issues.
+	if h.width > 0 {
+		contentWidth := lipgloss.Width(content)
+		if contentWidth < h.width {
+			content += sp(strings.Repeat(" ", h.width-contentWidth))
+		}
+	}
+	return HeaderBarStyle.Render(content)
 }
 
 func (h *Home) renderHelpBar() string {
