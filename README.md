@@ -54,7 +54,7 @@ brew install brizzai/tap/brizz-code
 curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash
 ```
 
-Requires [`gh`](https://cli.github.com/) authenticated with repo access.
+Requires [`gh`](https://cli.github.com/).
 
 ### Go install
 
