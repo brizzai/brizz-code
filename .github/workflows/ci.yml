@@ -22,12 +22,7 @@ jobs:
       - name: Build
         run: go build ./...
       - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: coverage.out
-          fail_ci_if_error: false
+        run: go test -race ./...
 
   lint:
     runs-on: ubuntu-latest
