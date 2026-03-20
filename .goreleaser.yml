@@ -28,22 +28,17 @@ archives:
       {{- .Os }}_
       {{- .Arch }}
 
-brews:
-  - repository:
+homebrew_casks:
+  - name: brizz-code
+    binaries:
+      - brizz-code
+    repository:
       owner: brizzai
       name: homebrew-tap
     homepage: https://github.com/brizzai/brizz-code
     description: "TUI for managing multiple Claude Code sessions in parallel"
-    license: Apache-2.0
-    install: |
-      bin.install "brizz-code"
     dependencies:
-      - name: tmux
-    test: |
-      system "#{bin}/brizz-code", "--version"
-
-sboms:
-  - artifacts: archive
+      - formula: tmux
 
 checksum:
   name_template: checksums.txt
@@ -52,7 +47,15 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 changelog:
-  disable: true
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
 
 release:
   github:

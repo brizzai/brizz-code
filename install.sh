@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# brizz-code installer (requires gh CLI authenticated with repo access)
-# Usage: curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | bash
+# brizz-code installer (requires gh CLI)
+# Usage: curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash
 #    or: gh repo clone brizzai/brizz-code /tmp/bc && bash /tmp/bc/install.sh
 
 set -euo pipefail
