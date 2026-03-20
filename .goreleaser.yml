@@ -35,6 +35,7 @@ homebrew_casks:
     repository:
       owner: brizzai
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/brizzai/brizz-code
     description: "TUI for managing multiple Claude Code sessions in parallel"
     dependencies:

@@ -118,6 +118,7 @@ jobs:
           args: release --clean --release-notes /tmp/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ needs.tag.outputs.new_tag }}
 
       - name: Roll changelog for next release

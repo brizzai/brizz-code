@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/assets/logo.svg" alt="brizz-code logo" width="120" />
+  <img src=".github/assets/logo.svg" alt="brizz-code logo" width="80" />
   <h1 align="center">brizz-code</h1>
   <p align="center">
     <strong>Run 10 Claude Code agents. Stay sane.</strong>
