@@ -1,4 +1,5 @@
 <p align="center">
+  <img src=".github/assets/logo.svg" alt="brizz-code logo" width="120" />
   <h1 align="center">brizz-code</h1>
   <p align="center">
     <strong>Run 10 Claude Code agents. Stay sane.</strong>
@@ -20,7 +21,7 @@
 <br />
 
 <p align="center">
-  <img src="demo.png" alt="brizz-code screenshot" width="900" />
+  <img src=".github/assets/demo.png" alt="brizz-code screenshot" width="900" />
 </p>
 
 <p align="center">
@@ -29,16 +30,11 @@
 
 <br />
 
-```
-You (orchestrator)
- └─ brizz-code (awareness + control)
-      ├─ Claude Code session → feat/auth branch
-      ├─ Claude Code session → fix/login-bug branch
-      ├─ Claude Code session → feat/ci-setup branch
-      └─ ...
-```
+Your agents are coding. brizz-code keeps you in control.
 
-Each session is one agent, one branch, one task. Claude handles the coding — commits, PRs, tests. You handle the directing. brizz-code is your cockpit.
+- 👀 **See** — real-time status across every repo
+- ⚡ **Act** — jump, approve, repeat
+- 🚀 **Ship** — PRs, branches, worktrees — all visible
 
 ## Install
 
