@@ -138,26 +138,41 @@ func Update(currentVersion string) (string, error) {
 		return "", nil
 	}
 
-	arch := runtime.GOARCH
-	archiveName := fmt.Sprintf("brizz-code_%s_darwin_%s.tar.gz", latest, arch)
-
-	// Find the asset API URL for the archive.
-	var assetURL string
-	for _, a := range release.Assets {
-		if a.Name == archiveName {
-			assetURL = a.URL
-			break
-		}
-	}
+	archiveName := fmt.Sprintf("brizz-code_%s_darwin_%s.tar.gz", latest, runtime.GOARCH)
+	assetURL := findAssetURL(release.Assets, archiveName)
 	if assetURL == "" {
 		return "", fmt.Errorf("asset %s not found in release", archiveName)
 	}
 
-	// Download via GitHub API (works for both public and private repos).
+	binaryData, err := downloadAsset(assetURL)
+	if err != nil {
+		return "", err
+	}
+
+	if err := replaceBinary(binaryData); err != nil {
+		return "", err
+	}
+
+	saveCheckTime()
+	return release.TagName, nil
+}
+
+// findAssetURL returns the API URL for the named asset, or "" if not found.
+func findAssetURL(assets []releaseAsset, name string) string {
+	for _, a := range assets {
+		if a.Name == name {
+			return a.URL
+		}
+	}
+	return ""
+}
+
+// downloadAsset downloads a release asset and extracts the binary from the tar.gz archive.
+func downloadAsset(assetURL string) ([]byte, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest("GET", assetURL, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	if token := ghToken(); token != "" {
@@ -166,57 +181,56 @@ func Update(currentVersion string) (string, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("download failed: %w", err)
+		return nil, fmt.Errorf("download failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("download returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("download returned %d", resp.StatusCode)
 	}
 
-	// Extract binary from tar.gz.
-	binaryData, err := extractBinary(resp.Body)
+	data, err := extractBinary(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("extract failed: %w", err)
+		return nil, fmt.Errorf("extract failed: %w", err)
 	}
+	return data, nil
+}
 
-	// Get current binary path.
+// replaceBinary atomically replaces the current executable with new binary data.
+func replaceBinary(binaryData []byte) error {
 	exePath, err := os.Executable()
 	if err != nil {
-		return "", err
+		return err
 	}
 	exePath, err = filepath.EvalSymlinks(exePath)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	// Write to temp file in same directory, then atomic rename.
 	dir := filepath.Dir(exePath)
 	tmp, err := os.CreateTemp(dir, "brizz-code-update-*")
 	if err != nil {
-		return "", err
+		return err
 	}
 	tmpPath := tmp.Name()
 
 	if _, err := tmp.Write(binaryData); err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
-		return "", err
+		return err
 	}
 	tmp.Close()
 
 	if err := os.Chmod(tmpPath, 0755); err != nil {
 		os.Remove(tmpPath)
-		return "", err
+		return err
 	}
 
 	if err := os.Rename(tmpPath, exePath); err != nil {
 		os.Remove(tmpPath)
-		return "", err
+		return err
 	}
-
-	saveCheckTime()
-	return release.TagName, nil
+	return nil
 }
 
 // extractBinary reads a tar.gz stream and returns the brizz-code binary contents.

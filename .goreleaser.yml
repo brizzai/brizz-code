@@ -28,6 +28,23 @@ archives:
       {{- .Os }}_
       {{- .Arch }}
 
+brews:
+  - repository:
+      owner: brizzai
+      name: homebrew-tap
+    homepage: https://github.com/brizzai/brizz-code
+    description: "TUI for managing multiple Claude Code sessions in parallel"
+    license: MIT
+    install: |
+      bin.install "brizz-code"
+    dependencies:
+      - name: tmux
+    test: |
+      system "#{bin}/brizz-code", "--version"
+
+sboms:
+  - artifacts: archive
+
 checksum:
   name_template: checksums.txt
 
@@ -57,6 +74,12 @@ release:
     TUI for managing multiple Claude Code sessions in parallel.
 
     ### Install / Update
+
+    ```bash
+    brew install brizzai/tap/brizz-code
+    ```
+
+    Or via shell script:
 
     ```bash
     curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | bash

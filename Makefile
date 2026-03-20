@@ -23,9 +23,15 @@ fmt:
 lint:
 	golangci-lint run ./...
 
+COVERAGE_EXCLUDE := /(ui|cmd|chrome|debuglog|diagnostics|update)/
+
 coverage:
 	go test -race -coverprofile=coverage.out -covermode=atomic ./...
-	go tool cover -func=coverage.out
+	@echo "\n--- All packages ---"
+	@go tool cover -func=coverage.out | tail -1
+	@grep -v -E '$(COVERAGE_EXCLUDE)' coverage.out > coverage-core.out
+	@echo "--- Core packages (excl. UI, CLI, infra) ---"
+	@go tool cover -func=coverage-core.out | tail -1
 
 deps:
 	go mod download

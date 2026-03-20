@@ -1957,6 +1957,17 @@ func (h *Home) loadSessions() tea.Msg {
 		sessions = append(sessions, session.FromRow(row))
 	}
 
+	// Demo mode: only show sessions under the specified path prefix.
+	if prefix := os.Getenv("BRIZZ_DEMO_PREFIX"); prefix != "" {
+		filtered := make([]*session.Session, 0, len(sessions))
+		for _, s := range sessions {
+			if strings.HasPrefix(s.ProjectPath, prefix) {
+				filtered = append(filtered, s)
+			}
+		}
+		sessions = filtered
+	}
+
 	// These block but run in the tea.Cmd goroutine, not Update().
 	configDir := hooks.GetClaudeConfigDir()
 	hooks.InjectClaudeHooks(configDir)

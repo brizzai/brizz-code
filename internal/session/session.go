@@ -300,102 +300,138 @@ func (s *Session) UpdateStatus() {
 	s.mu.RUnlock()
 
 	if hasHook {
-		// Capture pane once for content change detection and pane-based overrides.
-		var paneContent string
-		var paneStatus Status
-		if content, err := s.tmuxSession.CapturePane(); err == nil {
-			paneContent = stripANSI(content)
-			paneStatus = detectStatus(paneContent, log)
-		}
-
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		switch hookStatus {
-		case "running":
-			s.Status = StatusRunning
-			s.Acknowledged = false
-			// Only override to waiting immediately (permission prompts are unambiguous).
-			// Do NOT override to finished here — the old ❯ prompt from the previous turn
-			// is always visible in scrollback and causes false "finished" flashes between
-			// spinner frames. Let content stability (10s) handle running→finished.
-			if paneStatus == StatusWaiting {
-				s.Status = paneStatus
-				log.Info("hook says running but pane shows waiting, overriding")
-			}
-			if paneContent != "" {
-				// Content change detection: if content is stable >10s, Claude likely stopped.
-				hash := hashContent(normalizeForHash(paneContent))
-				if hash != s.lastContentHash {
-					s.lastContentHash = hash
-					s.lastContentChangeAt = time.Now()
-				} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) > 10*time.Second {
-					// Content stable >10s while hook says running — hook is stale.
-					// Preserve idle if already acknowledged (don't bounce back to finished).
-					if oldStatus == StatusIdle {
-						s.Status = StatusIdle
-						s.Acknowledged = true
-					} else {
-						s.Status = StatusFinished
-					}
-					log.Info("content stable >10s, hook says running, assuming finished",
-						"stableSince", s.lastContentChangeAt.Format(time.TimeOnly))
-				}
-			}
-		case "waiting":
-			// Hook says waiting — trust hooks fully, never override from pane.
-			//
-			// Why no pane override at all:
-			// - waiting→finished: ❯ prompt match false-positives on Claude's menu
-			//   selector (e.g. "❯ 1. Yes, allow once")
-			// - waiting→running: stale "Running…" / spinner text from subagent output
-			//   above the permission prompt triggers whimsical/spinner patterns
-			// - If user approves, UserPromptSubmit hook fires within milliseconds
-			// - If user denies/escapes, idle_prompt hook at ~60s handles it
-			// - Content change detection below handles the gap if hooks are delayed
-			s.Status = StatusWaiting
-			s.Acknowledged = false
-			if paneContent != "" {
-				// Content change detection: if content changed since waiting started, user acted.
-				hash := hashContent(normalizeForHash(paneContent))
-				if s.lastContentHash == "" {
-					// First tick in waiting state — save baseline hash.
-					s.lastContentHash = hash
-					s.lastContentChangeAt = time.Now()
-				} else if hash != s.lastContentHash {
-					// Content changed — user acted on the prompt.
-					// Transition to running (approval is the most common action).
-					// Hooks will correct to the right status within milliseconds.
-					s.lastContentHash = hash
-					s.lastContentChangeAt = time.Now()
-					s.Status = StatusRunning
-					log.Info("content changed while waiting, assuming running")
-				}
-			}
-		case "finished":
-			s.lastContentHash = ""
-			s.lastContentChangeAt = time.Time{}
-			if paneStatus == StatusRunning {
-				// Hook says finished (e.g. SessionStart after auto-resume) but pane
-				// shows an active spinner — Claude is actually working.
-				s.Status = StatusRunning
-				log.Info("hook says finished but pane shows running, overriding")
-			} else if s.Acknowledged {
-				s.Status = StatusIdle
-			} else {
-				s.Status = StatusFinished
-			}
-		case "dead":
-			s.lastContentHash = ""
-			s.lastContentChangeAt = time.Time{}
-			s.Status = StatusError
-		}
-		if s.Status != oldStatus {
-			log.Info("status changed (hook)", "old", oldStatus, "new", s.Status, "hookStatus", hookStatus, "hookAge", hookAge.Round(time.Millisecond))
-		}
+		s.updateStatusFromHook(oldStatus, hookStatus, hookAge, log)
 		return
 	}
 
-	// Pane capture fallback (no hook data available).
+	s.updateStatusFromPane(oldStatus, log)
+}
+
+// updateStatusFromHook applies hook-based status with pane overrides.
+func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hookAge time.Duration, log *slog.Logger) {
+	// Capture pane once for content change detection and pane-based overrides.
+	var paneContent string
+	var paneStatus Status
+	if content, err := s.tmuxSession.CapturePane(); err == nil {
+		paneContent = stripANSI(content)
+		paneStatus = detectStatus(paneContent, log)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch hookStatus {
+	case "running":
+		s.applyHookRunning(oldStatus, paneContent, paneStatus, log)
+	case "waiting":
+		s.applyHookWaiting(paneContent, log)
+	case "finished":
+		s.applyHookFinished(paneStatus, log)
+	case "dead":
+		s.lastContentHash = ""
+		s.lastContentChangeAt = time.Time{}
+		s.Status = StatusError
+	}
+
+	if s.Status != oldStatus {
+		log.Info("status changed (hook)", "old", oldStatus, "new", s.Status, "hookStatus", hookStatus, "hookAge", hookAge.Round(time.Millisecond))
+	}
+}
+
+// applyHookRunning handles hook status "running" with content stability detection.
+// Must be called with s.mu held.
+func (s *Session) applyHookRunning(oldStatus Status, paneContent string, paneStatus Status, log *slog.Logger) {
+	s.Status = StatusRunning
+	s.Acknowledged = false
+
+	// Only override to waiting immediately (permission prompts are unambiguous).
+	// Do NOT override to finished here — the old ❯ prompt from the previous turn
+	// is always visible in scrollback and causes false "finished" flashes between
+	// spinner frames. Let content stability (10s) handle running→finished.
+	if paneStatus == StatusWaiting {
+		s.Status = paneStatus
+		log.Info("hook says running but pane shows waiting, overriding")
+	}
+
+	if paneContent == "" {
+		return
+	}
+
+	// Content change detection: if content is stable >10s, Claude likely stopped.
+	hash := hashContent(normalizeForHash(paneContent))
+	if hash != s.lastContentHash {
+		s.lastContentHash = hash
+		s.lastContentChangeAt = time.Now()
+	} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) > 10*time.Second {
+		// Content stable >10s while hook says running — hook is stale.
+		// Preserve idle if already acknowledged (don't bounce back to finished).
+		if oldStatus == StatusIdle {
+			s.Status = StatusIdle
+			s.Acknowledged = true
+		} else {
+			s.Status = StatusFinished
+		}
+		log.Info("content stable >10s, hook says running, assuming finished",
+			"stableSince", s.lastContentChangeAt.Format(time.TimeOnly))
+	}
+}
+
+// applyHookWaiting handles hook status "waiting" with content change detection.
+// Must be called with s.mu held.
+func (s *Session) applyHookWaiting(paneContent string, log *slog.Logger) {
+	// Hook says waiting — trust hooks fully, never override from pane.
+	//
+	// Why no pane override at all:
+	// - waiting→finished: ❯ prompt match false-positives on Claude's menu
+	//   selector (e.g. "❯ 1. Yes, allow once")
+	// - waiting→running: stale "Running…" / spinner text from subagent output
+	//   above the permission prompt triggers whimsical/spinner patterns
+	// - If user approves, UserPromptSubmit hook fires within milliseconds
+	// - If user denies/escapes, idle_prompt hook at ~60s handles it
+	// - Content change detection below handles the gap if hooks are delayed
+	s.Status = StatusWaiting
+	s.Acknowledged = false
+
+	if paneContent == "" {
+		return
+	}
+
+	// Content change detection: if content changed since waiting started, user acted.
+	hash := hashContent(normalizeForHash(paneContent))
+	if s.lastContentHash == "" {
+		// First tick in waiting state — save baseline hash.
+		s.lastContentHash = hash
+		s.lastContentChangeAt = time.Now()
+	} else if hash != s.lastContentHash {
+		// Content changed — user acted on the prompt.
+		// Transition to running (approval is the most common action).
+		// Hooks will correct to the right status within milliseconds.
+		s.lastContentHash = hash
+		s.lastContentChangeAt = time.Now()
+		s.Status = StatusRunning
+		log.Info("content changed while waiting, assuming running")
+	}
+}
+
+// applyHookFinished handles hook status "finished" with pane override for active spinners.
+// Must be called with s.mu held.
+func (s *Session) applyHookFinished(paneStatus Status, log *slog.Logger) {
+	s.lastContentHash = ""
+	s.lastContentChangeAt = time.Time{}
+	if paneStatus == StatusRunning {
+		// Hook says finished (e.g. SessionStart after auto-resume) but pane
+		// shows an active spinner — Claude is actually working.
+		s.Status = StatusRunning
+		log.Info("hook says finished but pane shows running, overriding")
+	} else if s.Acknowledged {
+		s.Status = StatusIdle
+	} else {
+		s.Status = StatusFinished
+	}
+}
+
+// updateStatusFromPane detects status from pane capture when no hook data is available.
+func (s *Session) updateStatusFromPane(oldStatus Status, log *slog.Logger) {
 	log.Debug("no hook data, falling back to pane capture")
 
 	content, err := s.tmuxSession.CapturePane()
@@ -404,9 +440,7 @@ func (s *Session) UpdateStatus() {
 		return // Keep previous status on capture failure.
 	}
 
-	// Strip ANSI escape codes for reliable pattern matching.
 	content = stripANSI(content)
-
 	status := detectStatus(content, log)
 
 	s.mu.Lock()
@@ -426,7 +460,6 @@ func (s *Session) UpdateStatus() {
 			s.Status = StatusFinished
 		}
 	default:
-		// No pattern matched — keep previous status instead of assuming running.
 		log.Debug("no pattern matched, keeping previous status", "status", s.Status)
 	}
 
@@ -517,19 +550,47 @@ func detectStatus(content string, log *slog.Logger) Status {
 	}
 
 	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	recentLines := extractRecentLines(lines, 50)
+	recentContent := strings.Join(recentLines, "\n")
 
-	// Get last non-empty lines for analysis.
-	var recentLines []string
-	for i := len(lines) - 1; i >= 0 && len(recentLines) < 50; i-- {
+	if s := detectRunning(recentLines, recentContent, log); s != "" {
+		return s
+	}
+	if s := detectWaiting(recentContent, log); s != "" {
+		return s
+	}
+	if s := detectFinished(recentLines, recentContent, log); s != "" {
+		return s
+	}
+
+	if len(recentLines) > 0 {
+		log.Debug("detectStatus: no pattern matched",
+			"lastLine", strings.TrimSpace(recentLines[0]),
+			"lastLineHex", fmt.Sprintf("%x", strings.TrimSpace(recentLines[0])),
+			"recentLineCount", len(recentLines),
+		)
+	} else {
+		log.Debug("detectStatus: no recent lines found")
+	}
+	return "" // No match — caller keeps previous status.
+}
+
+// extractRecentLines returns the last n non-empty lines in reverse order.
+func extractRecentLines(lines []string, n int) []string {
+	var result []string
+	for i := len(lines) - 1; i >= 0 && len(result) < n; i-- {
 		line := strings.TrimRight(lines[i], " \t")
 		if line != "" {
-			recentLines = append(recentLines, line)
+			result = append(result, line)
 		}
 	}
-	recentContent := strings.Join(recentLines, "\n")
+	return result
+}
+
+// detectRunning checks for busy indicators, spinner chars, and whimsical activity patterns.
+func detectRunning(recentLines []string, recentContent string, log *slog.Logger) Status {
 	lowerContent := strings.ToLower(recentContent)
 
-	// Check busy indicators first (highest priority).
 	for _, pattern := range busyPatterns {
 		if strings.Contains(lowerContent, pattern) {
 			log.Debug("detectStatus: matched busy pattern", "pattern", pattern)
@@ -537,7 +598,6 @@ func detectStatus(content string, log *slog.Logger) Status {
 		}
 	}
 
-	// Check spinner chars in recent lines.
 	for _, line := range recentLines {
 		for _, sc := range spinnerChars {
 			if strings.Contains(line, sc) {
@@ -547,9 +607,7 @@ func detectStatus(content string, log *slog.Logger) Status {
 		}
 	}
 
-	// Check whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)").
-	// Match on "· ↓" + "tokens" on the same line — specific enough to avoid false positives
-	// from source code diffs or stale scrollback containing "…" and "tokens" separately.
+	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)").
 	for _, line := range recentLines {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "· ↓") && strings.Contains(lower, "tokens") {
@@ -557,49 +615,44 @@ func detectStatus(content string, log *slog.Logger) Status {
 			return StatusRunning
 		}
 	}
+	return ""
+}
 
-	// Check approval/permission prompts.
+// detectWaiting checks for approval/permission prompts.
+func detectWaiting(recentContent string, log *slog.Logger) Status {
 	for _, pattern := range approvalPatterns {
 		if strings.Contains(recentContent, pattern) {
 			log.Debug("detectStatus: matched approval pattern", "pattern", pattern)
 			return StatusWaiting
 		}
 	}
+	return ""
+}
 
-	// Check for prompt indicator (Claude is idle, waiting for user input).
-	// Scan last few lines since Claude Code renders a separator + status bar below the prompt.
-	if len(recentLines) > 0 {
-		scanLimit := 5
-		if scanLimit > len(recentLines) {
-			scanLimit = len(recentLines)
-		}
-		for i := 0; i < scanLimit; i++ {
-			line := strings.TrimSpace(recentLines[i])
-			if line == ">" || line == "❯" || strings.HasPrefix(line, "> ") || strings.HasPrefix(line, "❯ ") {
-				log.Debug("detectStatus: matched prompt", "line", line, "linesFromBottom", i)
-				return StatusFinished
-			}
-		}
-
-		// Check idle patterns anywhere in recent lines (e.g. permission mode bar).
-		for _, pattern := range idlePatterns {
-			if strings.Contains(recentContent, pattern) {
-				log.Debug("detectStatus: matched idle pattern", "pattern", pattern)
-				return StatusFinished
-			}
-		}
-
-		lastLine := strings.TrimSpace(recentLines[0])
-		log.Debug("detectStatus: no pattern matched",
-			"lastLine", lastLine,
-			"lastLineHex", fmt.Sprintf("%x", lastLine),
-			"recentLineCount", len(recentLines),
-		)
-	} else {
-		log.Debug("detectStatus: no recent lines found")
+// detectFinished checks for prompt indicators and idle patterns.
+func detectFinished(recentLines []string, recentContent string, log *slog.Logger) Status {
+	if len(recentLines) == 0 {
+		return ""
 	}
 
-	return "" // No match — caller keeps previous status.
+	// Scan last few lines for prompt indicator.
+	scanLimit := min(5, len(recentLines))
+	for i := 0; i < scanLimit; i++ {
+		line := strings.TrimSpace(recentLines[i])
+		if line == ">" || line == "❯" || strings.HasPrefix(line, "> ") || strings.HasPrefix(line, "❯ ") {
+			log.Debug("detectStatus: matched prompt", "line", line, "linesFromBottom", i)
+			return StatusFinished
+		}
+	}
+
+	// Check idle patterns (e.g. permission mode bar).
+	for _, pattern := range idlePatterns {
+		if strings.Contains(recentContent, pattern) {
+			log.Debug("detectStatus: matched idle pattern", "pattern", pattern)
+			return StatusFinished
+		}
+	}
+	return ""
 }
 
 // normalizeForHash normalizes pane content for stable hashing.
@@ -645,53 +698,58 @@ func stripANSI(content string) string {
 
 	i := 0
 	for i < len(content) {
-		if content[i] == '\x1b' {
-			i++
-			if i < len(content) && content[i] == '[' {
-				// CSI sequence: skip until final byte (0x40-0x7E).
-				i++
-				for i < len(content) && content[i] >= 0x20 && content[i] <= 0x3F {
-					i++ // parameter bytes
-				}
-				if i < len(content) && content[i] >= 0x40 && content[i] <= 0x7E {
-					i++ // final byte
-				}
-			} else if i < len(content) && content[i] == ']' {
-				// OSC sequence: skip until ST (ESC \ or BEL).
-				i++
-				for i < len(content) {
-					if content[i] == '\x07' {
-						i++
-						break
-					}
-					if content[i] == '\x1b' && i+1 < len(content) && content[i+1] == '\\' {
-						i += 2
-						break
-					}
-					i++
-				}
-			} else {
-				// Other escape: skip one byte after ESC.
-				if i < len(content) {
-					i++
-				}
-			}
-		} else if content[i] == '\x9B' {
-			// C1 CSI: skip until final byte.
-			i++
-			for i < len(content) && content[i] >= 0x20 && content[i] <= 0x3F {
-				i++
-			}
-			if i < len(content) && content[i] >= 0x40 && content[i] <= 0x7E {
-				i++
-			}
-		} else {
+		switch content[i] {
+		case '\x1b':
+			i = skipESCSequence(content, i+1)
+		case '\x9B':
+			i = skipCSIParams(content, i+1)
+		default:
 			b.WriteByte(content[i])
 			i++
 		}
 	}
 
 	return b.String()
+}
+
+// skipESCSequence skips an escape sequence starting after the ESC byte.
+func skipESCSequence(content string, i int) int {
+	if i >= len(content) {
+		return i
+	}
+	switch content[i] {
+	case '[':
+		return skipCSIParams(content, i+1)
+	case ']':
+		return skipOSCBody(content, i+1)
+	default:
+		return i + 1 // Other escape: skip one byte after ESC.
+	}
+}
+
+// skipCSIParams skips CSI parameter bytes and the final byte.
+func skipCSIParams(content string, i int) int {
+	for i < len(content) && content[i] >= 0x20 && content[i] <= 0x3F {
+		i++ // parameter bytes
+	}
+	if i < len(content) && content[i] >= 0x40 && content[i] <= 0x7E {
+		i++ // final byte
+	}
+	return i
+}
+
+// skipOSCBody skips an OSC sequence body until ST (ESC \ or BEL).
+func skipOSCBody(content string, i int) int {
+	for i < len(content) {
+		if content[i] == '\x07' {
+			return i + 1
+		}
+		if content[i] == '\x1b' && i+1 < len(content) && content[i+1] == '\\' {
+			return i + 2
+		}
+		i++
+	}
+	return i
 }
 
 // --- Repo grouping ---

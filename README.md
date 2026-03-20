@@ -14,56 +14,111 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
     <a href="https://golang.org/doc/devel/release.html"><img src="https://img.shields.io/github/go-mod/go-version/brizzai/brizz-code" alt="Go version"></a>
     <a href="https://github.com/brizzai/brizz-code/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/brizzai/brizz-code/ci.yml?branch=main" alt="Build Status"></a>
+    <a href="https://codecov.io/gh/brizzai/brizz-code"><img src="https://codecov.io/gh/brizzai/brizz-code/graph/badge.svg" alt="codecov"></a>
   </p>
 </p>
 
 <br />
 
-## The Problem
+<p align="center">
+  <img src="demo.png" alt="brizz-code screenshot" width="900" />
+</p>
 
-You're running 5 Claude Code sessions across different features. One is waiting for approval, two finished while you weren't looking, and you can't remember what the fourth one was doing.
+<p align="center">
+  <em>Sessions grouped by repo &middot; Real-time status via hooks &middot; PR badges &middot; One-key approve</em>
+</p>
 
-**brizz-code** gives you a single screen to see everything, jump to what matters, and get back to orchestrating.
+<br />
 
-## How It Works
+Your one-stop shop for managing Claude Code sessions. Stop tab-switching — start orchestrating.
 
-```
-┌─ sidebar ──────────────┬─ preview ────────────────────────┐
-│                        │                                  │
-│ myapp/                 │  Session: Add auth middleware     │
-│ ├─ ● Add auth midlwr  │  Status:  Running                │
-│ ├─ ◐ Fix login bug     │  Branch:  feat/auth              │
-│ └─ ● Setup CI          │  PR:      #42 ✓                  │
-│                        │                                  │
-│ api-service/           │  > Implementing JWT refresh      │
-│ └─ ○ Refactor handlers │    token rotation...             │
-│                        │                                  │
-└────────────────────────┴──────────────────────────────────┘
- ● running  ◐ waiting  ○ idle  ✕ error     Space: next attention
-```
-
-- **Sessions grouped by repo** with branch, dirty state, and PR badges
-- **Status detection** via Claude Code hooks — no polling, no guessing
-- **`Space`** jumps to the next session that needs your attention
-- **`Enter`** attaches to a session, **`Ctrl+Q`** detaches cleanly
-- **`Y`** quick-approves a waiting prompt without attaching
-- **Auto-naming** — sessions title themselves from your first prompt
+- 🔍 **See everything** — real-time status of every agent across all repos
+- ⚡ **Act fast** — `Space` to jump, `Y` to approve, two keys and you're done
+- 🌳 **Git-native** — sessions grouped by repo, branch, PR status, worktrees
 
 ## Install
 
+### Homebrew (recommended)
+
 ```bash
-# Clone and run the installer
-git clone git@github.com:brizzai/brizz-code.git /tmp/brizz-code
-bash /tmp/brizz-code/install.sh
+brew install brizzai/tap/brizz-code
 ```
+
+### Shell script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | bash
+```
+
+Requires [`gh`](https://cli.github.com/) authenticated with repo access.
+
+### Go install
+
+```bash
+go install github.com/brizzai/brizz-code/cmd/brizz-code@latest
+```
+
+Requires Go 1.24+.
 
 ### Requirements
 
 - macOS
-- [`gh`](https://cli.github.com/) authenticated with repo access (`gh auth login`)
 - [tmux](https://github.com/tmux/tmux) (`brew install tmux`)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- Git
+
+## Features
+
+### Real-Time Status Detection
+
+Know what every agent is doing without checking each one. Status updates via Claude Code hooks — no polling, no guessing, no delay.
+
+`● running` &nbsp; `◐ waiting` &nbsp; `● finished` &nbsp; `○ idle` &nbsp; `✕ error`
+
+### Jump + Approve Loop
+
+**`Space`** jumps to the next session that needs attention. **`Y`** approves the permission prompt without attaching. Two keys, back to orchestrating. This is the core loop — cycle through waiting sessions and approve them in seconds.
+
+### Sessions Grouped by Repo
+
+Sessions are organized under their git repo with branch name, dirty indicator, and PR status. Collapse and expand repo groups. Filter by title with **`/`**.
+
+### GitHub PR Badges
+
+See PR status at a glance on every repo header: `#42 ✓` approved, `#17` pending review, `#8 ✕` CI failing. Unresolved review threads counted via GraphQL. Requires [`gh`](https://cli.github.com/) (optional — hidden if not installed).
+
+### Git Worktree Support
+
+Press **`w`** to create a new worktree with branch picker. Zero config — works out of the box with any git repo. Worktree creation is non-blocking: a spinner shows in the sidebar while it builds. Custom workspace commands via `.bc.json` per repo.
+
+### Auto-Naming
+
+Sessions title themselves from your first prompt. "Add JWT authentication middleware" becomes the session name automatically. After 3 prompts, the title updates to reflect the session's actual scope. Rename manually with **`R`** to lock the title.
+
+### Full Terminal Attach
+
+**`Enter`** gives you a full PTY session inside the agent — colors, scrollback, mouse events, everything. **`Ctrl+Q`** detaches cleanly without killing the session. Or use **`Tab`** for split-view focus mode with keyboard forwarding.
+
+### Fork Sessions
+
+Press **`f`** to fork a session — branches off the Claude conversation at that point. Explore alternative directions without losing the original.
+
+### Session Resume
+
+Sessions automatically capture Claude's conversation ID. Restart with **`r`** and Claude picks up exactly where it left off — no context lost.
+
+### 5 Built-In Themes
+
+**tokyo-night** (default) · **catppuccin-mocha** · **rose-pine** · **nord** · **gruvbox**
+
+Switch live from the settings dialog (**`S`**) with instant preview.
+
+### Chrome Tab Control
+
+**`p`** opens the PR in Chrome via a native messaging extension — reuses the existing tab instead of opening duplicates. Falls back to system browser if the extension isn't installed.
+
+### Built-In Bug Reports
+
+Press **`!`** to open the bug report dialog. It captures error history, your recent actions, system diagnostics, and debug logs — then opens a pre-filled GitHub issue. No manual copy-paste.
 
 ## Quick Start
 
@@ -71,8 +126,8 @@ bash /tmp/brizz-code/install.sh
 # Launch the TUI
 brizz-code
 
-# Press 'n' to create a new session in a workspace
-# Press 'a' to quick-add a session in the current repo
+# Press 'a' to create a session in the current repo
+# Press 'n' for workspace picker with path autocomplete
 # Press '?' for all keybindings
 ```
 
@@ -83,27 +138,24 @@ brizz-code
 | `j` / `k` | Navigate up/down |
 | `Enter` | Attach to session |
 | `Ctrl+Q` | Detach from session |
+| `Tab` | Focus/unfocus preview (split mode) |
 | `Space` | Jump to next waiting/finished session |
 | `a` | New session (current repo) |
 | `n` | New session (workspace picker) |
+| `w` | New worktree session |
 | `Y` | Quick approve waiting prompt |
+| `f` | Fork session |
 | `d` | Delete session |
 | `r` | Restart session |
 | `R` | Rename session |
-| `f` | Fork session |
 | `b` | Switch git branch |
 | `e` | Open in editor |
 | `p` | Open PR in browser |
 | `/` | Filter sessions |
 | `S` | Settings |
+| `!` | Bug report / diagnostics |
 | `?` | Help |
 | `q` | Quit |
-
-## Themes
-
-5 built-in themes, switchable from settings (`S`):
-
-**tokyo-night** (default) · **catppuccin-mocha** · **rose-pine** · **nord** · **gruvbox**
 
 ## How It Fits
 
@@ -117,6 +169,10 @@ You (orchestrator)
 ```
 
 Each session is one agent, one branch, one task. Claude handles the coding — commits, PRs, tests. You handle the directing. brizz-code is your cockpit.
+
+## Contributing
+
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 

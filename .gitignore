@@ -9,3 +9,6 @@ dist/
 
 # CI artifacts
 chrome-extension.zip
+
+# Claude Code local settings (may contain personal paths)
+.claude/settings.local.json

@@ -23,11 +23,11 @@ jobs:
         run: go build ./...
       - name: Test
         run: go test -race -coverprofile=coverage.out ./...
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
         with:
-          name: coverage
-          path: coverage.out
+          files: coverage.out
+          fail_ci_if_error: false
 
   lint:
     runs-on: ubuntu-latest

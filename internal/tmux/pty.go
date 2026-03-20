@@ -101,49 +101,7 @@ func (s *Session) Attach(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 32)
-		for {
-			n, err := os.Stdin.Read(buf)
-			if err != nil {
-				if err != io.EOF {
-					select {
-					case ioErrors <- fmt.Errorf("stdin read error: %w", err):
-					default:
-					}
-				}
-				return
-			}
-
-			// Discard initial terminal control sequences.
-			if time.Since(startTime) < controlSeqTimeout {
-				continue
-			}
-
-			// Check for Ctrl+Q (ASCII 17).
-			if idx := bytes.IndexByte(buf[:n], 17); idx >= 0 {
-				if idx > 0 {
-					if _, werr := ptmx.Write(buf[:idx]); werr != nil {
-						select {
-						case ioErrors <- fmt.Errorf("PTY write error: %w", werr):
-						default:
-						}
-						return
-					}
-				}
-				close(detachCh)
-				cancel()
-				return
-			}
-
-			// Forward input to PTY.
-			if _, werr := ptmx.Write(buf[:n]); werr != nil {
-				select {
-				case ioErrors <- fmt.Errorf("PTY write error: %w", werr):
-				default:
-				}
-				return
-			}
-		}
+		forwardStdinToPTY(ptmx, startTime, controlSeqTimeout, detachCh, cancel, ioErrors)
 	}()
 
 	// Wait for command to finish.
@@ -165,29 +123,82 @@ func (s *Session) Attach(ctx context.Context) error {
 	}
 
 	// Wait for detach or command completion.
-	var attachErr error
-	select {
-	case <-detachCh:
-		attachErr = nil
-	case err := <-cmdDone:
-		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				if exitErr.ExitCode() == 0 || exitErr.ExitCode() == 1 {
-					attachErr = nil
-				} else {
-					attachErr = err
-				}
-			} else {
-				attachErr = err
-			}
-			if ctx.Err() != nil {
-				attachErr = nil
-			}
-		}
-	case <-ctx.Done():
-		attachErr = nil
-	}
-
+	attachErr := waitForDetach(ctx, detachCh, cmdDone)
 	cleanupAttach()
 	return attachErr
+}
+
+// forwardStdinToPTY reads stdin, intercepts Ctrl+Q for detach, forwards everything else to the PTY.
+func forwardStdinToPTY(ptmx *os.File, startTime time.Time, controlSeqTimeout time.Duration, detachCh chan struct{}, cancel context.CancelFunc, ioErrors chan<- error) {
+	buf := make([]byte, 32)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if err != nil {
+			if err != io.EOF {
+				select {
+				case ioErrors <- fmt.Errorf("stdin read error: %w", err):
+				default:
+				}
+			}
+			return
+		}
+
+		// Discard initial terminal control sequences.
+		if time.Since(startTime) < controlSeqTimeout {
+			continue
+		}
+
+		// Check for Ctrl+Q (ASCII 17).
+		if idx := bytes.IndexByte(buf[:n], 17); idx >= 0 {
+			if idx > 0 {
+				if _, werr := ptmx.Write(buf[:idx]); werr != nil {
+					select {
+					case ioErrors <- fmt.Errorf("PTY write error: %w", werr):
+					default:
+					}
+					return
+				}
+			}
+			close(detachCh)
+			cancel()
+			return
+		}
+
+		// Forward input to PTY.
+		if _, werr := ptmx.Write(buf[:n]); werr != nil {
+			select {
+			case ioErrors <- fmt.Errorf("PTY write error: %w", werr):
+			default:
+			}
+			return
+		}
+	}
+}
+
+// waitForDetach waits for detach signal, command completion, or context cancellation.
+func waitForDetach(ctx context.Context, detachCh <-chan struct{}, cmdDone <-chan error) error {
+	select {
+	case <-detachCh:
+		return nil
+	case err := <-cmdDone:
+		return classifyExitError(ctx, err)
+	case <-ctx.Done():
+		return nil
+	}
+}
+
+// classifyExitError returns nil for expected exit codes (0, 1) or context cancellation.
+func classifyExitError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if exitErr.ExitCode() == 0 || exitErr.ExitCode() == 1 {
+			return nil
+		}
+	}
+	return err
 }
