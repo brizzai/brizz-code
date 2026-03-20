@@ -124,17 +124,16 @@ Every feature is designed around how Claude Code actually works — hooks, conve
 
 |                                     | brizz-code | claude-squad | ccmanager | agent-deck |
 |-------------------------------------|:----------:|:------------:|:---------:|:----------:|
-| **Status detection**                | Hooks (real-time, no delay) | Pane scraping | Hooks | Hooks |
-| **PR state** (CI + reviews + threads) | ✓ | — | — | — |
-| **One-key approve** (`Y`)           | ✓ | auto-yes flag | auto-approve | — |
-| **Session resume** (`claude --resume`) | ✓ | — | — | — |
-| **Smart session naming**            | ✓ | — | — | — |
-| **Fork conversation** (`f`)         | ✓ | — | — | — |
-| **Open PR in browser** (`p`)       | ✓ | — | — | — |
-| **Git worktrees**                   | ✓ | ✓ | ✓ | ✓ |
-| **Multi-agent** (Codex, Gemini…)    | — | ✓ | ✓ | ✓ |
-| **Linux**                           | — | ✓ | ✓ | ✓ |
-| **No tmux dependency**              | — | — | ✓ | — |
+| **Status detection**                | ✅ Hooks (real-time) | Pane scraping | ✅ Hooks | ✅ Hooks |
+| **PR state** (CI + reviews + threads) | ✅ | — | — | — |
+| **One-key approve** (`Y`)           | ✅ | ✅ auto-yes flag | ✅ auto-approve | — |
+| **Smart session naming**            | ✅ | — | — | — |
+| **Fork conversation** (`f`)         | ✅ | — | — | — |
+| **Open PR in browser** (`p`)       | ✅ | — | — | — |
+| **Git worktrees**                   | ✅ | ✅ | ✅ | ✅ |
+| **Multi-agent** (Codex, Gemini…)    | — | ✅ | ✅ | ✅ |
+| **Linux**                           | — | ✅ | ✅ | ✅ |
+| **No tmux dependency**              | — | — | ✅ | — |
 
 **The trade-off is intentional.** Claude-squad and ccmanager support 5+ agents — but treat them all the same. brizz-code knows what Claude Code *is*. It reads hook status files. It resumes conversations. It knows your PR has 2 unresolved threads. It names sessions from your actual prompt. That depth is only possible by going narrow.
 
