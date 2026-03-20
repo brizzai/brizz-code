@@ -124,12 +124,12 @@ Every feature is designed around how Claude Code actually works — hooks, conve
 
 |                                     | brizz-code | claude-squad | ccmanager | agent-deck |
 |-------------------------------------|:----------:|:------------:|:---------:|:----------:|
-| **Status detection**                | ✅ Hooks (real-time) | Pane scraping | ✅ Hooks | ✅ Hooks |
+| **Status detection**                | ✅ Hooks (real-time) | ✅ Pane scraping | ✅ Pane scraping | ✅ Hooks |
 | **PR state** (CI + reviews + threads) | ✅ | — | — | — |
-| **One-key approve** (`Y`)           | ✅ | ✅ auto-yes flag | ✅ auto-approve | — |
 | **Smart session naming**            | ✅ | — | — | — |
-| **Fork conversation** (`f`)         | ✅ | — | — | — |
-| **Open PR in browser** (`p`)       | ✅ | — | — | — |
+| **Fork conversation**              | ✅ | — | — | ✅ |
+| **Open PR in browser**             | ✅ | — | — | — |
+| **Session resume**                  | ✅ | — | — | ✅ |
 | **Git worktrees**                   | ✅ | ✅ | ✅ | ✅ |
 | **Multi-agent** (Codex, Gemini…)    | — | ✅ | ✅ | ✅ |
 | **Linux**                           | — | ✅ | ✅ | ✅ |
