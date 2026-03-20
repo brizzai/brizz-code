@@ -1838,7 +1838,7 @@ func (h *Home) renderHeader() string {
 	}
 
 	bg := ColorSurface
-	logo := lipgloss.NewStyle().Foreground(lipgloss.Color("#F48FB1")).Background(bg).Bold(true).Render(">_")
+	logo := lipgloss.NewStyle().Foreground(ColorBrand).Background(bg).Bold(true).Render(">_")
 	title := logo + lipgloss.NewStyle().Background(bg).Render(" ") + TitleStyle.Background(bg).Render("brizz-code")
 
 	// Build status indicators — only show non-zero.
@@ -1864,7 +1864,15 @@ func (h *Home) renderHeader() string {
 
 	sp := lipgloss.NewStyle().Background(bg).Render
 	content := title + sp("  ") + stats
-	return HeaderBarStyle.Width(h.width).Render(content)
+
+	// Manually pad to full width with background-styled spaces to avoid ANSI reset issues.
+	if h.width > 0 {
+		contentWidth := lipgloss.Width(content)
+		if contentWidth < h.width {
+			content += sp(strings.Repeat(" ", h.width-contentWidth))
+		}
+	}
+	return HeaderBarStyle.Render(content)
 }
 
 func (h *Home) renderHelpBar() string {
