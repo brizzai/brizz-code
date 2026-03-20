@@ -52,14 +52,7 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - Merge pull request
-      - Merge branch
+  disable: true
 
 release:
   github:
@@ -68,21 +61,5 @@ release:
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"
-  header: |
-    ## brizz-code v{{.Version}}
-
-    TUI for managing multiple Claude Code sessions in parallel.
-
-    ### Install / Update
-
-    ```bash
-    brew install brizzai/tap/brizz-code
-    ```
-
-    Or via shell script:
-
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash
-    ```
   extra_files:
     - glob: chrome-extension.zip

@@ -5,7 +5,7 @@
 TUI tool for managing multiple Claude Code sessions in parallel using tmux.
 
 ## Tech Stack
-- Go 1.24+, Bubble Tea + Lipgloss, tmux, SQLite (WAL mode)
+- Go 1.26+, Bubble Tea + Lipgloss, tmux, SQLite (WAL mode)
 
 ## Build
 ```

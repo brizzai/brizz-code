@@ -79,7 +79,34 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.26"
+
+      - name: Extract changelog for this release
+        run: |
+          TAG="${{ needs.tag.outputs.new_tag }}"
+          {
+            echo "## brizz-code ${TAG}"
+            echo ""
+            echo "TUI for managing multiple Claude Code sessions in parallel."
+            echo ""
+            echo "### Install / Update"
+            echo ""
+            echo '```bash'
+            echo "brew install brizzai/tap/brizz-code"
+            echo '```'
+            echo ""
+            echo "Or via shell script:"
+            echo ""
+            echo '```bash'
+            echo "curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash"
+            echo '```'
+            echo ""
+            echo "---"
+            echo ""
+            # Extract content between [Unreleased] and the next ## heading
+            awk '/^## \[Unreleased\]/{found=1; next} /^## \[/{found=0} found{print}' CHANGELOG.md
+          } > /tmp/release-notes.md
+          cat /tmp/release-notes.md
 
       - name: Bundle Chrome extension
         run: zip -r chrome-extension.zip chrome-extension/
@@ -88,7 +115,22 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes /tmp/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ needs.tag.outputs.new_tag }}
+
+      - name: Roll changelog for next release
+        run: |
+          TAG="${{ needs.tag.outputs.new_tag }}"
+          VERSION="${TAG#v}"
+          DATE=$(date -u +%Y-%m-%d)
+          # Replace [Unreleased] section with versioned entry + fresh [Unreleased]
+          sed -i "s/^## \[Unreleased\]/## [Unreleased]\n\n## [${VERSION}] - ${DATE}/" CHANGELOG.md
+          # Update comparison links at bottom
+          sed -i "s|\[Unreleased\]: \(.*\)/compare/.*\.\.\.HEAD|[Unreleased]: \1/compare/v${VERSION}...HEAD\n[${VERSION}]: \1/releases/tag/v${VERSION}|" CHANGELOG.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs: roll changelog for v${VERSION} [skip release]"
+          git push origin HEAD:master

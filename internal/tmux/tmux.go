@@ -16,7 +16,7 @@ import (
 
 const (
 	SessionPrefix   = "brizzcode_"
-	captureCacheTTL = 500 * time.Millisecond
+	captureCacheTTL = 400 * time.Millisecond
 	captureTimeout  = 3 * time.Second
 	sessionCacheTTL = 2 * time.Second
 )

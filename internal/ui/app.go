@@ -30,6 +30,7 @@ import (
 
 const (
 	tickInterval           = 2 * time.Second
+	previewTickInterval    = 500 * time.Millisecond
 	previewCacheTTL        = 500 * time.Millisecond
 	layoutBreakpointSingle = 50
 	layoutBreakpointDual   = 80
@@ -69,6 +70,7 @@ type (
 	openPRMsg       struct{ err error }
 	quickApproveMsg struct{ err error }
 	spinnerTickMsg  struct{}
+	previewTickMsg  time.Time
 	focusTickMsg    time.Time
 )
 
@@ -190,6 +192,7 @@ func (h *Home) Init() tea.Cmd {
 	return tea.Batch(
 		h.loadSessions,
 		h.tick(),
+		h.previewTick(),
 	)
 }
 
@@ -461,6 +464,20 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			h.setError(fmt.Errorf("workspace destroy: %w", msg.err))
 		}
 		return h, nil
+
+	case previewTickMsg:
+		// Fast preview-only tick — skips status/git work, just refreshes the preview pane.
+		if h.focusMode {
+			return h, h.previewTick() // focus mode has its own faster tick
+		}
+		var previewCmd tea.Cmd
+		if sel := h.selectedSession(); sel != nil && sel.IsAlive() {
+			previewCmd = h.fetchPreview(sel)
+		}
+		if previewCmd != nil {
+			return h, tea.Batch(previewCmd, h.previewTick())
+		}
+		return h, h.previewTick()
 
 	case focusTickMsg:
 		if !h.focusMode {
@@ -1533,6 +1550,12 @@ func (h *Home) tick() tea.Cmd {
 	})
 }
 
+func (h *Home) previewTick() tea.Cmd {
+	return tea.Tick(previewTickInterval, func(t time.Time) tea.Msg {
+		return previewTickMsg(t)
+	})
+}
+
 func (h *Home) handleTick() (tea.Model, tea.Cmd) {
 	// Trigger background worker (non-blocking).
 	select {
@@ -1545,19 +1568,8 @@ func (h *Home) handleTick() (tea.Model, tea.Cmd) {
 	h.rebuildFlatItems()
 	h.workerMu.Unlock()
 
-	// Fetch preview for selected session (already async via tea.Cmd).
-	var previewCmd tea.Cmd
-	if sel := h.selectedSession(); sel != nil && sel.IsAlive() {
-		if _, ok := h.previewCacheTime[sel.ID]; !ok || time.Since(h.previewCacheTime[sel.ID]) > previewCacheTTL {
-			previewCmd = h.fetchPreview(sel)
-		}
-	}
-
-	cmds := []tea.Cmd{h.tick()}
-	if previewCmd != nil {
-		cmds = append(cmds, previewCmd)
-	}
-	return h, tea.Batch(cmds...)
+	// Preview is now handled by the faster previewTick, no need to fetch here.
+	return h, h.tick()
 }
 
 // statusWorker runs in its own goroutine, performing all blocking I/O

@@ -12,5 +12,8 @@ dist/
 # CI artifacts
 chrome-extension.zip
 
+# Wails build artifacts
+var/
+
 # Claude Code local settings (may contain personal paths)
 .claude/settings.local.json
