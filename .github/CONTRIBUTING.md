@@ -47,7 +47,7 @@ make lint     # Run linter (requires golangci-lint)
 
 ## Commit Convention
 
-We use [Conventional Commits](https://www.conventionalcommits.org/). This drives automatic version bumps on merge to main.
+We use [Conventional Commits](https://www.conventionalcommits.org/). This drives automatic version bumps on merge to master.
 
 ```
 feat: add new feature          # minor bump
@@ -66,7 +66,7 @@ Add `[skip release]` in commit message to skip version bump.
 ## Pull Requests
 
 1. Fork the repository
-2. Create a feature branch from `main`
+2. Create a feature branch from `master`
 3. Make your changes
 4. Ensure `make build && make test && make lint` pass
 5. Submit a PR with a clear description

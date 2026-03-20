@@ -2,6 +2,8 @@ build/
 /brizz-code
 /brizz-desktop
 *.log
+*.out
+*.cast
 
 # Frontend build artifacts
 node_modules/

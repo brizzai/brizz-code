@@ -1,0 +1,15 @@
+title: ""
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        General discussion about brizz-code, agentic workflows, or anything that doesn't fit the other categories.
+
+  - type: textarea
+    id: content
+    attributes:
+      label: What's on your mind?
+      description: Share thoughts, feedback, or start a conversation.
+    validations:
+      required: true

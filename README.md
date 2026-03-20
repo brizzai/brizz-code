@@ -11,7 +11,7 @@
   <p align="center">
     <a href="https://goreportcard.com/report/github.com/brizzai/brizz-code"><img src="https://goreportcard.com/badge/github.com/brizzai/brizz-code" alt="Go Report Card"></a>
     <a href="https://github.com/brizzai/brizz-code/releases/latest"><img src="https://img.shields.io/github/v/release/brizzai/brizz-code" alt="GitHub release"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
     <a href="https://golang.org/doc/devel/release.html"><img src="https://img.shields.io/github/go-mod/go-version/brizzai/brizz-code" alt="Go version"></a>
     <a href="https://github.com/brizzai/brizz-code/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/brizzai/brizz-code/ci.yml?branch=main" alt="Build Status"></a>
     <a href="https://codecov.io/gh/brizzai/brizz-code"><img src="https://codecov.io/gh/brizzai/brizz-code/graph/badge.svg" alt="codecov"></a>
@@ -176,4 +176,4 @@ See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for development setup and guideli
 
 ## License
 
-MIT
+Apache 2.0

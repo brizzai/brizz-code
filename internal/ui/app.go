@@ -759,7 +759,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				h.cursor = FirstSelectableItem(h.flatItems)
 			}
 			h.syncViewport()
-			return h, nil
+			return h, h.fetchPreviewForSelected()
 		case "enter":
 			// Accept filter and exit filter mode.
 			h.filterActive = false
@@ -777,6 +777,9 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				h.cursor = 0
 			}
 			h.syncViewport()
+			if previewCmd := h.fetchPreviewForSelected(); previewCmd != nil {
+				return h, tea.Batch(cmd, previewCmd)
+			}
 			return h, cmd
 		}
 	}
@@ -785,11 +788,11 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "j", "down":
 		h.cursor = NextSelectableItem(h.flatItems, h.cursor, 1)
 		h.syncViewport()
-		return h, nil
+		return h, h.fetchPreviewForSelected()
 	case "k", "up":
 		h.cursor = NextSelectableItem(h.flatItems, h.cursor, -1)
 		h.syncViewport()
-		return h, nil
+		return h, h.fetchPreviewForSelected()
 	case "enter":
 		// Toggle repo group or attach session.
 		if h.cursor >= 0 && h.cursor < len(h.flatItems) && h.flatItems[h.cursor].IsRepoHeader {
@@ -817,7 +820,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		// Jump to next waiting (or finished) session.
 		h.jumpToNextAttentionSession()
-		return h, nil
+		return h, h.fetchPreviewForSelected()
 	case "left", "h":
 		h.collapseRepoAtCursor()
 		return h, nil
@@ -898,7 +901,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				h.cursor = FirstSelectableItem(h.flatItems)
 			}
 			h.syncViewport()
-			return h, nil
+			return h, h.fetchPreviewForSelected()
 		}
 		return h, nil
 	case "S":
@@ -1015,7 +1018,7 @@ func (h *Home) handleSessionCreateResult(msg sessionCreateResultMsg) (tea.Model,
 		}
 	}
 
-	return h, nil
+	return h, h.fetchPreviewForSelected()
 }
 
 func (h *Home) confirmDeleteSelected() tea.Cmd {
@@ -1802,6 +1805,16 @@ func (h *Home) fetchPreview(s *session.Session) tea.Cmd {
 		content, _ := ts.CapturePane()
 		return previewMsg{sessionID: id, content: content}
 	}
+}
+
+// fetchPreviewForSelected returns a tea.Cmd that fetches the preview for the
+// currently selected session, or nil if no live session is selected.
+func (h *Home) fetchPreviewForSelected() tea.Cmd {
+	sel := h.selectedSession()
+	if sel == nil || !sel.IsAlive() {
+		return nil
+	}
+	return h.fetchPreview(sel)
 }
 
 // --- Rendering helpers ---

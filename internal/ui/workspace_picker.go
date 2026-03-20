@@ -62,7 +62,7 @@ type WorktreeDialog struct {
 // NewWorktreeDialog creates a new worktree dialog.
 func NewWorktreeDialog() *WorktreeDialog {
 	base := textinput.New()
-	base.Placeholder = "main"
+	base.Placeholder = "master"
 	base.CharLimit = 128
 	base.Width = 40
 

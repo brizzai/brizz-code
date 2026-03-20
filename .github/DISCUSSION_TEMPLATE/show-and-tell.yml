@@ -1,0 +1,32 @@
+title: "[Show] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share your brizz-code setup, workflows, tips, or integrations.
+        Screenshots, GIFs, and config snippets welcome!
+
+  - type: textarea
+    id: showcase
+    attributes:
+      label: What are you sharing?
+      description: Describe your setup, workflow, or discovery.
+      placeholder: |
+        I run 8 Claude agents across 3 repos using this workflow...
+
+        Here's my .bc.json config:
+        ```json
+        { ... }
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: tips
+    attributes:
+      label: Tips or lessons learned
+      description: Anything surprising, non-obvious, or worth sharing?
+      placeholder: "I found that running more than 5 sessions on the same repo works best when..."
+    validations:
+      required: false

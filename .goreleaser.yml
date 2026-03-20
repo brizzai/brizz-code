@@ -34,7 +34,7 @@ brews:
       name: homebrew-tap
     homepage: https://github.com/brizzai/brizz-code
     description: "TUI for managing multiple Claude Code sessions in parallel"
-    license: MIT
+    license: Apache-2.0
     install: |
       bin.install "brizz-code"
     dependencies:
@@ -82,7 +82,7 @@ release:
     Or via shell script:
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash
     ```
   extra_files:
     - glob: chrome-extension.zip

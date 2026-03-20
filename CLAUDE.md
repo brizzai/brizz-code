@@ -18,7 +18,7 @@ make coverage # test coverage report
 ```
 
 ## Commit Convention
-Use [conventional commits](https://www.conventionalcommits.org/). This drives automatic version bumps on merge to main:
+Use [conventional commits](https://www.conventionalcommits.org/). This drives automatic version bumps on merge to master:
 - `fix: ...` → patch (v0.1.0 → v0.1.1)
 - `feat: ...` → minor (v0.1.0 → v0.2.0)
 - `feat!: ...` or `BREAKING CHANGE: ...` → major (v0.1.0 → v1.0.0)
@@ -27,7 +27,7 @@ Use [conventional commits](https://www.conventionalcommits.org/). This drives au
 - Scopes are optional: `fix(hooks): ...`, `feat(ui): ...`
 
 ## Release
-- Every merge to main auto-creates a git tag and GitHub Release via GoReleaser
+- Every merge to master auto-creates a git tag and GitHub Release via GoReleaser
 - Manual major/minor bumps: `git tag v1.0.0 && git push origin v1.0.0`
 - Install: clone repo and run `bash install.sh` (requires `gh` CLI authenticated with repo access)
 
