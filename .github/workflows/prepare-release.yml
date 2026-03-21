@@ -1,0 +1,221 @@
+name: Prepare Release
+
+on:
+  issue_comment:
+    types: [created]
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version override (e.g., 2.0.0). Leave empty to auto-compute."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issue_comment' && (github.event.comment.body == '/ship' || startsWith(github.event.comment.body, '/ship '))) ||
+      (github.event_name == 'push')
+    steps:
+      - name: Check permissions
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission --jq '.permission')
+          if [[ "$PERMISSION" != "admin" && "$PERMISSION" != "write" ]]; then
+            echo "::error::User ${{ github.event.comment.user.login }} does not have write access"
+            exit 1
+          fi
+
+      - name: Check for existing release PR (on push)
+        id: check
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Only proceed if there's an open release PR
+          COUNT=$(gh pr list --repo ${{ github.repository }} --label autorelease --state open --json number --jq length)
+          if [ "$COUNT" = "0" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No open release PR, skipping auto-update"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Found open release PR, will update"
+          fi
+
+      - name: Skip if no release PR (on push)
+        if: github.event_name == 'push' && steps.check.outputs.skip == 'true'
+        run: echo "No open release PR. Skipping."
+
+      - name: React to comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content=rocket
+
+      - uses: actions/checkout@v6
+        if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: version
+        if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
+        run: |
+          # Check for override from /ship command or workflow input
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            RAW=$(echo "${{ github.event.comment.body }}" | sed -n 's|^/ship[[:space:]]*||p')
+            OVERRIDE=$(echo "$RAW" | awk '{print $1}')
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            OVERRIDE=$(echo "${{ inputs.version }}" | awk '{print $1}')
+          else
+            OVERRIDE=""
+          fi
+
+          if [ -n "$OVERRIDE" ]; then
+            # Strip optional leading "v"
+            OVERRIDE="${OVERRIDE#v}"
+            # Validate semver format
+            if ! echo "$OVERRIDE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::Invalid version '$OVERRIDE'. Expected format: X.Y.Z"
+              exit 1
+            fi
+            echo "next=v${OVERRIDE}" >> "$GITHUB_OUTPUT"
+            echo "Using override version: v${OVERRIDE}"
+            exit 0
+          fi
+
+          # Auto-compute from conventional commits
+          LATEST=$(git tag -l 'v*' --sort=-version:refname | head -1)
+          [ -z "$LATEST" ] && LATEST="v0.0.0"
+          echo "latest=$LATEST"
+
+          BUMP="patch"
+          COMMITS=$(git log "${LATEST}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          while IFS= read -r msg; do
+            if echo "$msg" | grep -qE '^[a-z]+(\(.+\))?!:|BREAKING CHANGE:'; then
+              BUMP="major"
+              break
+            fi
+            if echo "$msg" | grep -qE '^feat(\(.+\))?:'; then
+              BUMP="minor"
+            fi
+          done <<< "$COMMITS"
+
+          NUM="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$NUM"
+
+          case "$BUMP" in
+            major) NEXT="v$((MAJOR + 1)).0.0" ;;
+            minor) NEXT="v${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+          esac
+
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Computed: $BUMP bump, $LATEST -> $NEXT"
+
+      - name: Check tag doesn't exist
+        if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.version.outputs.next }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists!"
+            exit 1
+          fi
+
+      - name: Create or update release branch
+        if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.version.outputs.next }}"
+          VERSION="${TAG#v}"
+          DATE=$(date -u +%Y-%m-%d)
+          BRANCH="release/next"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Always start fresh from master
+          git checkout -B "$BRANCH" origin/master
+
+          # Roll changelog: [Unreleased] → [VERSION] - DATE
+          sed -i "s/^## \[Unreleased\]/## [Unreleased]\n\n## [${VERSION}] - ${DATE}/" CHANGELOG.md
+
+          # Update comparison links at bottom
+          REPO_URL="https://github.com/${{ github.repository }}"
+          sed -i "s|\[Unreleased\]: \(.*\)/compare/.*\.\.\.HEAD|[Unreleased]: ${REPO_URL}/compare/v${VERSION}...HEAD\n[${VERSION}]: ${REPO_URL}/releases/tag/v${VERSION}|" CHANGELOG.md
+
+          git add CHANGELOG.md
+          git commit -m "release: v${VERSION}"
+          git push --force origin "$BRANCH"
+
+      - name: Create or update pull request
+        id: pr
+        if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.next }}"
+          VERSION="${TAG#v}"
+          BRANCH="release/next"
+
+          # Extract changelog content for this version
+          NOTES=$(awk -v ver="$VERSION" '
+            /^## \[/{
+              if (found) exit
+              if (index($0, "[" ver "]")) { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md)
+
+          BODY=$(printf '%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s' \
+            "## Release v${VERSION}" \
+            "Merging this PR will trigger the release pipeline." \
+            "### Changelog" \
+            "${NOTES}" \
+            "---" \
+            "> Created by \`/ship\`. Auto-updates when master changes. Merge to release.")
+
+          # Check if PR already exists
+          EXISTING=$(gh pr list --repo ${{ github.repository }} --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            # Update existing PR title and body
+            gh pr edit "$EXISTING" \
+              --title "release: v${VERSION}" \
+              --body "$BODY"
+            PR_URL="https://github.com/${{ github.repository }}/pull/${EXISTING}"
+            echo "Updated existing PR #${EXISTING}"
+          else
+            # Create new PR
+            PR_URL=$(gh pr create \
+              --base master \
+              --head "$BRANCH" \
+              --title "release: v${VERSION}" \
+              --label "autorelease" \
+              --body "$BODY")
+            echo "Created new PR"
+          fi
+
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Reply to comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.next }}"
+          PR_URL="${{ steps.pr.outputs.url }}"
+          gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
+            -f body="🚀 Release PR opened: ${PR_URL} (${TAG})<br>Merge to release."

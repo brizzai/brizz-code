@@ -47,7 +47,7 @@ make lint     # Run linter (requires golangci-lint)
 
 ## Commit Convention
 
-We use [Conventional Commits](https://www.conventionalcommits.org/). This drives automatic version bumps on merge to master.
+We use [Conventional Commits](https://www.conventionalcommits.org/). Version is auto-computed from commits when releasing.
 
 ```
 feat: add new feature          # minor bump
@@ -61,7 +61,13 @@ test: add tests                # patch bump
 
 Scopes are optional: `fix(hooks): ...`, `feat(ui): ...`
 
-Add `[skip release]` in commit message to skip version bump.
+### Changelog
+
+Add a note under `## [Unreleased]` in `CHANGELOG.md` for user-facing changes. CI will remind you if you forget. If your change doesn't need a changelog entry (CI, typos, deps), comment `/no-changelog` on the PR.
+
+### Releasing
+
+Maintainers: comment `/ship` on any issue or PR to prepare a release. CI opens a release PR with the changelog rolled — merge it to release.
 
 ## Pull Requests
 
