@@ -47,9 +47,6 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
-changelog:
-  disable: true
-
 release:
   github:
     owner: brizzai
