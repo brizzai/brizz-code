@@ -1,93 +1,48 @@
 name: Release
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches: [master]
 
+env:
+  GO_VERSION: "1.26"
+
+permissions:
+  contents: write
+
 jobs:
-  tag:
+  release:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip release]')"
-    permissions:
-      contents: write
-    outputs:
-      new_tag: ${{ steps.version.outputs.next }}
-      skipped: ${{ steps.version.outputs.skipped }}
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'autorelease')
     steps:
+      - name: Extract version from branch
+        id: version
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          TAG=$(echo "$BRANCH" | sed 's|^release/||')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing: $TAG"
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Compute next version from conventional commits
-        id: version
-        run: |
-          # Get the latest semver tag, or default to v0.0.0
-          LATEST=$(git tag -l 'v*' --sort=-version:refname | head -1)
-          if [ -z "$LATEST" ]; then
-            LATEST="v0.0.0"
-          fi
-          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
-
-          # Parse commits since last tag for conventional commit prefixes
-          BUMP="patch"
-          COMMITS=$(git log "${LATEST}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
-
-          while IFS= read -r msg; do
-            # Check for breaking changes
-            if echo "$msg" | grep -qE '^[a-z]+(\(.+\))?!:|BREAKING CHANGE:'; then
-              BUMP="major"
-              break
-            fi
-            # Check for features
-            if echo "$msg" | grep -qE '^feat(\(.+\))?:'; then
-              BUMP="minor"
-            fi
-          done <<< "$COMMITS"
-
-          # Strip v prefix, split, compute next version
-          NUM="${LATEST#v}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$NUM"
-
-          case "$BUMP" in
-            major) NEXT="v$((MAJOR + 1)).0.0" ;;
-            minor) NEXT="v${MAJOR}.$((MINOR + 1)).0" ;;
-            patch) NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
-          esac
-
-          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "skipped=false" >> "$GITHUB_OUTPUT"
-          echo "Bump: $BUMP | $LATEST -> $NEXT"
 
       - name: Create and push tag
         run: |
-          git tag ${{ steps.version.outputs.next }}
-          git push origin ${{ steps.version.outputs.next }}
-
-  release:
-    needs: tag
-    if: needs.tag.outputs.skipped != 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Fetch new tag
-        run: git fetch --tags
+          git tag ${{ steps.version.outputs.tag }}
+          git push origin ${{ steps.version.outputs.tag }}
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: ${{ env.GO_VERSION }}
 
-      - name: Extract changelog for this release
+      - name: Extract release notes from changelog
         run: |
-          TAG="${{ needs.tag.outputs.new_tag }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${TAG#v}"
           {
             echo "## brizz-code ${TAG}"
-            echo ""
-            echo "TUI for managing multiple Claude Code sessions in parallel."
             echo ""
             echo "### Install / Update"
             echo ""
@@ -103,8 +58,13 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            # Extract content between [Unreleased] and the next ## heading
-            awk '/^## \[Unreleased\]/{found=1; next} /^## \[/{found=0} found{print}' CHANGELOG.md
+            awk -v ver="$VERSION" '
+              /^## \[/{
+                if (found) exit
+                if (index($0, "[" ver "]")) { found=1; next }
+              }
+              found { print }
+            ' CHANGELOG.md
           } > /tmp/release-notes.md
           cat /tmp/release-notes.md
 
@@ -119,19 +79,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ needs.tag.outputs.new_tag }}
-
-      - name: Roll changelog for next release
-        run: |
-          TAG="${{ needs.tag.outputs.new_tag }}"
-          VERSION="${TAG#v}"
-          DATE=$(date -u +%Y-%m-%d)
-          # Replace [Unreleased] section with versioned entry + fresh [Unreleased]
-          sed -i "s/^## \[Unreleased\]/## [Unreleased]\n\n## [${VERSION}] - ${DATE}/" CHANGELOG.md
-          # Update comparison links at bottom
-          sed -i "s|\[Unreleased\]: \(.*\)/compare/.*\.\.\.HEAD|[Unreleased]: \1/compare/v${VERSION}...HEAD\n[${VERSION}]: \1/releases/tag/v${VERSION}|" CHANGELOG.md
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
-          git commit -m "docs: roll changelog for v${VERSION} [skip release]"
-          git push origin HEAD:master
+          GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.tag }}

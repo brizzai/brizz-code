@@ -18,18 +18,19 @@ make coverage # test coverage report
 ```
 
 ## Commit Convention
-Use [conventional commits](https://www.conventionalcommits.org/). This drives automatic version bumps on merge to master:
+Use [conventional commits](https://www.conventionalcommits.org/). Version is auto-computed from commits:
 - `fix: ...` → patch (v0.1.0 → v0.1.1)
 - `feat: ...` → minor (v0.1.0 → v0.2.0)
 - `feat!: ...` or `BREAKING CHANGE: ...` → major (v0.1.0 → v1.0.0)
 - `chore:`, `docs:`, `refactor:`, `test:`, `style:` → patch
-- Add `[skip release]` in commit message to skip version bump entirely
 - Scopes are optional: `fix(hooks): ...`, `feat(ui): ...`
 
 ## Release
-- Every merge to master auto-creates a git tag and GitHub Release via GoReleaser
-- Manual major/minor bumps: `git tag v1.0.0 && git push origin v1.0.0`
-- Install: clone repo and run `bash install.sh` (requires `gh` CLI)
+- Comment `/ship` on any issue or PR to prepare a release
+- `/ship 2.0.0` to override the version
+- CI opens a release PR with changelog rolled — review and merge to release
+- Merging the release PR triggers GoReleaser (binaries, GitHub Release, Homebrew)
+- Install: `brew install brizzai/tap/brizz-code` or run `bash install.sh` (requires `gh` CLI)
 
 ## Package Structure
 ```

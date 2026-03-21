@@ -1,0 +1,177 @@
+name: Prepare Release
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version override (e.g., 2.0.0). Leave empty to auto-compute."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/ship'))
+    steps:
+      - name: Check permissions
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission --jq '.permission')
+          if [[ "$PERMISSION" != "admin" && "$PERMISSION" != "write" ]]; then
+            echo "::error::User ${{ github.event.comment.user.login }} does not have write access"
+            exit 1
+          fi
+
+      - name: React to comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content=rocket
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: version
+        run: |
+          # Check for override from /ship command or workflow input
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            OVERRIDE=$(echo "${{ github.event.comment.body }}" | sed -n 's|^/ship[[:space:]]*||p' | tr -d '[:space:]')
+          else
+            OVERRIDE="${{ inputs.version }}"
+          fi
+
+          if [ -n "$OVERRIDE" ]; then
+            echo "next=v${OVERRIDE}" >> "$GITHUB_OUTPUT"
+            echo "Using override version: v${OVERRIDE}"
+            exit 0
+          fi
+
+          # Auto-compute from conventional commits
+          LATEST=$(git tag -l 'v*' --sort=-version:refname | head -1)
+          [ -z "$LATEST" ] && LATEST="v0.0.0"
+          echo "latest=$LATEST"
+
+          BUMP="patch"
+          COMMITS=$(git log "${LATEST}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          while IFS= read -r msg; do
+            if echo "$msg" | grep -qE '^[a-z]+(\(.+\))?!:|BREAKING CHANGE:'; then
+              BUMP="major"
+              break
+            fi
+            if echo "$msg" | grep -qE '^feat(\(.+\))?:'; then
+              BUMP="minor"
+            fi
+          done <<< "$COMMITS"
+
+          NUM="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$NUM"
+
+          case "$BUMP" in
+            major) NEXT="v$((MAJOR + 1)).0.0" ;;
+            minor) NEXT="v${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+          esac
+
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Computed: $BUMP bump, $LATEST -> $NEXT"
+
+      - name: Check if release branch already exists
+        run: |
+          TAG="${{ steps.version.outputs.next }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists!"
+            exit 1
+          fi
+          if git ls-remote --heads origin "release/$TAG" | grep -q .; then
+            echo "::error::Branch release/$TAG already exists!"
+            exit 1
+          fi
+
+      - name: Create release branch and roll changelog
+        run: |
+          TAG="${{ steps.version.outputs.next }}"
+          VERSION="${TAG#v}"
+          DATE=$(date -u +%Y-%m-%d)
+          BRANCH="release/${TAG}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+
+          # Roll changelog: [Unreleased] → [VERSION] - DATE
+          sed -i "s/^## \[Unreleased\]/## [Unreleased]\n\n## [${VERSION}] - ${DATE}/" CHANGELOG.md
+
+          # Update comparison links at bottom
+          REPO_URL="https://github.com/${{ github.repository }}"
+          # Add new version link and update Unreleased comparison
+          sed -i "s|\[Unreleased\]: \(.*\)/compare/.*\.\.\.HEAD|[Unreleased]: ${REPO_URL}/compare/v${VERSION}...HEAD\n[${VERSION}]: ${REPO_URL}/releases/tag/v${VERSION}|" CHANGELOG.md
+
+          git add CHANGELOG.md
+          git commit -m "release: v${VERSION}"
+          git push origin "$BRANCH"
+
+      - name: Create pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.next }}"
+          VERSION="${TAG#v}"
+          BRANCH="release/${TAG}"
+
+          # Extract changelog content for this version
+          NOTES=$(awk -v ver="$VERSION" '
+            /^## \[/{
+              if (found) exit
+              if (index($0, "[" ver "]")) { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md)
+
+          PR_URL=$(gh pr create \
+            --base master \
+            --head "$BRANCH" \
+            --title "release: v${VERSION}" \
+            --label "autorelease" \
+            --body "$(cat <<EOF
+## Release v${VERSION}
+
+Merging this PR will trigger the release pipeline.
+
+### Changelog
+
+${NOTES}
+
+---
+
+> This PR was created by \`/ship\`. Review the changelog diff, edit if needed, then merge to release.
+EOF
+          )")
+
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Reply to comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.next }}"
+          PR_URL="${{ steps.pr.outputs.url }}"
+          gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
+            -f body="🚀 Release PR opened: ${PR_URL} (${TAG})<br>Merge to release."
