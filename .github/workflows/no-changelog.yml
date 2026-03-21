@@ -1,0 +1,33 @@
+name: No Changelog
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.issue.pull_request &&
+      (github.event.comment.body == '/no-changelog' || github.event.comment.body == '/no-changelog\n')
+    steps:
+      - name: Check permissions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission --jq '.permission')
+          if [[ "$PERMISSION" != "admin" && "$PERMISSION" != "write" ]]; then
+            echo "::error::User does not have write access"
+            exit 1
+          fi
+
+      - name: Add label and react
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit ${{ github.event.issue.number }} --repo ${{ github.repository }} --add-label "no-changelog"
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions -f content="+1"
