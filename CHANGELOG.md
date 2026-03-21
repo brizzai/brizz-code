@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-21
+
 ### Added
 
 - Anonymous usage analytics to help improve brizz-code (opt out via Settings, config, or `DO_NOT_TRACK=1`)
@@ -36,5 +38,6 @@ Initial open-source release.
 - `/ship` release workflow — comment `/ship` on any issue or PR to release
 - Changelog check on PRs with `/no-changelog` escape hatch
 
-[Unreleased]: https://github.com/brizzai/brizz-code/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/brizzai/brizz-code/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.1.0
 [1.0.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.0.0
