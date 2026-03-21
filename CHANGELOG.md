@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Anonymous usage analytics to help improve brizz-code (opt out via Settings, config, or `DO_NOT_TRACK=1`)
+
 ## [1.0.0] - 2026-03-21
 
 Initial open-source release.

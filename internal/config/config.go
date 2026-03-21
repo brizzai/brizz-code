@@ -18,6 +18,7 @@ type Config struct {
 	AutoUpdate         *bool  `json:"auto_update,omitempty"`
 	CopyClaudeSettings *bool  `json:"copy_claude_settings,omitempty"`
 	EnterMode          string `json:"enter_mode,omitempty"` // "attach" or "split"
+	Telemetry          *bool  `json:"telemetry,omitempty"`
 }
 
 // IsAutoNameEnabled returns whether auto-naming is enabled (default: true).
@@ -102,6 +103,14 @@ func (c *Config) GetEnterMode() string {
 		return "split"
 	}
 	return "attach"
+}
+
+// IsTelemetryEnabled returns whether telemetry is enabled (default: true).
+func (c *Config) IsTelemetryEnabled() bool {
+	if c.Telemetry == nil {
+		return true
+	}
+	return *c.Telemetry
 }
 
 // GetEditor returns the configured editor, falling back to $EDITOR then "code".

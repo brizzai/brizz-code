@@ -112,6 +112,31 @@ func TestIsCopyClaudeSettingsEnabled(t *testing.T) {
 	})
 }
 
+func TestIsTelemetryEnabled(t *testing.T) {
+	t.Run("nil defaults to true", func(t *testing.T) {
+		cfg := &Config{}
+		if !cfg.IsTelemetryEnabled() {
+			t.Error("expected true when Telemetry is nil")
+		}
+	})
+
+	t.Run("true", func(t *testing.T) {
+		v := true
+		cfg := &Config{Telemetry: &v}
+		if !cfg.IsTelemetryEnabled() {
+			t.Error("expected true")
+		}
+	})
+
+	t.Run("false", func(t *testing.T) {
+		v := false
+		cfg := &Config{Telemetry: &v}
+		if cfg.IsTelemetryEnabled() {
+			t.Error("expected false")
+		}
+	})
+}
+
 func TestGetEnterMode(t *testing.T) {
 	tests := []struct {
 		name      string
