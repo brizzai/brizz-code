@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, e.g. v1.2.3. Leave empty to use latest tag on master."
+        required: false
+        type: string
+
+env:
+  GO_VERSION: "1.26"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'autorelease'))
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Extract and validate version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            if [ -z "$TAG" ]; then
+              TAG=$(git tag -l 'v*' --sort=-version:refname | head -1)
+              echo "No tag supplied, using latest: $TAG"
+            fi
+          else
+            # PR title format: "release: vX.Y.Z"
+            TITLE="${{ github.event.pull_request.title }}"
+            TAG=$(echo "$TITLE" | sed 's|^release: ||')
+          fi
+
+          # Normalize: strip leading v, re-add
+          TAG="${TAG#v}"
+          TAG="v${TAG}"
+
+          if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid release tag '$TAG'. Expected format: vX.Y.Z"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing: $TAG"
+
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping creation"
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+          fi
+          git push origin "$TAG" 2>/dev/null || echo "Tag $TAG already pushed"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Extract release notes from changelog
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+          {
+            echo "## brizz-code ${TAG}"
+            echo ""
+            echo "### Install / Update"
+            echo ""
+            echo '```bash'
+            echo "brew install brizzai/tap/brizz-code"
+            echo '```'
+            echo ""
+            echo "Or via shell script:"
+            echo ""
+            echo '```bash'
+            echo "curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash"
+            echo '```'
+            echo ""
+            echo "---"
+            echo ""
+            awk -v ver="$VERSION" '
+              /^## \[/{
+                if (found) exit
+                if (index($0, "[" ver "]")) { found=1; next }
+              }
+              found { print }
+            ' CHANGELOG.md
+          } > /tmp/release-notes.md
+          cat /tmp/release-notes.md
+
+      - name: Bundle Chrome extension
+        run: zip -r chrome-extension.zip chrome-extension/
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --clean --release-notes /tmp/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.tag }}

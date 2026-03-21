@@ -1,0 +1,58 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: brizz-code
+    main: ./cmd/brizz-code
+    binary: brizz-code
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+homebrew_casks:
+  - name: brizz-code
+    binaries:
+      - brizz-code
+    repository:
+      owner: brizzai
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/brizzai/brizz-code
+    description: "TUI for managing multiple Claude Code sessions in parallel"
+    dependencies:
+      - formula: tmux
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+release:
+  github:
+    owner: brizzai
+    name: brizz-code
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+  extra_files:
+    - glob: chrome-extension.zip

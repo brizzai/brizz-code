@@ -1,0 +1,52 @@
+title: "[Idea] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share ideas for new features, workflow improvements, or integrations.
+        Before posting, check [existing ideas](https://github.com/brizzai/brizz-code/discussions/categories/ideas) to avoid duplicates.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What pain point does this address? What workflow would improve?
+      placeholder: "When I'm running 10+ sessions, I wish I could..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How do you envision this working? Keybinding, UI, CLI command?
+      placeholder: "Press 'X' to open a dashboard showing..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you tried any workarounds? Other tools that solve this?
+      placeholder: "I currently do this manually by..."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - TUI / UI
+        - Session management
+        - Git / worktree
+        - Status detection
+        - Chrome extension
+        - CLI commands
+        - Configuration
+        - Documentation
+        - Other
+    validations:
+      required: true
