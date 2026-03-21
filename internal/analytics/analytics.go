@@ -57,7 +57,11 @@ func Init(telemetryEnabled bool) {
 		deviceID: deviceID,
 	}
 
-	debuglog.Logger.Info("analytics initialized", "device_id", deviceID[:8]+"...")
+	previewID := deviceID
+	if len(deviceID) >= 8 {
+		previewID = deviceID[:8]
+	}
+	debuglog.Logger.Info("analytics initialized", "device_id", previewID+"...")
 }
 
 // Track sends an event with optional properties.
@@ -120,13 +124,23 @@ func Shutdown() {
 
 // isOptedOut checks environment variables for telemetry opt-out.
 func isOptedOut() bool {
-	if os.Getenv("BRIZZ_TELEMETRY_DISABLED") == "1" {
+	if isTruthyEnv(os.Getenv("BRIZZ_TELEMETRY_DISABLED")) {
 		return true
 	}
-	if os.Getenv("DO_NOT_TRACK") == "1" {
+	if isTruthyEnv(os.Getenv("DO_NOT_TRACK")) {
 		return true
 	}
 	return false
+}
+
+// isTruthyEnv returns true for common truthy values (1, true, yes, y, on).
+func isTruthyEnv(v string) bool {
+	switch strings.TrimSpace(strings.ToLower(v)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // getOrCreateDeviceID returns a stable anonymous device ID.
@@ -135,10 +149,10 @@ func getOrCreateDeviceID() string {
 	home, _ := os.UserHomeDir()
 	idPath := filepath.Join(home, ".config", "brizz-code", "device_id")
 
-	// Try reading cached ID.
+	// Try reading cached ID (must be at least 8 chars to be valid).
 	if data, err := os.ReadFile(idPath); err == nil {
 		id := strings.TrimSpace(string(data))
-		if len(id) > 0 {
+		if len(id) >= 8 {
 			return id
 		}
 	}

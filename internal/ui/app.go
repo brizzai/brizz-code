@@ -257,6 +257,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			h.setError(msg.err)
 		} else {
+			analytics.Track(analytics.EventSessionDeleted, nil)
 			// Resolve provider before deleting session (need project path).
 			var destroyProvider workspace.Provider
 			var destroyRepoPath string
@@ -300,6 +301,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s, ok := h.sessionByID[msg.id]; ok {
 			s.Title = msg.newTitle
 			s.ManuallyRenamed = true
+			analytics.Track(analytics.EventSessionRenamed, nil)
 			if err := h.storage.UpdateTitle(s.ID, msg.newTitle); err != nil {
 				debuglog.Logger.Error("storage: UpdateTitle (rename)", "id", s.ID, "err", err)
 			}
@@ -564,11 +566,15 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Initialize analytics (once, after first load).
 			analytics.Init(h.cfg.IsTelemetryEnabled())
+			effectiveTheme := h.cfg.Theme
+			if effectiveTheme == "" {
+				effectiveTheme = "tokyo-night"
+			}
 			analytics.TrackAppStarted(
 				h.version,
 				len(h.sessions),
 				len(groups),
-				h.cfg.Theme,
+				effectiveTheme,
 				h.cfg.GetEnterMode(),
 				h.cfg.IsAutoNameEnabled(),
 				h.cfg.IsCopyClaudeSettingsEnabled(),
@@ -897,12 +903,10 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.worktreeDialog.ShowLoading()
 		return h, tea.Batch(h.fetchWorkspaceListForRepo(repoPath), spinnerTickCmd)
 	case "f":
-		analytics.Track(analytics.EventSessionCreated, map[string]interface{}{"method": "fork"})
 		return h, h.forkSelected()
 	case "d":
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("delete session", s.Title, true)
-			analytics.Track(analytics.EventSessionDeleted, nil)
 		}
 		return h, h.confirmDeleteSelected()
 	case "r":
@@ -912,7 +916,6 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return h, h.restartSelected()
 	case "R":
-		analytics.Track(analytics.EventSessionRenamed, nil)
 		return h, h.renameSelected()
 	case "e":
 		if s := h.selectedSession(); s != nil {
