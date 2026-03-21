@@ -16,11 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'autorelease')
     steps:
-      - name: Extract version from branch
+      - name: Extract version from PR title
         id: version
         run: |
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-          TAG=$(echo "$BRANCH" | sed 's|^release/||')
+          # PR title format: "release: vX.Y.Z"
+          TITLE="${{ github.event.pull_request.title }}"
+          TAG=$(echo "$TITLE" | sed 's|^release: ||')
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Releasing: $TAG"
 
