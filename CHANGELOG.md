@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `/ship` release workflow — comment `/ship` on any issue or PR to release
+- Changelog check on PRs with `/no-changelog` escape hatch
+
 ## [1.0.0] - YYYY-MM-DD
 
 ### Added
