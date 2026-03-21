@@ -56,8 +56,13 @@ jobs:
 
       - name: Create and push tag
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            GIT_USER="${{ github.actor }}"
+          else
+            GIT_USER="${{ github.event.pull_request.merged_by.login }}"
+          fi
+          git config user.name "$GIT_USER"
+          git config user.email "$GIT_USER@users.noreply.github.com"
           TAG="${{ steps.version.outputs.tag }}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists, skipping creation"
