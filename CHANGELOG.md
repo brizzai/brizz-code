@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-03-21
+
 ### Added
 
 - `/ship` release workflow — comment `/ship` on any issue or PR to release
@@ -33,5 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Install via Homebrew, shell script, or `go install`
 - Per-repo workspace config via `.bc.json` / `.bc.local.json`
 
-[Unreleased]: https://github.com/brizzai/brizz-code/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/brizzai/brizz-code/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/brizzai/brizz-code/releases/tag/v0.10.0
 [1.0.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.0.0
