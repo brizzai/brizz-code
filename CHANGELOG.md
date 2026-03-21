@@ -9,9 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Anonymous usage analytics via Amplitude (DAU/MAU, feature usage, session patterns, error rates)
-- Telemetry opt-out via Settings dialog (`S`), config (`"telemetry": false`), or env (`BRIZZ_TELEMETRY_DISABLED=1` / `DO_NOT_TRACK=1`)
-- Analytics documentation (`docs/analytics.md`)
+- Anonymous usage analytics to help improve brizz-code (opt out via Settings, config, or `DO_NOT_TRACK=1`)
 
 ## [1.0.0] - 2026-03-21
 
