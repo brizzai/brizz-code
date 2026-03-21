@@ -1,0 +1,59 @@
+#!/bin/bash
+# Fake gh CLI for demo — returns canned PR data for demo repos.
+# Usage: PATH=<demo-dir>:$PATH brizz-code
+
+case "$1" in
+  --version)
+    echo "gh version 2.74.0 (2026-03-15)"
+    ;;
+  pr)
+    # gh pr view <branch> --json number,title,url,state,reviewDecision,statusCheckRollup,mergeable
+    branch="$3"
+    case "$branch" in
+      feat/auth)
+        cat <<'EOF'
+{"number":42,"title":"Add JWT auth middleware","url":"https://github.com/example/api-server/pull/42","state":"OPEN","reviewDecision":"APPROVED","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"}],"mergeable":"MERGEABLE"}
+EOF
+        ;;
+      feat/analytics)
+        cat <<'EOF'
+{"number":17,"title":"Analytics dashboard component","url":"https://github.com/example/dashboard-ui/pull/17","state":"OPEN","reviewDecision":"","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"lint","status":"IN_PROGRESS","conclusion":""}],"mergeable":"MERGEABLE"}
+EOF
+        ;;
+      fix/preprocessing)
+        cat <<'EOF'
+{"number":8,"title":"Fix preprocessing pipeline","url":"https://github.com/example/ml-pipeline/pull/8","state":"OPEN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}],"mergeable":"MERGEABLE"}
+EOF
+        ;;
+      *)
+        exit 1
+        ;;
+    esac
+    ;;
+  api)
+    # gh api graphql — return unresolved threads based on PR number in query
+    query="$3"
+    if echo "$query" | grep -q "number: 8"; then
+      # ml-pipeline PR #8: 2 unresolved threads
+      cat <<'EOF'
+{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"isResolved":false},{"isResolved":false},{"isResolved":true}]}}}}}
+EOF
+    elif echo "$query" | grep -q "number: 17"; then
+      # dashboard-ui PR #17: 1 unresolved thread
+      cat <<'EOF'
+{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"isResolved":false},{"isResolved":true}]}}}}}
+EOF
+    else
+      # api-server PR #42: all resolved
+      cat <<'EOF'
+{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"isResolved":true},{"isResolved":true}]}}}}}
+EOF
+    fi
+    ;;
+  auth)
+    echo "fake-token-for-demo"
+    ;;
+  *)
+    exit 0
+    ;;
+esac

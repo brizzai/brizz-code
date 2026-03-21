@@ -1,0 +1,111 @@
+# brizz-code — Vision & Direction
+
+## What is brizz-code?
+
+A TUI for managing multiple Claude Code sessions in parallel. It started because running several AI coding agents simultaneously means you lose track of which ones need your attention. brizz-code solves that — and is evolving into something bigger.
+
+## The Reverse IDE
+
+Traditional IDE: the human writes code, the tool assists.
+brizz-code: **agents write code, the human orchestrates, reviews, and directs.**
+
+When AI agents handle editing, navigating files, running commands, committing, and creating PRs — the developer's job shifts. You don't need an editor or file tree. You need:
+
+- **Awareness** — what's happening across all your work, at a glance
+- **Attention routing** — jump in exactly when an agent needs you
+- **Comprehension** — understand what agents accomplished, fast
+- **Direction** — decide what should happen next
+- **Project health** — see the state of branches, PRs, CI, features
+
+brizz-code is the workspace for this new workflow.
+
+## The Core Problem: Comprehension at Scale
+
+With 5-10 features in flight — each with an agent working on it — the hardest part isn't automation. Claude already commits, pushes, creates PRs, runs tests. That's solved.
+
+The unsolved problem is **comprehension**:
+
+- You can't hold all of it in your head
+- Git diffs are too raw to scan quickly
+- Terminal output is too noisy
+- You need to *understand* what happened, not just *see data*
+- You need to know what's done AND what's left
+
+Raw data doesn't equal understanding. This is the gap brizz-code needs to close.
+
+## Typical Workflow
+
+- 1 session = 1 branch = 1 task/feature
+- Sometimes 2 sessions per feature for independent parallel parts (e.g., two unrelated pages to build)
+- Claude handles the git flow — commits, pushes, PRs via slash commands
+- The user orchestrates: assigns work, monitors progress, approves when needed, reviews results
+
+## Killer Feature Directions
+
+### 1. AI-Powered Session Digests
+
+Use the Anthropic API (Haiku — fast, cheap, ~$0.001/call) to summarize what a session accomplished:
+
+- Capture pane content + git diff when a session finishes
+- Generate a 1-2 sentence summary: *"Added JWT auth middleware with refresh token rotation. Modified 5 files. Tests passing."*
+- Show in sidebar as a subtitle, expanded in preview
+
+This directly solves the comprehension problem — understand any session in seconds without attaching.
+
+### 2. Event-Driven Agent Spawning
+
+Make brizz-code reactive to external events:
+
+- CI fails on a branch → automatically start a fix session
+- PR gets review comments → start a session to address them
+- New ticket assigned in Linear → start a session with the ticket context
+
+Agents spawn automatically. You wake up to work already in progress.
+
+### 3. The Human Context Window
+
+Humans have limited working memory, just like AI has a context window. brizz-code should manage yours:
+
+- When you switch to a session: *"Last time you were here, you asked Claude to refactor the auth module. It finished 2 hours ago. 3 commits, PR #42 open, CI passing, 1 review comment."*
+- Surface what changed since you last looked
+- Minimize context-switching cost across features
+
+### 4. Feature Context (Cross-Session Knowledge)
+
+**The problem:** When working on a feature across multiple sessions (or restarting a session), context is trapped inside individual conversations. A bug investigation session discovers the root cause — but starting a new fix session means re-explaining everything. Two sessions on the same feature don't share knowledge about fields, APIs, pages that were added.
+
+**The insight:** Claude Code already reads project files (CLAUDE.md, memory files) on every prompt. brizz-code can manage **ephemeral feature context** that sessions pick up automatically — without committing anything to the repo.
+
+**How it could work:**
+- brizz-code maintains a feature context file per branch, stored outside the repo (e.g., `~/.claude/projects/{project}/memory/feature_{branch}.md` — Claude's native memory directory)
+- First prompt is captured as the feature description automatically
+- Key discoveries/decisions can be added manually (hotkey) or via AI summarization when sessions finish
+- Any session on that branch reads this context naturally — no injection needed
+- Context is cleaned up when the branch is deleted
+
+**Why this location:**
+- `~/.claude/projects/{project}/memory/` is where Claude already looks for project context
+- Outside the repo — nothing to gitignore, nothing to commit
+- brizz-code already knows the project path and branch per session
+- Multiple sessions on the same branch share the same context file
+
+**Open questions:**
+- Should this be automatic (always capture) or manual (explicit "save context" action)?
+- How much should AI summarization play a role vs. user-written notes?
+- Should context accumulate forever or have a rolling window?
+
+## Long-Term Identity
+
+brizz-code is evolving toward being a **one-stop-shop for AI-assisted development** — the place where all your agent-driven coding work converges. Not a code editor, but a work orchestrator.
+
+Two possible directions (not mutually exclusive):
+
+- **New-age IDE** — the primary workspace for developers who work through AI agents
+- **Agentic workflow platform** — a reactive system that manages the lifecycle of AI coding tasks
+
+## Design Principles
+
+- **Don't automate what Claude already does.** Claude commits, creates PRs, runs tests. Don't duplicate that. Focus on what Claude *can't* do: see across sessions, prioritize attention, summarize work, react to external events.
+- **Comprehension over data.** Showing a git diff doesn't help. Showing "Added auth middleware, 5 files changed, tests passing" does.
+- **The user should feel 10x productive.** Not in control, not impressed by UI — *productive*. "I accomplish in 1 hour what used to take a full day."
+- **Stay Claude Code-native.** The deep hook integration is the moat. Don't dilute it chasing multi-model support.
