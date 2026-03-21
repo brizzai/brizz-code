@@ -179,20 +179,13 @@ jobs:
             found { print }
           ' CHANGELOG.md)
 
-          BODY="$(cat <<EOF
-          ## Release v${VERSION}
-
-          Merging this PR will trigger the release pipeline.
-
-          ### Changelog
-
-          ${NOTES}
-
-          ---
-
-          > Created by \`/ship\`. Auto-updates when master changes. Merge to release.
-          EOF
-          )"
+          BODY=$(printf '%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s' \
+            "## Release v${VERSION}" \
+            "Merging this PR will trigger the release pipeline." \
+            "### Changelog" \
+            "${NOTES}" \
+            "---" \
+            "> Created by \`/ship\`. Auto-updates when master changes. Merge to release.")
 
           # Check if PR already exists
           EXISTING=$(gh pr list --repo ${{ github.repository }} --head "$BRANCH" --state open --json number --jq '.[0].number // empty')

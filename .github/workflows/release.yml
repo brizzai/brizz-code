@@ -35,8 +35,13 @@ jobs:
 
       - name: Create and push tag
         run: |
-          git tag ${{ steps.version.outputs.tag }}
-          git push origin ${{ steps.version.outputs.tag }}
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping creation"
+          else
+            git tag "$TAG"
+          fi
+          git push origin "$TAG" 2>/dev/null || echo "Tag $TAG already pushed"
 
       - uses: actions/setup-go@v6
         with:
