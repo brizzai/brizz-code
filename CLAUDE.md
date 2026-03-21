@@ -25,6 +25,12 @@ Use [conventional commits](https://www.conventionalcommits.org/). Version is aut
 - `chore:`, `docs:`, `refactor:`, `test:`, `style:` → patch
 - Scopes are optional: `fix(hooks): ...`, `feat(ui): ...`
 
+## Changelog
+- Every PR with user-facing changes **must** update `CHANGELOG.md` under `## [Unreleased]`
+- CI enforces this — PRs without a changelog entry will fail the changelog check
+- For non-user-facing changes (CI, typos, deps), comment `/no-changelog` on the PR to bypass
+- Use [Keep a Changelog](https://keepachangelog.com/) format: `### Added`, `### Changed`, `### Fixed`, `### Removed`
+
 ## Release
 - Comment `/ship` on any issue or PR to prepare a release
 - `/ship 2.0.0` to override the version
