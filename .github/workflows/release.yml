@@ -24,9 +24,17 @@ jobs:
       (github.event_name == 'workflow_dispatch') ||
       (github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'autorelease'))
     steps:
+      - name: Generate Brizz Bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BRIZZ_BOT_APP_ID }}
+          private-key: ${{ secrets.BRIZZ_BOT_PRIVATE_KEY }}
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ steps.bot-token.outputs.token }}
 
       - name: Extract and validate version
         id: version
@@ -56,8 +64,8 @@ jobs:
 
       - name: Create and push tag
         run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git config user.name "brizz-bot[bot]"
+          git config user.email "brizz-bot[bot]@users.noreply.github.com"
           TAG="${{ steps.version.outputs.tag }}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists, skipping creation"
