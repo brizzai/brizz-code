@@ -64,10 +64,19 @@ jobs:
           gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
             -f content=rocket
 
+      - name: Generate Brizz Bot token
+        id: bot-token
+        if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BRIZZ_BOT_APP_ID }}
+          private-key: ${{ secrets.BRIZZ_BOT_PRIVATE_KEY }}
+
       - uses: actions/checkout@v6
         if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
         with:
           fetch-depth: 0
+          token: ${{ steps.bot-token.outputs.token }}
 
       - name: Compute version
         id: version
@@ -143,8 +152,8 @@ jobs:
           DATE=$(date -u +%Y-%m-%d)
           BRANCH="release/next"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "brizz-bot[bot]"
+          git config user.email "brizz-bot[bot]@users.noreply.github.com"
 
           # Always start fresh from master
           git checkout -B "$BRANCH" origin/master
@@ -164,7 +173,7 @@ jobs:
         id: pr
         if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
           TAG="${{ steps.version.outputs.next }}"
           VERSION="${TAG#v}"
