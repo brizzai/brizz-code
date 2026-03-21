@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/brizzai/brizz-code/internal/analytics"
 	"github.com/brizzai/brizz-code/internal/chrome"
 	"github.com/brizzai/brizz-code/internal/config"
 	"github.com/brizzai/brizz-code/internal/debuglog"
@@ -144,6 +145,8 @@ type Home struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	workerStarted bool
+
+	startTime time.Time // app start time for uptime tracking
 }
 
 // NewHome creates the main TUI model.
@@ -184,6 +187,7 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home
 		statusTrigger:         make(chan struct{}, 1),
 		ctx:                   ctx,
 		cancel:                cancel,
+		startTime:             time.Now(),
 	}
 }
 
@@ -405,6 +409,14 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workspaceCreateMsg:
 		// Close dialog immediately — creation runs in background.
 		h.createWorkspaceDialog.Hide()
+		analytics.Track(analytics.EventWorkspaceCreated, map[string]interface{}{
+			"provider": func() string {
+				if msg.provider.IsCustom() {
+					return "shell"
+				}
+				return "git"
+			}(),
+		})
 
 		pw := &PendingWorkspace{
 			ID:       generatePendingID(),
@@ -549,6 +561,18 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !h.workerStarted {
 			h.workerStarted = true
 			go h.statusWorker()
+
+			// Initialize analytics (once, after first load).
+			analytics.Init(h.cfg.IsTelemetryEnabled())
+			analytics.TrackAppStarted(
+				h.version,
+				len(h.sessions),
+				len(groups),
+				h.cfg.Theme,
+				h.cfg.GetEnterMode(),
+				h.cfg.IsAutoNameEnabled(),
+				h.cfg.IsCopyClaudeSettingsEnabled(),
+			)
 		}
 
 		return h, nil
@@ -821,6 +845,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("attach session", s.Title, true)
+			analytics.Track(analytics.EventSessionAttached, nil)
 		}
 		return h, h.attachSelected()
 	case "tab":
@@ -837,6 +862,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		// Jump to next waiting (or finished) session.
 		h.jumpToNextAttentionSession()
+		analytics.Track(analytics.EventSpaceJump, nil)
 		return h, h.fetchPreviewForSelected()
 	case "left", "h":
 		h.collapseRepoAtCursor()
@@ -871,30 +897,37 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.worktreeDialog.ShowLoading()
 		return h, tea.Batch(h.fetchWorkspaceListForRepo(repoPath), spinnerTickCmd)
 	case "f":
+		analytics.Track(analytics.EventSessionCreated, map[string]interface{}{"method": "fork"})
 		return h, h.forkSelected()
 	case "d":
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("delete session", s.Title, true)
+			analytics.Track(analytics.EventSessionDeleted, nil)
 		}
 		return h, h.confirmDeleteSelected()
 	case "r":
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("restart session", s.Title, true)
+			analytics.Track(analytics.EventSessionRestarted, nil)
 		}
 		return h, h.restartSelected()
 	case "R":
+		analytics.Track(analytics.EventSessionRenamed, nil)
 		return h, h.renameSelected()
 	case "e":
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("open editor", fmt.Sprintf("%q at %s", h.cfg.GetEditor(), s.ProjectPath), true)
+			analytics.Track(analytics.EventEditorOpened, map[string]interface{}{"editor": h.cfg.GetEditor()})
 		}
 		return h, h.openEditorSelected()
 	case "p":
 		h.actionLog.Add("open PR", "", true)
+		analytics.Track(analytics.EventPROpened, nil)
 		return h, h.openPRInBrowser()
 	case "Y":
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("quick approve", s.Title, true)
+			analytics.Track(analytics.EventQuickApprove, nil)
 		}
 		return h, h.quickApproveSelected()
 	case "b":
@@ -907,6 +940,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		h.filterActive = true
 		h.filterInput.Focus()
+		analytics.Track(analytics.EventFilterUsed, nil)
 		return h, nil
 	case "esc":
 		// Clear active filter.
@@ -923,10 +957,12 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, nil
 	case "S":
 		h.settingsDialog.Show()
+		analytics.Track(analytics.EventSettingsOpened, nil)
 		return h, nil
 	case "!":
 		h.actionLog.Add("open bug report", "", true)
 		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog)
+		analytics.Track(analytics.EventBugReportOpened, nil)
 		return h, nil
 	case "?":
 		h.helpOverlay.Show()
@@ -939,6 +975,10 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if h.controlClient != nil {
 			h.controlClient.Close()
 		}
+		analytics.Track(analytics.EventAppQuit, map[string]interface{}{
+			"uptime_seconds": int(time.Since(h.startTime).Seconds()),
+		})
+		analytics.Shutdown()
 		return h, tea.Quit
 	}
 
@@ -1009,6 +1049,8 @@ func (h *Home) handleSessionCreateResult(msg sessionCreateResultMsg) (tea.Model,
 		h.setError(fmt.Errorf("failed to start session: %w", msg.err))
 		return h, nil
 	}
+
+	analytics.Track(analytics.EventSessionCreated, nil)
 
 	s := msg.session
 	h.workerMu.Lock()
@@ -2023,6 +2065,9 @@ func (h *Home) setError(err error) {
 	h.errTime = time.Now()
 	if err != nil {
 		h.errorHistory.Add(err.Error())
+		analytics.Track(analytics.EventErrorOccurred, map[string]interface{}{
+			"category": strings.SplitN(err.Error(), ":", 2)[0],
+		})
 	}
 }
 

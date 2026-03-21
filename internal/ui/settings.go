@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/brizzai/brizz-code/internal/analytics"
 	"github.com/brizzai/brizz-code/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -52,7 +53,7 @@ func (d *SettingsDialog) Update(msg tea.Msg) (*SettingsDialog, tea.Cmd) {
 		return d, nil
 	}
 
-	numRows := 7 // theme, editor, tick, auto-name, auto-update, copy-claude, enter-mode
+	numRows := 8 // theme, editor, tick, auto-name, auto-update, copy-claude, enter-mode, telemetry
 	switch keyMsg.String() {
 	case "j", "down":
 		d.cursor = (d.cursor + 1) % numRows
@@ -87,6 +88,7 @@ func (d *SettingsDialog) cycleValue(dir int) {
 		idx = (idx + dir + len(names)) % len(names)
 		d.cfg.Theme = names[idx]
 		ApplyPalette(PaletteByName(d.cfg.Theme))
+		analytics.Track(analytics.EventThemeChanged, map[string]interface{}{"theme": d.cfg.Theme})
 
 	case 1: // Editor
 		current := d.cfg.GetEditor()
@@ -130,6 +132,11 @@ func (d *SettingsDialog) cycleValue(dir int) {
 		} else {
 			d.cfg.EnterMode = "attach"
 		}
+
+	case 7: // Telemetry
+		enabled := d.cfg.IsTelemetryEnabled()
+		enabled = !enabled
+		d.cfg.Telemetry = &enabled
 	}
 }
 
@@ -162,6 +169,11 @@ func (d *SettingsDialog) View() string {
 		copyClaudeValue = "off"
 	}
 
+	telemetryValue := "on"
+	if !d.cfg.IsTelemetryEnabled() {
+		telemetryValue = "off"
+	}
+
 	rows := []row{
 		{"Theme", PaletteDisplayName(theme)},
 		{"Editor", d.cfg.GetEditor()},
@@ -170,6 +182,7 @@ func (d *SettingsDialog) View() string {
 		{"Auto-update", autoUpdateValue},
 		{"Copy .claude", copyClaudeValue},
 		{"Enter mode", d.cfg.GetEnterMode()},
+		{"Telemetry", telemetryValue},
 	}
 
 	for i, r := range rows {
