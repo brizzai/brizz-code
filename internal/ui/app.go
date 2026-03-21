@@ -60,7 +60,7 @@ type (
 	previewMsg struct {
 		sessionID string
 		content   string
-		cursor    *tmux.CursorPosition // non-nil only in focus mode
+		cursor    *tmux.CursorPosition // tmux cursor position, if available
 	}
 	loadSessionsMsg struct {
 		sessions    []*session.Session
@@ -887,14 +887,18 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "[":
 		if h.layoutMode() == "dual" {
 			h.cfg.StepSidebarPct(-1)
-			_ = h.cfg.Save()
+			if err := h.cfg.Save(); err != nil {
+				debuglog.Logger.Error("failed to save config after sidebar resize", "err", err)
+			}
 			h.sidebarDirty = true
 		}
 		return h, nil
 	case "]":
 		if h.layoutMode() == "dual" {
 			h.cfg.StepSidebarPct(1)
-			_ = h.cfg.Save()
+			if err := h.cfg.Save(); err != nil {
+				debuglog.Logger.Error("failed to save config after sidebar resize", "err", err)
+			}
 			h.sidebarDirty = true
 		}
 		return h, nil
@@ -1932,7 +1936,9 @@ func (h *Home) updateShellSessionStatuses() tea.Cmd {
 			s.UpdateStatus()
 			newStatus := s.GetStatus()
 			if oldStatus != newStatus {
-				_ = h.storage.UpdateStatus(s.ID, string(newStatus))
+				if err := h.storage.UpdateStatus(s.ID, string(newStatus)); err != nil {
+					debuglog.Logger.Error("failed to persist shell session status", "session_id", s.ID, "status", newStatus, "err", err)
+				}
 			}
 		}
 		return shellStatusDoneMsg{}
