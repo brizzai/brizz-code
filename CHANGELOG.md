@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent team status detection: sub-agent permission prompts and "Waiting for team lead approval" now correctly show as waiting
 - Command palette (`:` or `Ctrl+P`) — fuzzy-searchable list of all actions with shortcut hints, plus "Reload All Sessions" for bulk restart of dead/error sessions
 - Terminal environment and rendering stats in bug reports to help diagnose scroll/rendering issues
+- Resizable sidebar with `[` / `]` keybindings
+- `sidebar_pct` config option for persistent sidebar width
+- Cursor position tracking in preview pane
 
 ### Improved
 
