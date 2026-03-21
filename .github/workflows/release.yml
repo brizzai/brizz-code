@@ -16,12 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'autorelease')
     steps:
-      - name: Extract version from PR title
+      - name: Extract and validate version from PR title
         id: version
         run: |
           # PR title format: "release: vX.Y.Z"
           TITLE="${{ github.event.pull_request.title }}"
           TAG=$(echo "$TITLE" | sed 's|^release: ||')
+          if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid release tag '$TAG'. Expected format: vX.Y.Z"
+            exit 1
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Releasing: $TAG"
 

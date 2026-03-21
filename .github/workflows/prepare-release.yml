@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       (github.event_name == 'workflow_dispatch') ||
-      (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/ship')) ||
+      (github.event_name == 'issue_comment' && (github.event.comment.body == '/ship' || startsWith(github.event.comment.body, '/ship '))) ||
       (github.event_name == 'push')
     steps:
       - name: Check permissions
@@ -75,14 +75,22 @@ jobs:
         run: |
           # Check for override from /ship command or workflow input
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
-            OVERRIDE=$(echo "${{ github.event.comment.body }}" | sed -n 's|^/ship[[:space:]]*||p' | tr -d '[:space:]')
+            RAW=$(echo "${{ github.event.comment.body }}" | sed -n 's|^/ship[[:space:]]*||p')
+            OVERRIDE=$(echo "$RAW" | awk '{print $1}')
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            OVERRIDE="${{ inputs.version }}"
+            OVERRIDE=$(echo "${{ inputs.version }}" | awk '{print $1}')
           else
             OVERRIDE=""
           fi
 
           if [ -n "$OVERRIDE" ]; then
+            # Strip optional leading "v"
+            OVERRIDE="${OVERRIDE#v}"
+            # Validate semver format
+            if ! echo "$OVERRIDE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::Invalid version '$OVERRIDE'. Expected format: X.Y.Z"
+              exit 1
+            fi
             echo "next=v${OVERRIDE}" >> "$GITHUB_OUTPUT"
             echo "Using override version: v${OVERRIDE}"
             exit 0
