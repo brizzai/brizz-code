@@ -54,7 +54,7 @@ type Session struct {
 	TitleGenerated        bool
 	PromptCount           int
 	ForkFromID            string // Transient: if set, start with --resume <id> --fork-session (cleared after start)
-	Command               string // If set, run this shell command instead of Claude.
+	Command               string // Non-empty marks this as a shell session (opens user's $SHELL instead of Claude).
 	ShellExitCode         int    // Last exit code from shell session (0 = success).
 
 	hookStatus       string
@@ -120,6 +120,9 @@ func (s *Session) Start() error {
 	if s.IsShellSession() {
 		// Shell session: start with user's shell, no command sent.
 		cmd = ""
+		// Clear stale exit code from previous run.
+		s.ShellExitCode = 0
+		_ = os.Remove(shellExitFilePath(s.ID))
 	} else {
 		cmd = s.buildClaudeCmd()
 	}
@@ -272,6 +275,8 @@ func (s *Session) Restart() error {
 	var cmd string
 	if s.IsShellSession() {
 		cmd = ""
+		s.ShellExitCode = 0
+		_ = os.Remove(shellExitFilePath(s.ID))
 	} else {
 		cmd = s.buildClaudeCmd()
 	}
