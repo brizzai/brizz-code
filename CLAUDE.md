@@ -78,7 +78,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace, D to also remove repo), z undo delete (5s window), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, : or Ctrl+P command palette, S settings, ! bug report/diagnostics, ? help, q quit
+- Keybindings: j/k nav, [ / ] resize sidebar, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace, D to also remove repo), z undo delete (5s window), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, : or Ctrl+P command palette, S settings, ! bug report/diagnostics, ? help, q quit
 - Session hotkeys (RTS-style): `Alt+0-9` (or `=` then digit) binds the selected session to a slot; re-pressing `Alt+<N>` on a session already in slot N unbinds; `==` then digit clears any slot; plain `0-9` jumps to the bound session (double-tap within 400ms also attaches); `[N]` badge in sidebar marks bound sessions; bindings persist in SQLite `slot_bindings` table (FK cascade on session delete)
 - Command palette (: / Ctrl+P): fuzzy-searchable list of all actions; palette-only commands include "Reload All Sessions" (restarts all dead/error sessions)
 - Undo delete: `z` key restores last deleted session within 5s window (stacked — multiple deletes each undoable). Tmux kept alive during window for full restore.
@@ -98,7 +98,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
 - Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
-- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions, copy_claude_settings)
+- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions, copy_claude_settings, sidebar_pct)
 - Workspace: built-in git worktree support (zero config), per-repo `.bc.json` overrides with custom shell commands
 - Workspace creation is non-blocking: dialog closes immediately, phantom "Creating..." entry with spinner appears in sidebar, user can keep navigating
 - Worktree creation copies `.claude/settings.local.json` from source repo (configurable via `copy_claude_settings`, default true)
