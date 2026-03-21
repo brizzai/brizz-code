@@ -195,12 +195,12 @@ func osVersion() string {
 // TrackAppStarted tracks app launch with user properties.
 func TrackAppStarted(version string, sessionCount, repoCount int, theme, enterMode string, autoName, copyClaudeSettings bool) {
 	SetUserProperties(map[string]interface{}{
-		"app_version":         version,
-		"os_version":          osVersion(),
-		"arch":                runtime.GOARCH,
-		"theme":               theme,
-		"enter_mode":          enterMode,
-		"auto_name_sessions":  autoName,
+		"app_version":          version,
+		"os_version":           osVersion(),
+		"arch":                 runtime.GOARCH,
+		"theme":                theme,
+		"enter_mode":           enterMode,
+		"auto_name_sessions":   autoName,
 		"copy_claude_settings": copyClaudeSettings,
 	})
 
