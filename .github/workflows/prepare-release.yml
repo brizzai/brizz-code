@@ -67,7 +67,7 @@ jobs:
       - name: Generate Brizz Bot token
         id: bot-token
         if: github.event_name != 'push' || steps.check.outputs.skip != 'true'
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.BRIZZ_BOT_APP_ID }}
           private-key: ${{ secrets.BRIZZ_BOT_PRIVATE_KEY }}
