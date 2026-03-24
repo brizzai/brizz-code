@@ -390,18 +390,10 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 	// - If user interrupts/escapes, no hook fires — pane override catches this
 	// - Content change detection below handles the gap if hooks are delayed
 	if paneStatus == StatusFinished {
-		prevStatus := s.Status
-		if s.Acknowledged {
-			s.Status = StatusIdle
-		} else {
-			s.Status = StatusFinished
-		}
+		s.Status = StatusFinished
 		s.lastContentHash = ""
 		s.lastContentChangeAt = time.Time{}
-		if prevStatus != s.Status {
-			log.Info("hook says waiting but pane shows idle prompt, overriding",
-				"newStatus", s.Status)
-		}
+		log.Info("hook says waiting but pane shows idle prompt, overriding to finished")
 		return
 	}
 
