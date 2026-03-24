@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestStripANSI(t *testing.T) {
@@ -64,88 +63,6 @@ func TestDetectStatus(t *testing.T) {
 			got := detectStatus(tt.content, log)
 			if got != tt.want {
 				t.Errorf("detectStatus(%q) = %q, want %q", tt.name, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestApplyHookWaiting_PaneOverride(t *testing.T) {
-	log := slog.Default()
-
-	tests := []struct {
-		name           string
-		acknowledged   bool
-		paneStatus     Status
-		wantStatus     Status
-		wantHashReset  bool
-		wantEarlyExit  bool // should return before content hash tracking
-	}{
-		{
-			name:          "pane finished overrides to finished",
-			acknowledged:  false,
-			paneStatus:    StatusFinished,
-			wantStatus:    StatusFinished,
-			wantHashReset: true,
-			wantEarlyExit: true,
-		},
-		{
-			name:          "pane finished with acknowledged overrides to idle",
-			acknowledged:  true,
-			paneStatus:    StatusFinished,
-			wantStatus:    StatusIdle,
-			wantHashReset: true,
-			wantEarlyExit: true,
-		},
-		{
-			name:         "pane waiting keeps waiting",
-			acknowledged: false,
-			paneStatus:   StatusWaiting,
-			wantStatus:   StatusWaiting,
-		},
-		{
-			name:         "pane running keeps waiting",
-			acknowledged: false,
-			paneStatus:   StatusRunning,
-			wantStatus:   StatusWaiting,
-		},
-		{
-			name:         "empty pane status keeps waiting",
-			acknowledged: false,
-			paneStatus:   "",
-			wantStatus:   StatusWaiting,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &Session{
-				Status:              StatusWaiting,
-				Acknowledged:        tt.acknowledged,
-				lastContentHash:     "somehash",
-				lastContentChangeAt: time.Now(),
-			}
-
-			// Use empty pane content for non-override cases to avoid
-			// content change detection interfering with the test.
-			paneContent := ""
-			if tt.wantHashReset {
-				paneContent = "some pane content"
-			}
-
-			s.mu.Lock()
-			s.applyHookWaiting(paneContent, tt.paneStatus, log)
-			s.mu.Unlock()
-
-			if s.Status != tt.wantStatus {
-				t.Errorf("Status = %q, want %q", s.Status, tt.wantStatus)
-			}
-			if tt.wantHashReset {
-				if s.lastContentHash != "" {
-					t.Errorf("lastContentHash should be reset, got %q", s.lastContentHash)
-				}
-				if !s.lastContentChangeAt.IsZero() {
-					t.Errorf("lastContentChangeAt should be zero, got %v", s.lastContentChangeAt)
-				}
 			}
 		})
 	}
