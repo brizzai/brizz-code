@@ -53,7 +53,7 @@ func (d *SettingsDialog) Update(msg tea.Msg) (*SettingsDialog, tea.Cmd) {
 		return d, nil
 	}
 
-	numRows := 8 // theme, editor, tick, auto-name, auto-update, copy-claude, enter-mode, telemetry
+	numRows := 9 // theme, editor, tick, auto-name, auto-update, copy-claude, enter-mode, telemetry, sidebar-pct
 	switch keyMsg.String() {
 	case "j", "down":
 		d.cursor = (d.cursor + 1) % numRows
@@ -137,6 +137,9 @@ func (d *SettingsDialog) cycleValue(dir int) {
 		enabled := d.cfg.IsTelemetryEnabled()
 		enabled = !enabled
 		d.cfg.Telemetry = &enabled
+
+	case 8: // Sidebar %
+		d.cfg.StepSidebarPct(dir)
 	}
 }
 
@@ -183,6 +186,7 @@ func (d *SettingsDialog) View() string {
 		{"Copy .claude", copyClaudeValue},
 		{"Enter mode", d.cfg.GetEnterMode()},
 		{"Telemetry", telemetryValue},
+		{"Sidebar %", fmt.Sprintf("%d%%", d.cfg.GetSidebarPct())},
 	}
 
 	for i, r := range rows {

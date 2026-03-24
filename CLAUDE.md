@@ -25,6 +25,12 @@ Use [conventional commits](https://www.conventionalcommits.org/). Version is aut
 - `chore:`, `docs:`, `refactor:`, `test:`, `style:` → patch
 - Scopes are optional: `fix(hooks): ...`, `feat(ui): ...`
 
+## Changelog
+- Every PR with user-facing changes **must** update `CHANGELOG.md` under `## [Unreleased]`
+- CI enforces this — PRs without a changelog entry will fail the changelog check
+- For non-user-facing changes (CI, typos, deps), comment `/no-changelog` on the PR to bypass
+- Use [Keep a Changelog](https://keepachangelog.com/) format: `### Added`, `### Changed`, `### Fixed`, `### Removed`
+
 ## Release
 - Comment `/ship` on any issue or PR to prepare a release
 - `/ship 2.0.0` to override the version
@@ -72,7 +78,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, S settings, ! bug report/diagnostics, ? help, q quit
+- Keybindings: j/k nav, [ / ] resize sidebar, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, S settings, ! bug report/diagnostics, ? help, q quit
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
@@ -87,7 +93,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
 - Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
-- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions, copy_claude_settings)
+- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions, copy_claude_settings, sidebar_pct)
 - Workspace: built-in git worktree support (zero config), per-repo `.bc.json` overrides with custom shell commands
 - Workspace creation is non-blocking: dialog closes immediately, phantom "Creating..." entry with spinner appears in sidebar, user can keep navigating
 - Worktree creation copies `.claude/settings.local.json` from source repo (configurable via `copy_claude_settings`, default true)

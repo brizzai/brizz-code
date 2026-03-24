@@ -19,6 +19,7 @@ type Config struct {
 	CopyClaudeSettings *bool  `json:"copy_claude_settings,omitempty"`
 	EnterMode          string `json:"enter_mode,omitempty"` // "attach" or "split"
 	Telemetry          *bool  `json:"telemetry,omitempty"`
+	SidebarPct         *int   `json:"sidebar_pct,omitempty"`
 }
 
 // IsAutoNameEnabled returns whether auto-naming is enabled (default: true).
@@ -111,6 +112,53 @@ func (c *Config) IsTelemetryEnabled() bool {
 		return true
 	}
 	return *c.Telemetry
+}
+
+// GetSidebarPct returns the sidebar width percentage, clamped to [20, 60], default 35.
+func (c *Config) GetSidebarPct() int {
+	if c.SidebarPct == nil {
+		return 35
+	}
+	v := *c.SidebarPct
+	if v < 20 {
+		return 20
+	}
+	if v > 60 {
+		return 60
+	}
+	return v
+}
+
+// SetSidebarPct sets the sidebar width percentage, clamping to [20, 60].
+func (c *Config) SetSidebarPct(pct int) {
+	if pct < 20 {
+		pct = 20
+	}
+	if pct > 60 {
+		pct = 60
+	}
+	c.SidebarPct = &pct
+}
+
+// StepSidebarPct adjusts the sidebar percentage by ~2.5 in the given direction
+// (dir > 0 = grow, dir < 0 = shrink). Since the stored value is an integer, steps
+// alternate between 3 and 2 to produce an effective 2.5% increment on the grid:
+// 20, 23, 25, 28, 30, 33, 35, 38, 40, 43, 45, 48, 50, 53, 55, 58, 60.
+func (c *Config) StepSidebarPct(dir int) {
+	cur := c.GetSidebarPct()
+	if dir > 0 {
+		if cur%5 == 0 {
+			c.SetSidebarPct(cur + 3)
+		} else {
+			c.SetSidebarPct(cur + 2)
+		}
+	} else {
+		if cur%5 == 0 {
+			c.SetSidebarPct(cur - 2)
+		} else {
+			c.SetSidebarPct(cur - 3)
+		}
+	}
 }
 
 // GetEditor returns the configured editor, falling back to $EDITOR then "code".

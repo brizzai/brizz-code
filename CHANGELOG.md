@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Shell sessions: press `x` to open a terminal in any session's working directory, tracked in sidebar
+- Real-time shell status indicators: green dot (command running), dim circle (idle), red X (non-zero exit code)
+- Resizable sidebar with `[` / `]` keybindings
+- `sidebar_pct` config option for persistent sidebar width
+- Cursor position tracking in preview pane
+
 ## [1.1.0] - 2026-03-21
 
 ### Added
