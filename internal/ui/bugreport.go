@@ -56,7 +56,11 @@ func (d *BugReportDialog) Show(version string, sessionCount int, errors *ErrorHi
 	d.report = diagnostics.Collect(version, sessionCount)
 	d.report.TUIWidth = tuiWidth
 	d.report.TUIHeight = tuiHeight
-	d.renderStats = rs.FormatMarkdown(uptime)
+	if rs != nil {
+		d.renderStats = rs.FormatMarkdown(uptime)
+	} else {
+		d.renderStats = ""
+	}
 	d.errorEntries = errors.Entries()
 	d.actionEntries = actions.Entries()
 

@@ -46,7 +46,7 @@ type TerminalEnv struct {
 	InsideSSH          bool   // $SSH_TTY or $SSH_CLIENT is set
 	TmuxDefaultTerm    string // tmux show-option -gv default-terminal
 	TmuxMouse          string // tmux show-option -gv mouse
-	SttySize           string // rows x cols from stty
+	SttySize           string // rows cols from stty (space-separated)
 }
 
 // Collect gathers system diagnostics.

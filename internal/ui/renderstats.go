@@ -63,9 +63,9 @@ func (rs *RenderStats) FormatMarkdown(uptime time.Duration) string {
 	b.WriteString("\n")
 
 	// Flag suspicious patterns.
-	if uptime > 0 {
+	if uptime >= time.Minute {
 		resizesPerMin := float64(rs.ResizeCount) / uptime.Minutes()
-		if resizesPerMin > 10 {
+		if resizesPerMin > 1 {
 			fmt.Fprintf(&b, "- **WARNING**: %.0f resizes/min (expected <1)\n", resizesPerMin)
 		}
 	}
