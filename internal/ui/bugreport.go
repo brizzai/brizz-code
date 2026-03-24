@@ -29,6 +29,7 @@ type BugReportDialog struct {
 
 	descInput     textinput.Model
 	report        *diagnostics.Report
+	renderStats   string // pre-formatted render stats markdown
 	errorEntries  []ErrorEntry
 	actionEntries []ActionEntry
 	contentLines  int // total rendered content lines
@@ -45,7 +46,7 @@ func NewBugReportDialog() *BugReportDialog {
 }
 
 // Show collects diagnostics and shows the dialog.
-func (d *BugReportDialog) Show(version string, sessionCount int, errors *ErrorHistory, actions *ActionLog) {
+func (d *BugReportDialog) Show(version string, sessionCount int, errors *ErrorHistory, actions *ActionLog, tuiWidth, tuiHeight int, rs *RenderStats, uptime time.Duration) {
 	d.visible = true
 	d.scroll = 0
 	d.submitting = false
@@ -53,6 +54,9 @@ func (d *BugReportDialog) Show(version string, sessionCount int, errors *ErrorHi
 	d.descInput.Focus()
 
 	d.report = diagnostics.Collect(version, sessionCount)
+	d.report.TUIWidth = tuiWidth
+	d.report.TUIHeight = tuiHeight
+	d.renderStats = rs.FormatMarkdown(uptime)
 	d.errorEntries = errors.Entries()
 	d.actionEntries = actions.Entries()
 
@@ -107,8 +111,11 @@ func (d *BugReportDialog) openGitHubIssue(description string) tea.Cmd {
 	// Build title from description, truncated.
 	title := truncate(description, 60)
 
-	// Inject user description into the report.
+	// Inject user description and render stats into the report.
 	body := d.report.FormatMarkdownWithDesc(description)
+	if d.renderStats != "" {
+		body += "\n" + d.renderStats
+	}
 
 	return func() tea.Msg {
 		debuglog.Logger.Info("bug report: creating GitHub issue via API")

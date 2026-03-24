@@ -147,6 +147,9 @@ type Home struct {
 	workerStarted bool
 
 	startTime time.Time // app start time for uptime tracking
+
+	// Rendering diagnostics (accumulated counters for bug reports).
+	renderStats RenderStats
 }
 
 // NewHome creates the main TUI model.
@@ -204,6 +207,15 @@ func (h *Home) Init() tea.Cmd {
 func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		h.renderStats.RecordResize(msg.Width, msg.Height)
+		// Only log resizes after the initial one (startup always sends one).
+		if h.width > 0 && (msg.Width != h.width || msg.Height != h.height) {
+			debuglog.Logger.Info("window resized",
+				"from", fmt.Sprintf("%dx%d", h.width, h.height),
+				"to", fmt.Sprintf("%dx%d", msg.Width, msg.Height),
+				"resize_count", h.renderStats.ResizeCount,
+			)
+		}
 		h.width = msg.Width
 		h.height = msg.Height
 		h.sidebarDirty = true
@@ -734,7 +746,26 @@ func (h *Home) View() string {
 		b.WriteString(ErrorStyle.Render(" " + h.err.Error()))
 	}
 
-	return b.String()
+	output := b.String()
+
+	// Track height mismatches (counter for bug report, log only on first occurrence).
+	outputLines := strings.Count(output, "\n") + 1
+	if h.height > 0 && outputLines != h.height {
+		diff := outputLines - h.height
+		prevCount := h.renderStats.HeightMismatchCount
+		h.renderStats.RecordHeightMismatch(diff)
+		// Log only the first mismatch to avoid spam.
+		if prevCount == 0 {
+			debuglog.Logger.Warn("View height mismatch detected",
+				"output_lines", outputLines,
+				"expected", h.height,
+				"diff", diff,
+				"layout", h.layoutMode(),
+			)
+		}
+	}
+
+	return output
 }
 
 // --- Key handling ---
@@ -964,7 +995,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, nil
 	case "!":
 		h.actionLog.Add("open bug report", "", true)
-		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog)
+		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog, h.width, h.height, &h.renderStats, time.Since(h.startTime))
 		analytics.Track(analytics.EventBugReportOpened, nil)
 		return h, nil
 	case "?":
@@ -2016,12 +2047,16 @@ func (h *Home) syncViewport() {
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
+	prevOffset := h.viewOffset
 	// Scroll to keep cursor visible.
 	if h.cursor < h.viewOffset {
 		h.viewOffset = h.cursor
 	}
 	if h.cursor >= h.viewOffset+contentHeight {
 		h.viewOffset = h.cursor - contentHeight + 1
+	}
+	if h.viewOffset != prevOffset {
+		h.renderStats.RecordViewportDrift()
 	}
 }
 

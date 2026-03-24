@@ -27,6 +27,26 @@ type Report struct {
 	RecentErrors  []string // pre-formatted from ErrorHistory
 	RecentActions []string // pre-formatted from ActionLog
 	RecentLogs    string   // last 100 lines of debug.log
+
+	// Terminal environment (helps diagnose rendering/scrolling issues).
+	TerminalEnv TerminalEnv
+	TUIWidth    int // Bubble Tea reported width
+	TUIHeight   int // Bubble Tea reported height
+}
+
+// TerminalEnv captures terminal-related environment and settings.
+type TerminalEnv struct {
+	TERM               string
+	TermProgram        string // $TERM_PROGRAM (e.g. iTerm2, Apple_Terminal, tmux)
+	TermProgramVersion string // $TERM_PROGRAM_VERSION
+	ColorTerm          string // $COLORTERM (e.g. truecolor)
+	Lang               string // $LANG
+	LCAll              string // $LC_ALL
+	InsideTmux         bool   // $TMUX is set (nested tmux)
+	InsideSSH          bool   // $SSH_TTY or $SSH_CLIENT is set
+	TmuxDefaultTerm    string // tmux show-option -gv default-terminal
+	TmuxMouse          string // tmux show-option -gv mouse
+	SttySize           string // rows x cols from stty
 }
 
 // Collect gathers system diagnostics.
@@ -44,10 +64,35 @@ func Collect(version string, sessionCount int) *Report {
 	r.ClaudeVersion = runCmd("claude", "--version")
 	r.GhVersion = firstLine(runCmd("gh", "--version"))
 
+	r.TerminalEnv = collectTerminalEnv()
+
 	r.Config = readConfig()
 	r.RecentLogs = readRecentLogs(100)
 
 	return r
+}
+
+// collectTerminalEnv gathers terminal-related environment variables and tmux settings.
+func collectTerminalEnv() TerminalEnv {
+	env := TerminalEnv{
+		TERM:               os.Getenv("TERM"),
+		TermProgram:        os.Getenv("TERM_PROGRAM"),
+		TermProgramVersion: os.Getenv("TERM_PROGRAM_VERSION"),
+		ColorTerm:          os.Getenv("COLORTERM"),
+		Lang:               os.Getenv("LANG"),
+		LCAll:              os.Getenv("LC_ALL"),
+		InsideTmux:         os.Getenv("TMUX") != "",
+		InsideSSH:          os.Getenv("SSH_TTY") != "" || os.Getenv("SSH_CLIENT") != "",
+	}
+
+	// Get terminal size via stty.
+	env.SttySize = runCmd("stty", "size")
+
+	// Get tmux global settings relevant to rendering.
+	env.TmuxDefaultTerm = runCmd("tmux", "show-option", "-gv", "default-terminal")
+	env.TmuxMouse = runCmd("tmux", "show-option", "-gv", "mouse")
+
+	return env
 }
 
 // FormatMarkdownWithDesc formats the report with a user-provided description.
@@ -117,6 +162,46 @@ func (r *Report) formatMarkdown(description string) string {
 		fmt.Fprintf(&b, "- **gh CLI**: %s\n", r.GhVersion)
 	}
 	fmt.Fprintf(&b, "- **Sessions**: %d\n", r.SessionCount)
+	b.WriteString("\n")
+
+	// Terminal environment.
+	te := r.TerminalEnv
+	b.WriteString("### Terminal Environment\n")
+	fmt.Fprintf(&b, "- **TERM**: `%s`\n", te.TERM)
+	if te.TermProgram != "" {
+		ver := te.TermProgram
+		if te.TermProgramVersion != "" {
+			ver += " " + te.TermProgramVersion
+		}
+		fmt.Fprintf(&b, "- **Terminal**: %s\n", ver)
+	}
+	if te.ColorTerm != "" {
+		fmt.Fprintf(&b, "- **COLORTERM**: %s\n", te.ColorTerm)
+	}
+	if te.SttySize != "" {
+		fmt.Fprintf(&b, "- **stty size**: %s\n", te.SttySize)
+	}
+	if r.TUIWidth > 0 || r.TUIHeight > 0 {
+		fmt.Fprintf(&b, "- **TUI size**: %dx%d\n", r.TUIWidth, r.TUIHeight)
+	}
+	if te.Lang != "" {
+		fmt.Fprintf(&b, "- **LANG**: %s\n", te.Lang)
+	}
+	if te.LCAll != "" {
+		fmt.Fprintf(&b, "- **LC_ALL**: %s\n", te.LCAll)
+	}
+	if te.InsideTmux {
+		b.WriteString("- **Nested tmux**: yes ($TMUX is set)\n")
+	}
+	if te.InsideSSH {
+		b.WriteString("- **SSH session**: yes\n")
+	}
+	if te.TmuxDefaultTerm != "" {
+		fmt.Fprintf(&b, "- **tmux default-terminal**: `%s`\n", te.TmuxDefaultTerm)
+	}
+	if te.TmuxMouse != "" {
+		fmt.Fprintf(&b, "- **tmux mouse**: %s\n", te.TmuxMouse)
+	}
 	b.WriteString("\n")
 
 	// Debug logs.
