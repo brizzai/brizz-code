@@ -1023,6 +1023,13 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // --- Session operations ---
 
+func (h *Home) markSessionAccessed(s *session.Session) {
+	s.MarkAccessed()
+	if err := h.storage.UpdateLastAccessed(s.ID); err != nil {
+		debuglog.Logger.Error("storage: UpdateLastAccessed", "id", s.ID, "err", err)
+	}
+}
+
 func (h *Home) attachSelected() tea.Cmd {
 	if h.cursor < 0 || h.cursor >= len(h.flatItems) || h.flatItems[h.cursor].IsRepoHeader {
 		return nil
@@ -1032,13 +1039,10 @@ func (h *Home) attachSelected() tea.Cmd {
 		return nil
 	}
 
-	s.MarkAccessed()
+	h.markSessionAccessed(s)
 	s.Acknowledge()
 	if err := h.storage.SetAcknowledged(s.ID, true); err != nil {
 		debuglog.Logger.Error("storage: SetAcknowledged", "id", s.ID, "err", err)
-	}
-	if err := h.storage.UpdateLastAccessed(s.ID); err != nil {
-		debuglog.Logger.Error("storage: UpdateLastAccessed", "id", s.ID, "err", err)
 	}
 
 	h.isAttaching.Store(true)
@@ -1161,6 +1165,7 @@ func (h *Home) restartSelected() tea.Cmd {
 		return nil
 	}
 
+	h.markSessionAccessed(s)
 	id := s.ID
 	title := s.Title
 	debuglog.Logger.Info("restarting session", "id", id, "title", title)
@@ -1399,6 +1404,7 @@ func (h *Home) quickApproveSelected() tea.Cmd {
 		h.setError(fmt.Errorf("session not waiting for approval"))
 		return nil
 	}
+	h.markSessionAccessed(s)
 	ts := s.GetTmuxSession()
 	debuglog.Logger.Info("quick approve", "id", s.ID, "title", s.Title)
 	return func() tea.Msg {
@@ -1713,6 +1719,7 @@ func (h *Home) statusWorkerCycle() {
 				// Persist prompt changes and reset title on every new prompt
 				// (for non-manually-renamed, non-Claude-named sessions).
 				if s.PromptCount != oldPromptCount {
+					h.markSessionAccessed(s)
 					if err := h.storage.UpdatePromptCount(s.ID, s.PromptCount); err != nil {
 						debuglog.Logger.Error("storage: UpdatePromptCount", "id", s.ID, "err", err)
 					}
