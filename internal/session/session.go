@@ -324,7 +324,7 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 	case "running":
 		s.applyHookRunning(oldStatus, paneContent, paneStatus, log)
 	case "waiting":
-		s.applyHookWaiting(paneContent, log)
+		s.applyHookWaiting(paneContent, paneStatus, log)
 	case "finished":
 		s.applyHookFinished(paneStatus, log)
 	case "dead":
@@ -378,17 +378,25 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, paneSta
 
 // applyHookWaiting handles hook status "waiting" with content change detection.
 // Must be called with s.mu held.
-func (s *Session) applyHookWaiting(paneContent string, log *slog.Logger) {
-	// Hook says waiting — trust hooks fully, never override from pane.
+func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *slog.Logger) {
+	// Hook says waiting — trust hooks unless pane clearly shows idle prompt.
 	//
-	// Why no pane override at all:
-	// - waiting→finished: ❯ prompt match false-positives on Claude's menu
-	//   selector (e.g. "❯ 1. Yes, allow once")
-	// - waiting→running: stale "Running…" / spinner text from subagent output
-	//   above the permission prompt triggers whimsical/spinner patterns
+	// Why we allow pane override for finished only:
+	// - detectWaiting runs before detectFinished in the detection pipeline,
+	//   so a real permission prompt yields paneStatus=StatusWaiting, not StatusFinished.
+	//   The "❯ 1. Yes" false-positive concern is already handled by detection order.
+	// - waiting→running is NOT overridden (stale spinner text can false-positive)
 	// - If user approves, UserPromptSubmit hook fires within milliseconds
-	// - If user denies/escapes, idle_prompt hook at ~60s handles it
+	// - If user interrupts/escapes, no hook fires — pane override catches this
 	// - Content change detection below handles the gap if hooks are delayed
+	if paneStatus == StatusFinished {
+		s.Status = StatusFinished
+		s.lastContentHash = ""
+		s.lastContentChangeAt = time.Time{}
+		log.Info("hook says waiting but pane shows idle prompt, overriding to finished")
+		return
+	}
+
 	s.Status = StatusWaiting
 	s.Acknowledged = false
 

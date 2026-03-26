@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Terminal environment and rendering stats in bug reports to help diagnose scroll/rendering issues
 
+### Fixed
+
+- Session stuck at "waiting" status after user interrupts/escapes a permission prompt
+
 ## [1.1.0] - 2026-03-21
 
 ### Added
