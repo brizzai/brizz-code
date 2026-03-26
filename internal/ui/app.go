@@ -147,6 +147,9 @@ type Home struct {
 	workerStarted bool
 
 	startTime time.Time // app start time for uptime tracking
+
+	// Rendering diagnostics (accumulated counters for bug reports).
+	renderStats RenderStats
 }
 
 // NewHome creates the main TUI model.
@@ -204,6 +207,15 @@ func (h *Home) Init() tea.Cmd {
 func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		h.renderStats.RecordResize(msg.Width, msg.Height)
+		// Only log resizes after the initial one (startup always sends one).
+		if h.width > 0 && (msg.Width != h.width || msg.Height != h.height) {
+			debuglog.Logger.Info("window resized",
+				"from", fmt.Sprintf("%dx%d", h.width, h.height),
+				"to", fmt.Sprintf("%dx%d", msg.Width, msg.Height),
+				"resize_count", h.renderStats.ResizeCount,
+			)
+		}
 		h.width = msg.Width
 		h.height = msg.Height
 		h.sidebarDirty = true
@@ -698,10 +710,10 @@ func (h *Home) View() string {
 	}
 
 	// Pad to fill content area.
-	lines := strings.Count(b.String(), "\n") + 1
-	for lines < h.height-helpBarHeight {
+	lineCount := strings.Count(b.String(), "\n") + 1
+	for lineCount < h.height-helpBarHeight {
 		b.WriteString("\n")
-		lines++
+		lineCount++
 	}
 
 	// Focus mode bar / Filter bar / Help bar.
@@ -711,27 +723,48 @@ func (h *Home) View() string {
 		b.WriteString(border + "\n")
 		b.WriteString(" " + HelpKeyStyle.Render("esc") + " " + HelpDescStyle.Render("Unfocus") + "  " +
 			DimStyle.Render("all keys forwarded to session"))
+		lineCount += 2 // border + shortcut line
 	} else if h.filterActive {
 		border := lipgloss.NewStyle().Foreground(ColorBorder).Render(strings.Repeat("─", h.width))
 		b.WriteString("\n")
 		b.WriteString(border + "\n")
 		b.WriteString(" " + HelpKeyStyle.Render("/") + " " + h.filterInput.View())
+		lineCount += 2
 	} else if h.filterText != "" {
 		// Show active filter indicator even when not typing.
 		border := lipgloss.NewStyle().Foreground(ColorBorder).Render(strings.Repeat("─", h.width))
 		b.WriteString("\n")
 		b.WriteString(border + "\n")
 		b.WriteString(" " + HelpKeyStyle.Render("/") + " " + DimStyle.Render(h.filterText) + "  " + DimStyle.Render("(/ to edit, esc to clear)"))
+		lineCount += 2
 	} else {
-		// Help bar.
+		// Help bar (border + "\n " + shortcuts = 2 lines).
 		b.WriteString("\n")
 		b.WriteString(h.renderHelpBar())
+		lineCount += 2
 	}
 
 	// Error message (overwrites last line if present).
 	if h.err != nil && time.Since(h.errTime) < 5*time.Second {
 		b.WriteString("\n")
 		b.WriteString(ErrorStyle.Render(" " + h.err.Error()))
+		lineCount++
+	}
+
+	// Track height mismatches (counter for bug report, log only on first occurrence).
+	// Uses incremental lineCount instead of re-scanning the output.
+	if h.height > 0 && lineCount != h.height {
+		diff := lineCount - h.height
+		prevCount := h.renderStats.HeightMismatchCount
+		h.renderStats.RecordHeightMismatch(diff)
+		if prevCount == 0 {
+			debuglog.Logger.Warn("View height mismatch detected",
+				"output_lines", lineCount,
+				"expected", h.height,
+				"diff", diff,
+				"layout", h.layoutMode(),
+			)
+		}
 	}
 
 	return b.String()
@@ -964,7 +997,7 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, nil
 	case "!":
 		h.actionLog.Add("open bug report", "", true)
-		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog)
+		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog, h.width, h.height, &h.renderStats, time.Since(h.startTime))
 		analytics.Track(analytics.EventBugReportOpened, nil)
 		return h, nil
 	case "?":
@@ -2016,12 +2049,16 @@ func (h *Home) syncViewport() {
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
+	prevOffset := h.viewOffset
 	// Scroll to keep cursor visible.
 	if h.cursor < h.viewOffset {
 		h.viewOffset = h.cursor
 	}
 	if h.cursor >= h.viewOffset+contentHeight {
 		h.viewOffset = h.cursor - contentHeight + 1
+	}
+	if h.viewOffset != prevOffset {
+		h.renderStats.RecordViewportDrift()
 	}
 }
 
