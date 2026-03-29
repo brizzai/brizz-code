@@ -92,7 +92,27 @@ Build a timeline of events. Look for:
 - **Rapid oscillation**: Status bouncing between two states every few seconds
 - **Unexpected sequences**: Events in wrong order, missing expected events
 
-## Step 5: Go deeper if needed
+## Step 5: Check for agent team scenarios
+
+If the session uses Claude's agent team feature (sub-agents, `Explore(...)`, `@agent-name`):
+
+**Key symptoms:**
+- Hook file shows `Stop/finished` but pane shows a sub-agent permission prompt or "Waiting for team lead approval"
+- Status oscillates between running/idle/finished (spinner on "waiting for" line intermittently matches)
+- Hook is very stale (hookAge >> minutes) — parent delegated long ago, no new hooks from sub-agent
+
+**What to check:**
+- Does the pane show a numbered menu (`❯ 1. Yes`, `2. No`) with `Esc to cancel`? → Should be waiting
+- Does the pane show a box (`│ ✻ Waiting for team lead approval │`)? → Should be waiting
+- Is the spinner char on a line containing "waiting for"? → Should be skipped by detectRunning
+- Is there text containing approval patterns (`(Y/n)`, menu text) in code diffs or conversation output? → False positive source
+
+**Common agent team false-positives:**
+- User typed a numbered list as input (`❯ 1. first item`) → looks like permission menu
+- Session is editing/discussing status detection code → approval patterns appear in scrollback
+- Fix: structural checks require `Esc to cancel` for menu detection, `│` at line start for team box
+
+## Step 6: Go deeper if needed
 
 **Claude conversation log** (verify user actions):
 ```

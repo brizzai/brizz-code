@@ -387,7 +387,13 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 	// - If user interrupts/escapes, no hook fires — pane override catches this
 	// - Content change detection below handles the gap if hooks are delayed
 	if paneStatus == StatusFinished {
-		s.Status = StatusFinished
+		// Pane shows idle prompt — user is no longer being prompted.
+		// Preserve idle if already acknowledged to prevent finished↔idle oscillation.
+		if s.Acknowledged {
+			s.Status = StatusIdle
+		} else {
+			s.Status = StatusFinished
+		}
 		s.lastContentHash = ""
 		s.lastContentChangeAt = time.Time{}
 		log.Info("hook says waiting but pane shows idle prompt, overriding to finished")
@@ -646,11 +652,12 @@ func detectWaiting(recentLines []string, _ string, log *slog.Logger) Status {
 	}
 
 	// Structural check: numbered permission menu.
-	// A line starting with "❯ 1." with a "2." line nearby means a Claude
-	// permission prompt (main or sub-agent). Covers both 2-option (Yes/No)
-	// and 3-option (Yes/Yes during session/No) menus.
+	// Requires three cues: a "❯ 1." line, a "2." line, AND "Esc to cancel"
+	// nearby. The Esc to cancel line only appears in Claude's interactive
+	// prompts, preventing false-positives from user input numbered lists.
 	hasMenu1 := false
 	hasMenu2 := false
+	hasEscCancel := false
 	for i := 0; i < bottomN; i++ {
 		trimmed := strings.TrimSpace(recentLines[i])
 		if strings.HasPrefix(trimmed, "❯ 1.") {
@@ -659,8 +666,11 @@ func detectWaiting(recentLines []string, _ string, log *slog.Logger) Status {
 		if strings.HasPrefix(trimmed, "2.") {
 			hasMenu2 = true
 		}
+		if strings.Contains(strings.ToLower(trimmed), "esc to cancel") {
+			hasEscCancel = true
+		}
 	}
-	if hasMenu1 && hasMenu2 {
+	if hasMenu1 && hasMenu2 && hasEscCancel {
 		log.Debug("detectStatus: matched permission menu structure")
 		return StatusWaiting
 	}
