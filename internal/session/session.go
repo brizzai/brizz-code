@@ -322,7 +322,7 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 
 	switch hookStatus {
 	case "running":
-		s.applyHookRunning(oldStatus, paneContent, paneStatus, log)
+		s.applyHookRunning(oldStatus, paneContent, log)
 	case "waiting":
 		s.applyHookWaiting(paneContent, paneStatus, log)
 	case "finished":
@@ -340,18 +340,15 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 
 // applyHookRunning handles hook status "running" with content stability detection.
 // Must be called with s.mu held.
-func (s *Session) applyHookRunning(oldStatus Status, paneContent string, paneStatus Status, log *slog.Logger) {
+func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *slog.Logger) {
 	s.Status = StatusRunning
 	s.Acknowledged = false
 
-	// Only override to waiting immediately (permission prompts are unambiguous).
-	// Do NOT override to finished here — the old ❯ prompt from the previous turn
-	// is always visible in scrollback and causes false "finished" flashes between
-	// spinner frames. Let content stability (10s) handle running→finished.
-	if paneStatus == StatusWaiting {
-		s.Status = paneStatus
-		log.Info("hook says running but pane shows waiting, overriding")
-	}
+	// Do NOT override to waiting here — pane detection can false-positive on
+	// approval pattern strings (e.g. "(Y/n)") in code diffs or conversation text.
+	// When hooks say running, trust them. Real permission prompts trigger a
+	// PermissionRequest hook within milliseconds, so applyHookWaiting handles it.
+	// Team/sub-agent waiting is caught by applyHookFinished (stale parent Stop).
 
 	if paneContent == "" {
 		return
@@ -431,6 +428,12 @@ func (s *Session) applyHookFinished(paneStatus Status, log *slog.Logger) {
 		// shows an active spinner — Claude is actually working.
 		s.Status = StatusRunning
 		log.Info("hook says finished but pane shows running, overriding")
+	} else if paneStatus == StatusWaiting {
+		// Hook says finished (e.g. parent Stop when delegating to sub-agent)
+		// but pane shows a permission prompt — sub-agent is waiting for approval.
+		s.Status = StatusWaiting
+		s.Acknowledged = false
+		log.Info("hook says finished but pane shows waiting, overriding")
 	} else if s.Acknowledged {
 		s.Status = StatusIdle
 	} else {
@@ -534,12 +537,12 @@ var (
 		"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
 		"✳", "✽", "✶", "✢",
 	}
+	// approvalPatterns are checked near the bottom of the pane (last 15
+	// non-empty lines). Only used as a secondary signal alongside structural
+	// checks to avoid false-positives from code diffs in scrollback.
 	approvalPatterns = []string{
 		"Yes, allow once",
 		"No, and tell Claude",
-		"Continue?",
-		"(Y/n)",
-		"(y/N)",
 		"Do you trust the files",
 		"Allow this MCP server",
 	}
@@ -564,7 +567,7 @@ func detectStatus(content string, log *slog.Logger) Status {
 	if s := detectRunning(recentLines, recentContent, log); s != "" {
 		return s
 	}
-	if s := detectWaiting(recentContent, log); s != "" {
+	if s := detectWaiting(recentLines, recentContent, log); s != "" {
 		return s
 	}
 	if s := detectFinished(recentLines, recentContent, log); s != "" {
@@ -609,6 +612,12 @@ func detectRunning(recentLines []string, recentContent string, log *slog.Logger)
 	for _, line := range recentLines {
 		for _, sc := range spinnerChars {
 			if strings.Contains(line, sc) {
+				// Don't treat spinner chars as running if they're part of a
+				// team waiting indicator (e.g. "✢  Waiting for team lead approval").
+				lowerLine := strings.ToLower(line)
+				if strings.Contains(lowerLine, "waiting for") {
+					continue
+				}
 				log.Debug("detectStatus: matched spinner char", "char", sc, "line", line)
 				return StatusRunning
 			}
@@ -626,14 +635,57 @@ func detectRunning(recentLines []string, recentContent string, log *slog.Logger)
 	return ""
 }
 
-// detectWaiting checks for approval/permission prompts.
-func detectWaiting(recentContent string, log *slog.Logger) Status {
+// detectWaiting checks for permission prompts using structural layout checks.
+// Uses specific UI structures rather than text patterns to avoid false-positives
+// from code or conversation text containing approval-related strings.
+// recentLines is ordered from bottom (index 0 = last non-empty line).
+func detectWaiting(recentLines []string, _ string, log *slog.Logger) Status {
+	bottomN := 15
+	if bottomN > len(recentLines) {
+		bottomN = len(recentLines)
+	}
+
+	// Structural check: numbered permission menu.
+	// A line starting with "❯ 1." with a "2." line nearby means a Claude
+	// permission prompt (main or sub-agent). Covers both 2-option (Yes/No)
+	// and 3-option (Yes/Yes during session/No) menus.
+	hasMenu1 := false
+	hasMenu2 := false
+	for i := 0; i < bottomN; i++ {
+		trimmed := strings.TrimSpace(recentLines[i])
+		if strings.HasPrefix(trimmed, "❯ 1.") {
+			hasMenu1 = true
+		}
+		if strings.HasPrefix(trimmed, "2.") {
+			hasMenu2 = true
+		}
+	}
+	if hasMenu1 && hasMenu2 {
+		log.Debug("detectStatus: matched permission menu structure")
+		return StatusWaiting
+	}
+
+	// Structural check: team waiting box.
+	// Line starting with box-drawing char │ and containing "Waiting for team lead"
+	// — only appears inside the agent team approval box UI.
+	for i := 0; i < bottomN; i++ {
+		trimmedLine := strings.TrimSpace(recentLines[i])
+		if strings.HasPrefix(trimmedLine, "│") && strings.Contains(trimmedLine, "Waiting for team lead") {
+			log.Debug("detectStatus: matched team waiting box", "line", trimmedLine)
+			return StatusWaiting
+		}
+	}
+
+	// Text pattern fallback: highly specific strings that only appear in
+	// Claude's permission UI, not in normal code or conversation.
+	bottomContent := strings.Join(recentLines[:bottomN], "\n")
 	for _, pattern := range approvalPatterns {
-		if strings.Contains(recentContent, pattern) {
+		if strings.Contains(bottomContent, pattern) {
 			log.Debug("detectStatus: matched approval pattern", "pattern", pattern)
 			return StatusWaiting
 		}
 	}
+
 	return ""
 }
 
