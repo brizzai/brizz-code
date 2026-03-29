@@ -82,6 +82,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - `gh` CLI optional — PR info hidden if not installed
 - Preview strips OSC-8 hyperlink sequences to prevent dotted underline artifacts
 - Status detection: hook-based (primary, no time expiry) via Claude Code hooks + pane capture (fallback, ANSI-stripped)
+- Agent team status: sub-agents don't fire hooks, so pane detection handles team states via structural checks (numbered menu `❯ 1.`+`2.`+`Esc to cancel`, box-drawing `│`+`Waiting for team lead`); hook=running is never overridden to waiting by pane (avoids false-positives from code in scrollback)
 - All blocking I/O (tmux, git, gh) runs in background worker goroutine, never in Bubble Tea Update()
 - Hook status files: `~/.config/brizz-code/hooks/{session_id}.json`
 - Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
