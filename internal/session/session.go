@@ -433,6 +433,7 @@ func (s *Session) applyHookFinished(paneStatus Status, log *slog.Logger) {
 		// Hook says finished (e.g. SessionStart after auto-resume) but pane
 		// shows an active spinner — Claude is actually working.
 		s.Status = StatusRunning
+		s.Acknowledged = false
 		log.Info("hook says finished but pane shows running, overriding")
 	} else if paneStatus == StatusWaiting {
 		// Hook says finished (e.g. parent Stop when delegating to sub-agent)
