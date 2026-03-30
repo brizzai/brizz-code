@@ -144,7 +144,9 @@ func (w *HookWatcher) Start() {
 // Stop shuts down the watcher.
 func (w *HookWatcher) Stop() {
 	w.cancel()
-	_ = w.watcher.Close()
+	if w.watcher != nil {
+		_ = w.watcher.Close()
+	}
 }
 
 // GetStatus returns the hook status for a session, or nil if not available.
