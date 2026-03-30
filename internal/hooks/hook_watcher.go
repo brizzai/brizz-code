@@ -70,7 +70,7 @@ func NewHookWatcher() (*HookWatcher, error) {
 		hooksDir: hooksDir,
 		watcher:  watcher,
 		statuses: make(map[string]*HookStatus),
-		onChange:  make(chan struct{}, 1),
+		onChange: make(chan struct{}, 1),
 		ctx:      ctx,
 		cancel:   cancel,
 	}, nil
