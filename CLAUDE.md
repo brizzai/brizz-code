@@ -58,6 +58,7 @@ internal/ui/errors.go        # Ring buffer keeping error history (errors that fl
 internal/ui/keybindings.go   # Centralized keybinding definitions
 internal/ui/workspace_picker.go  # Worktree dialog (base branch + new branch + existing worktrees)
 internal/ui/workspace_create.go  # Create workspace sub-dialog + PendingWorkspace phantom entries
+internal/ui/command_palette.go   # Command palette dialog (: / Ctrl+P) with fuzzy search
 internal/chrome/protocol.go      # Command/Response types, action constants, socket path
 internal/chrome/native_host.go   # Native messaging host with Unix socket bridge
 internal/chrome/client.go        # TUI-side client (connects to socket, sends commands)
@@ -72,7 +73,8 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, S settings, ! bug report/diagnostics, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, : or Ctrl+P command palette, S settings, ! bug report/diagnostics, ? help, q quit
+- Command palette (: / Ctrl+P): fuzzy-searchable list of all actions; palette-only commands include "Reload All Sessions" (restarts all dead/error sessions)
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)

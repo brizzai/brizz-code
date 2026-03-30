@@ -73,6 +73,11 @@ type (
 	spinnerTickMsg  struct{}
 	previewTickMsg  time.Time
 	focusTickMsg    time.Time
+	reloadAllResultMsg struct {
+		restarted int
+		skipped   int
+		errors    []string
+	}
 )
 
 func spinnerTickCmd() tea.Msg {
@@ -96,6 +101,8 @@ type Home struct {
 	isAttaching atomic.Bool
 	err         error
 	errTime     time.Time
+	flashMsg    string
+	flashTime   time.Time
 
 	newDialog             *NewSessionDialog
 	confirmDialog         *ConfirmDialog
@@ -105,6 +112,7 @@ type Home struct {
 	worktreeDialog        *WorktreeDialog
 	createWorkspaceDialog *CreateWorkspaceDialog
 	branchDialog          *BranchCheckoutDialog
+	commandPalette        *CommandPaletteDialog
 
 	pendingWorkspaces []*PendingWorkspace // in-flight workspace creations
 
@@ -178,6 +186,7 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home
 		worktreeDialog:        NewWorktreeDialog(),
 		createWorkspaceDialog: NewCreateWorkspaceDialog(),
 		branchDialog:          NewBranchCheckoutDialog(),
+		commandPalette:        NewCommandPaletteDialog(),
 		bugReport:             NewBugReportDialog(),
 		previewCache:          make(map[string]string),
 		previewCacheTime:      make(map[string]time.Time),
@@ -227,6 +236,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.worktreeDialog.SetSize(msg.Width, msg.Height)
 		h.createWorkspaceDialog.SetSize(msg.Width, msg.Height)
 		h.branchDialog.SetSize(msg.Width, msg.Height)
+		h.commandPalette.SetSize(msg.Width, msg.Height)
 		h.bugReport.SetSize(msg.Width, msg.Height)
 		h.syncViewport()
 		return h, nil
@@ -307,6 +317,32 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		h.rebuildFlatItems()
+
+	case commandPaletteMsg:
+		h.actionLog.Add("command: "+msg.commandID, "", true)
+		return h.dispatchCommand(msg.commandID)
+
+	case reloadAllResultMsg:
+		for _, s := range h.sessions {
+			if err := h.storage.UpdateStatus(s.ID, string(s.GetStatus())); err != nil {
+				debuglog.Logger.Error("storage: UpdateStatus after reload all", "id", s.ID, "err", err)
+			}
+			if err := h.storage.UpdateTmuxSession(s.ID, s.TmuxSessionName); err != nil {
+				debuglog.Logger.Error("storage: UpdateTmuxSession after reload all", "id", s.ID, "err", err)
+			}
+		}
+		h.rebuildFlatItems()
+		// Trigger immediate status refresh.
+		select {
+		case h.statusTrigger <- struct{}{}:
+		default:
+		}
+		if len(msg.errors) > 0 {
+			h.setError(fmt.Errorf("reloaded %d sessions, %d failed: %s",
+				msg.restarted, len(msg.errors), strings.Join(msg.errors, ", ")))
+		} else if msg.restarted > 0 {
+			h.setFlash(fmt.Sprintf("Reloaded %d sessions (%d skipped)", msg.restarted, msg.skipped))
+		}
 		return h, nil
 
 	case sessionRenameMsg:
@@ -627,6 +663,9 @@ func (h *Home) View() string {
 	if h.branchDialog.IsVisible() {
 		return h.branchDialog.View()
 	}
+	if h.commandPalette.IsVisible() {
+		return h.commandPalette.View()
+	}
 	if h.newDialog.IsVisible() {
 		return h.newDialog.View()
 	}
@@ -744,10 +783,14 @@ func (h *Home) View() string {
 		lineCount += 2
 	}
 
-	// Error message (overwrites last line if present).
+	// Flash / error message (overwrites last line if present).
 	if h.err != nil && time.Since(h.errTime) < 5*time.Second {
 		b.WriteString("\n")
 		b.WriteString(ErrorStyle.Render(" " + h.err.Error()))
+		lineCount++
+	} else if h.flashMsg != "" && time.Since(h.flashTime) < 5*time.Second {
+		b.WriteString("\n")
+		b.WriteString(DimStyle.Render(" " + h.flashMsg))
 		lineCount++
 	}
 
@@ -802,6 +845,11 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if h.branchDialog.IsVisible() {
 		dialog, cmd := h.branchDialog.Update(msg)
 		h.branchDialog = dialog
+		return h, cmd
+	}
+	if h.commandPalette.IsVisible() {
+		dialog, cmd := h.commandPalette.Update(msg)
+		h.commandPalette = dialog
 		return h, cmd
 	}
 	if h.newDialog.IsVisible() {
@@ -990,6 +1038,10 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			h.syncViewport()
 			return h, h.fetchPreviewForSelected()
 		}
+		return h, nil
+	case ":", "ctrl+p":
+		h.commandPalette.Show(h.buildPaletteCommands())
+		analytics.Track(analytics.EventCommandPalette, nil)
 		return h, nil
 	case "S":
 		h.settingsDialog.Show()
@@ -2108,6 +2160,199 @@ func (h *Home) setError(err error) {
 		analytics.Track(analytics.EventErrorOccurred, map[string]interface{}{
 			"category": strings.SplitN(err.Error(), ":", 2)[0],
 		})
+	}
+}
+
+func (h *Home) setFlash(msg string) {
+	h.flashMsg = msg
+	h.flashTime = time.Now()
+}
+
+// buildPaletteCommands returns all available commands for the command palette.
+func (h *Home) buildPaletteCommands() []PaletteCommand {
+	return []PaletteCommand{
+		{ID: "attach", Name: "Attach Session", Shortcut: "Enter"},
+		{ID: "focus", Name: "Focus Preview", Shortcut: "Tab"},
+		{ID: "jump_next", Name: "Jump to Next Waiting", Shortcut: "Space"},
+		{ID: "new_session", Name: "New Session", Shortcut: "a"},
+		{ID: "new_repo", Name: "New Session (Any Repo)", Shortcut: "n"},
+		{ID: "new_worktree", Name: "New Worktree Session", Shortcut: "w"},
+		{ID: "fork", Name: "Fork Session", Shortcut: "f"},
+		{ID: "delete", Name: "Delete Session", Shortcut: "d"},
+		{ID: "restart", Name: "Restart Session", Shortcut: "r"},
+		{ID: "rename", Name: "Rename Session", Shortcut: "R"},
+		{ID: "editor", Name: "Open in Editor", Shortcut: "e"},
+		{ID: "open_pr", Name: "Open PR", Shortcut: "p"},
+		{ID: "approve", Name: "Quick Approve", Shortcut: "Y"},
+		{ID: "branch", Name: "Switch Branch", Shortcut: "b"},
+		{ID: "filter", Name: "Filter Sessions", Shortcut: "/"},
+		{ID: "settings", Name: "Settings", Shortcut: "S"},
+		{ID: "bug_report", Name: "Bug Report", Shortcut: "!"},
+		{ID: "help", Name: "Help", Shortcut: "?"},
+		{ID: "reload_all", Name: "Reload All Sessions"},
+		{ID: "quit", Name: "Quit", Shortcut: "q"},
+	}
+}
+
+// dispatchCommand executes a command selected from the palette.
+func (h *Home) dispatchCommand(id string) (tea.Model, tea.Cmd) {
+	switch id {
+	case "attach":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("attach session", s.Title, true)
+			analytics.Track(analytics.EventSessionAttached, nil)
+		}
+		return h, h.attachSelected()
+	case "focus":
+		return h, h.enterFocusMode()
+	case "jump_next":
+		h.jumpToNextAttentionSession()
+		analytics.Track(analytics.EventSpaceJump, nil)
+		return h, h.fetchPreviewForSelected()
+	case "new_session":
+		repoPath := h.resolveCurrentRepo()
+		if repoPath == "" {
+			h.newDialog.Show()
+			return h, nil
+		}
+		h.actionLog.Add("create session", repoPath, true)
+		return h.handleSessionCreate(sessionCreateMsg{
+			path:  repoPath,
+			title: filepath.Base(repoPath),
+		})
+	case "new_repo":
+		h.newDialog.Show()
+		return h, nil
+	case "new_worktree":
+		repoPath := h.resolveCurrentRepo()
+		if repoPath == "" {
+			h.setError(fmt.Errorf("no repo selected"))
+			return h, nil
+		}
+		h.worktreeDialog.ShowLoading()
+		return h, tea.Batch(h.fetchWorkspaceListForRepo(repoPath), spinnerTickCmd)
+	case "fork":
+		return h, h.forkSelected()
+	case "delete":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("delete session", s.Title, true)
+		}
+		return h, h.confirmDeleteSelected()
+	case "restart":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("restart session", s.Title, true)
+			analytics.Track(analytics.EventSessionRestarted, nil)
+		}
+		return h, h.restartSelected()
+	case "rename":
+		return h, h.renameSelected()
+	case "editor":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("open editor", fmt.Sprintf("%q at %s", h.cfg.GetEditor(), s.ProjectPath), true)
+			analytics.Track(analytics.EventEditorOpened, map[string]interface{}{"editor": h.cfg.GetEditor()})
+		}
+		return h, h.openEditorSelected()
+	case "open_pr":
+		h.actionLog.Add("open PR", "", true)
+		analytics.Track(analytics.EventPROpened, nil)
+		return h, h.openPRInBrowser()
+	case "approve":
+		if s := h.selectedSession(); s != nil {
+			h.actionLog.Add("quick approve", s.Title, true)
+			analytics.Track(analytics.EventQuickApprove, nil)
+		}
+		return h, h.quickApproveSelected()
+	case "branch":
+		repoPath := h.resolveCurrentRepo()
+		if repoPath == "" {
+			return h, nil
+		}
+		h.branchDialog.ShowLoading()
+		return h, tea.Batch(h.fetchBranchList(repoPath), spinnerTickCmd)
+	case "filter":
+		h.filterActive = true
+		h.filterInput.Focus()
+		analytics.Track(analytics.EventFilterUsed, nil)
+		return h, nil
+	case "settings":
+		h.settingsDialog.Show()
+		analytics.Track(analytics.EventSettingsOpened, nil)
+		return h, nil
+	case "bug_report":
+		h.actionLog.Add("open bug report", "", true)
+		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog, h.width, h.height, &h.renderStats, time.Since(h.startTime))
+		analytics.Track(analytics.EventBugReportOpened, nil)
+		return h, nil
+	case "help":
+		h.helpOverlay.Show()
+		return h, nil
+	case "reload_all":
+		analytics.Track(analytics.EventReloadAll, nil)
+		return h, h.reloadAll()
+	case "quit":
+		return h, tea.Quit
+	}
+	return h, nil
+}
+
+// reloadAll restarts all dead/error sessions concurrently.
+func (h *Home) reloadAll() tea.Cmd {
+	type target struct {
+		session *session.Session
+		title   string
+	}
+	var targets []target
+	for _, s := range h.sessions {
+		status := s.GetStatus()
+		// Skip active sessions — never kill running Claude work.
+		if status == session.StatusRunning || status == session.StatusWaiting ||
+			status == session.StatusStarting || status == session.StatusFinished {
+			continue
+		}
+		targets = append(targets, target{session: s, title: s.Title})
+	}
+
+	if len(targets) == 0 {
+		h.setFlash("All sessions healthy — nothing to reload")
+		return nil
+	}
+
+	skipped := len(h.sessions) - len(targets)
+	debuglog.Logger.Info("reload all", "eligible", len(targets), "skipped", skipped)
+
+	return func() tea.Msg {
+		var (
+			mu     sync.Mutex
+			errors []string
+			wg     sync.WaitGroup
+		)
+
+		for _, t := range targets {
+			wg.Add(1)
+			go func(s *session.Session, title string) {
+				defer wg.Done()
+				var err error
+				if s.IsAlive() && !s.GetTmuxSession().IsPaneDead() {
+					err = s.RespawnClaude()
+				} else {
+					err = s.Restart()
+				}
+				if err != nil {
+					mu.Lock()
+					errors = append(errors, title)
+					mu.Unlock()
+					debuglog.Logger.Error("reload all: restart failed", "title", title, "err", err)
+				}
+			}(t.session, t.title)
+		}
+
+		wg.Wait()
+
+		return reloadAllResultMsg{
+			restarted: len(targets) - len(errors),
+			skipped:   skipped,
+			errors:    errors,
+		}
 	}
 }
 
