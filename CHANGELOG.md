@@ -11,9 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Terminal environment and rendering stats in bug reports to help diagnose scroll/rendering issues
 
+### Improved
+
+- Status updates now respond in ~150ms instead of up to 2s via event-driven hook notifications
+
 ### Fixed
 
 - Session stuck at "waiting" status after user interrupts/escapes a permission prompt
+- Status showing stale data immediately after detaching from a session
 
 ## [1.1.0] - 2026-03-21
 
