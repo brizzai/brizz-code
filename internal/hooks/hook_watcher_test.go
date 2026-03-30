@@ -146,7 +146,7 @@ func newHookWatcherWithDir(dir string) (*HookWatcher, error) {
 	w := &HookWatcher{
 		hooksDir: dir,
 		statuses: make(map[string]*HookStatus),
-		onChange:  make(chan struct{}, 1),
+		onChange: make(chan struct{}, 1),
 		ctx:      ctx,
 		cancel:   cancel,
 		// watcher left nil — we call processFile directly in tests.
