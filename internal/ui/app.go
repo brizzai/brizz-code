@@ -2304,9 +2304,10 @@ func (h *Home) reloadAll() tea.Cmd {
 	var targets []target
 	for _, s := range h.sessions {
 		status := s.GetStatus()
-		// Skip active sessions — never kill running Claude work.
+		// Skip active/healthy sessions — never kill running Claude work or idle sessions.
 		if status == session.StatusRunning || status == session.StatusWaiting ||
-			status == session.StatusStarting || status == session.StatusFinished {
+			status == session.StatusStarting || status == session.StatusFinished ||
+			status == session.StatusIdle {
 			continue
 		}
 		targets = append(targets, target{session: s, title: s.Title})

@@ -95,7 +95,7 @@ func (d *CommandPaletteDialog) rebuildFiltered() {
 
 	// Sort by score descending when filtering.
 	if query != "" {
-		sort.Slice(d.filtered, func(i, j int) bool {
+		sort.SliceStable(d.filtered, func(i, j int) bool {
 			return d.filtered[i].score > d.filtered[j].score
 		})
 	}
