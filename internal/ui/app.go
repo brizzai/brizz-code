@@ -67,12 +67,12 @@ type (
 		warning     string
 		err         error
 	}
-	openEditorMsg   struct{ err error }
-	openPRMsg       struct{ err error }
-	quickApproveMsg struct{ err error }
-	spinnerTickMsg  struct{}
-	previewTickMsg  time.Time
-	focusTickMsg    time.Time
+	openEditorMsg      struct{ err error }
+	openPRMsg          struct{ err error }
+	quickApproveMsg    struct{ err error }
+	spinnerTickMsg     struct{}
+	previewTickMsg     time.Time
+	focusTickMsg       time.Time
 	reloadAllResultMsg struct {
 		restarted int
 		skipped   int

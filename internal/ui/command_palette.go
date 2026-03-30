@@ -212,10 +212,6 @@ func (d *CommandPaletteDialog) View() string {
 			padded := name + strings.Repeat(" ", maxName-len(name)+2)
 
 			if selected {
-				line := padded
-				if cmd.Shortcut != "" {
-					line += DimStyle.Render(cmd.Shortcut)
-				}
 				b.WriteString(prefix + SessionTitleSelStyle.Render(name))
 				if cmd.Shortcut != "" {
 					b.WriteString(strings.Repeat(" ", maxName-len(name)+2) + DimStyle.Render(cmd.Shortcut))
