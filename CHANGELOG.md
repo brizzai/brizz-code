@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Command palette (`:` or `Ctrl+P`) — fuzzy-searchable list of all actions with shortcut hints
+- "Reload All Sessions" command (palette-only) — bulk restart dead/error sessions after PC restart
+- Flash messages for non-error info (e.g. reload results)
 - Terminal environment and rendering stats in bug reports to help diagnose scroll/rendering issues
 
 ### Fixed
