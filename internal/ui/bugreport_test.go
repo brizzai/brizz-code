@@ -7,6 +7,9 @@ import (
 )
 
 func TestBugReportDialog_EnterWithGhMissing_ReturnsCmd(t *testing.T) {
+	// Ensure gh is not found regardless of the test environment.
+	t.Setenv("PATH", t.TempDir())
+
 	d := NewBugReportDialog()
 	d.visible = true
 	d.descInput.SetValue("something broke")
