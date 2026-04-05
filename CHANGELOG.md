@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bug report dialog freezing permanently when `gh` CLI is not installed
 - Session stuck at "waiting" status after user interrupts/escapes a permission prompt
 
 ## [1.1.0] - 2026-03-21
