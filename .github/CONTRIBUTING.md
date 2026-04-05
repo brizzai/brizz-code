@@ -63,7 +63,19 @@ Scopes are optional: `fix(hooks): ...`, `feat(ui): ...`
 
 ### Changelog
 
-Add a note under `## [Unreleased]` in `CHANGELOG.md` for user-facing changes. CI will remind you if you forget. If your change doesn't need a changelog entry (CI, typos, deps), comment `/no-changelog` on the PR.
+Add a fragment file in `changelog/unreleased/` for user-facing changes. CI will remind you if you forget.
+
+```yaml
+# changelog/unreleased/my-change.md
+---
+type: fixed
+---
+Description of the change for end users
+```
+
+Valid types: `added`, `improved`, `fixed`, `changed`, `removed`, `deprecated`, `security`. See `changelog/README.md` for details.
+
+If your change doesn't need a changelog entry (CI, typos, deps), comment `/no-changelog` on the PR. At release time, fragments are automatically merged into `CHANGELOG.md` and deleted.
 
 ### Releasing
 
