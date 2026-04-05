@@ -109,7 +109,7 @@ func (d *BugReportDialog) Update(msg tea.Msg) (*BugReportDialog, tea.Cmd) {
 
 func (d *BugReportDialog) openGitHubIssue(description string) tea.Cmd {
 	if _, err := exec.LookPath("gh"); err != nil {
-		return nil
+		return func() tea.Msg { return bugReportOpenErrMsg{err: fmt.Errorf("gh CLI not found")} }
 	}
 
 	// Build title from description, truncated.

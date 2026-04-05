@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Terminal environment and rendering stats in bug reports to help diagnose scroll/rendering issues
+- Agent team status detection: sub-agent permission prompts and "Waiting for team lead approval" now correctly show as waiting
 
 ### Improved
 
@@ -17,8 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bug report dialog freezing permanently when `gh` CLI is not installed
 - Session stuck at "waiting" status after user interrupts/escapes a permission prompt
 - Status showing stale data immediately after detaching from a session
+- Agent team sessions showing idle/running instead of waiting when sub-agent needs approval
+- Status oscillating between idle and finished when stale waiting hook is present
 
 ## [1.1.0] - 2026-03-21
 

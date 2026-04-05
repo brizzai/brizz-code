@@ -345,6 +345,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return h, nil
 
 	case bugReportOpenErrMsg:
+		h.bugReport.submitting = false
 		h.setError(msg.err)
 		return h, nil
 
