@@ -15,6 +15,12 @@ import (
 	"github.com/brizzai/brizz-code/internal/tmux"
 )
 
+// PaneCapturer abstracts pane capture for testing.
+type PaneCapturer interface {
+	CapturePane() (string, error)
+	IsPaneDead() bool
+}
+
 // Status represents the current state of a session.
 type Status string
 
@@ -47,14 +53,16 @@ type Session struct {
 	PromptCount           int
 	ForkFromID            string // Transient: if set, start with --resume <id> --fork-session (cleared after start)
 
-	hookStatus    string
-	hookUpdatedAt time.Time
+	hookStatus       string
+	hookUpdatedAt    time.Time
+	hookOverriddenAt time.Time // timestamp of hook that was overridden by pane; prevents re-evaluation of same stale hook
 
 	lastContentHash     string
 	lastContentChangeAt time.Time
 
-	tmuxSession *tmux.Session
-	mu          sync.RWMutex
+	tmuxSession  *tmux.Session
+	paneCapturer PaneCapturer // optional override for testing; if nil, uses tmuxSession
+	mu           sync.RWMutex
 }
 
 // NewSession creates a new session for the given project path.
@@ -150,8 +158,19 @@ func (s *Session) GetHookStatus() string {
 	return s.hookStatus
 }
 
+// getCapturer returns the pane capturer (test override or real tmux session).
+func (s *Session) getCapturer() PaneCapturer {
+	if s.paneCapturer != nil {
+		return s.paneCapturer
+	}
+	return s.tmuxSession
+}
+
 // IsAlive checks if the tmux session exists.
 func (s *Session) IsAlive() bool {
+	if s.paneCapturer != nil {
+		return !s.paneCapturer.IsPaneDead()
+	}
 	return s.tmuxSession.Exists()
 }
 
@@ -194,10 +213,11 @@ func (s *Session) UpdateHookStatus(hs *HookStatus) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Reset content hash tracking when hook status changes (fresh tracking for new state).
-	if s.hookStatus != hs.Status {
+	// Reset tracking when hook genuinely changes (new event or new status).
+	if s.hookStatus != hs.Status || s.hookUpdatedAt != hs.UpdatedAt {
 		s.lastContentHash = ""
 		s.lastContentChangeAt = time.Time{}
+		s.hookOverriddenAt = time.Time{} // allow fresh evaluation of new hook
 	}
 	s.hookStatus = hs.Status
 	s.hookUpdatedAt = hs.UpdatedAt
@@ -285,7 +305,7 @@ func (s *Session) UpdateStatus() {
 	}
 
 	// Check if the pane's process has died (tmux alive but process crashed).
-	if s.tmuxSession.IsPaneDead() {
+	if s.getCapturer().IsPaneDead() {
 		s.SetStatus(StatusError)
 		log.Debug("status: pane dead", "old", oldStatus, "new", StatusError)
 		return
@@ -312,7 +332,7 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 	// Capture pane once for content change detection and pane-based overrides.
 	var paneContent string
 	var paneStatus Status
-	if content, err := s.tmuxSession.CapturePane(); err == nil {
+	if content, err := s.getCapturer().CapturePane(); err == nil {
 		paneContent = stripANSI(content)
 		paneStatus = detectStatus(paneContent, log)
 	}
@@ -376,6 +396,12 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *sl
 // applyHookWaiting handles hook status "waiting" with content change detection.
 // Must be called with s.mu held.
 func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *slog.Logger) {
+	// If this hook was already overridden by pane detection (stale hook),
+	// skip re-evaluation. A new hook (different timestamp) resets the flag.
+	if !s.hookOverriddenAt.IsZero() && s.hookOverriddenAt.Equal(s.hookUpdatedAt) {
+		return
+	}
+
 	// Hook says waiting — trust hooks unless pane clearly shows idle prompt.
 	//
 	// Why we allow pane override for finished only:
@@ -396,6 +422,7 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		}
 		s.lastContentHash = ""
 		s.lastContentChangeAt = time.Time{}
+		s.hookOverriddenAt = s.hookUpdatedAt // prevent re-evaluation of this stale hook
 		log.Info("hook says waiting but pane shows idle prompt, overriding to finished")
 		return
 	}
@@ -452,7 +479,7 @@ func (s *Session) applyHookFinished(paneStatus Status, log *slog.Logger) {
 func (s *Session) updateStatusFromPane(oldStatus Status, log *slog.Logger) {
 	log.Debug("no hook data, falling back to pane capture")
 
-	content, err := s.tmuxSession.CapturePane()
+	content, err := s.getCapturer().CapturePane()
 	if err != nil {
 		log.Warn("pane capture failed", "err", err)
 		return // Keep previous status on capture failure.

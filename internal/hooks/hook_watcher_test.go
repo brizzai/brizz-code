@@ -133,6 +133,45 @@ func TestHookWatcherLoadExistingNotifies(t *testing.T) {
 	}
 }
 
+func TestHookWatcherNotificationLatency(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a real HookWatcher with fsnotify (not the mock helper).
+	w, err := NewHookWatcher()
+	if err != nil {
+		t.Fatalf("NewHookWatcher: %v", err)
+	}
+	// Override hooks dir to our temp dir.
+	w.hooksDir = dir
+	go w.Start()
+	defer w.Stop()
+
+	// Give fsnotify a moment to set up the watch.
+	time.Sleep(50 * time.Millisecond)
+
+	// Write a status file and measure notification latency.
+	start := time.Now()
+	sf := &StatusFile{
+		Status:    "waiting",
+		Event:     "PermissionRequest",
+		Timestamp: time.Now().Unix(),
+	}
+	if err := WriteStatusFile(dir, "latency-test", sf); err != nil {
+		t.Fatalf("WriteStatusFile: %v", err)
+	}
+
+	select {
+	case <-w.Changes():
+		elapsed := time.Since(start)
+		t.Logf("notification latency: %v", elapsed)
+		if elapsed > 250*time.Millisecond {
+			t.Errorf("notification too slow: %v (want <250ms)", elapsed)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no notification received within 2s")
+	}
+}
+
 // newHookWatcherWithDir creates a HookWatcher pointing at a custom directory
 // (for testing without touching the real hooks dir). It loads existing files
 // but does NOT start the fsnotify event loop.

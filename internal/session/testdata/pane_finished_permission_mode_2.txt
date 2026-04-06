@@ -1,0 +1,62 @@
+
+[38;5;114m⏺[39m [1mBash[0m(gh failed-run 2>&1)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [39m23796500239
+
+[38;5;114m⏺[39m [1mBash[0m(gh run list --branch yuval/brz-934-agent-feature-brainstorm-poc --limit 3 --json databaseId,status,conclusion,headSha 2>&1)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [39m[
+       {
+         "conclusion": "",
+     [2m…[0m [2m+17[0m [2mlines[0m [2m(ctrl+o[0m [2mto[0m [2mexpand)[0m
+
+[38;5;231m⏺[39m The failed run [38;5;153m23796500239[39m is from the [1mprevious[0m [1mcommit[0m. The current commit ([38;5;153med4a5d059[39m) has 3 runs — 1 completed (success), 2 in progress. The CLI test failure is from the current run though. Let me check it:
+
+[38;5;114m⏺[39m [1mBash[0m(gh run view 23801443452 --json jobs --jq '.jobs[] | select(.conclusion == "failure") | {name: .name, id: .databaseId}' 2>&1)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m (No[39m [38;5;246moutput)[39m
+
+[38;5;114m⏺[39m [1mBash[0m(gh run view 23801443464 --json jobs --jq '.jobs[] | select(.conclusion == "failure") | {name: .name, id: .databaseId}' 2>&1)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [39m{
+       "id": 69362818374,
+       "name": "CLI Tests / Run Tests"
+     }
+
+[38;5;114m⏺[39m [1mBash[0m(gh job-logs 69362818374 2>&1 | grep -E "FAIL|Error|error|cannot|undefined" | head -20)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [39m2026-03-31T14:05:16.4619566Z go: go.mongodb.org/mongo-driver@v1.17.9: read "https://proxy.golang.org/go.mongodb.org/mongo-driver/@v/v1.17.9.zip": stream error: stream ID 2935; INTERNAL_ERROR; received from peer
+     2026-03-31T14:05:16.4662045Z make: *** [Makefile:47: deps] Error 1
+     2026-03-31T14:05:16.4688306Z ##[error]Process completed with exit code 2.
+
+[38;5;231m⏺[39m CLI test failure is a [1mflaky[0m [1mGo[0m [1mmodule[0m [1mdownload[0m — [38;5;153mstream[39m [38;5;153merror:[39m [38;5;153mINTERNAL_ERROR[39m from the Go proxy. Not related to our changes at all.
+
+  The previous run's backend failures were from a commit before we fixed the mock. Current run is still in progress — backend tests, analytics tests, and E2E haven't completed yet but linters all passed.
+
+  No action needed from us. The CLI failure is a transient network issue.
+
+[38;5;246m✻[39m [38;5;246mBaked[39m [38;5;246mfor[39m [38;5;246m1m[39m [38;5;246m49s[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mrerurn[39m
+
+[38;5;211m[49m⏺[39m [1mBash[0m(gh run rerun 23801443464 --failed 2>&1)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [38;5;211mError:[39m [38;5;211mExit[39m [38;5;211mcode[39m [38;5;211m1[39m
+     [38;5;211mrun[39m [38;5;211m23801443464[39m [38;5;211mcannot[39m [38;5;211mbe[39m [38;5;211mrerun;[39m [38;5;211mits[39m [38;5;211mworkflow[39m [38;5;211mfile[39m [38;5;211mmay[39m [38;5;211mbe[39m [38;5;211mbroken[39m
+
+[38;5;211m⏺[39m [1mBash[0m(gh run rerun 23801443464 2>&1)
+[38;5;246m  ⎿  [38;5;211mError: Exit code 1[39m
+     [38;5;211mrun 23801443464 cannot be rerun; its workflow file may be broken[39m
+
+[38;5;231m⏺[39m Can't rerun — the run is still in progress. Need to wait for it to finish first, or push an empty commit to trigger a fresh run:
+
+[38;5;114m⏺[39m [1mBash[0m(git commit --allow-empty -m "[BRZ-934] Retry CI (CLI flaky network failure)" && git push)
+[38;5;246m  ⎿  [39mtrim trailing whitespace.............................(no files to check)Skipped
+     fix end of files.....................................(no files to check)Skipped
+     check yaml...........................................(no files to check)Skipped
+     [2m… +21 lines (ctrl+o to expand)[0m
+
+[38;5;231m⏺[39m Fresh CI triggered.
+
+[38;5;244m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [36m󰧑 Opus 4.6 (1M context)[38;5;246m [90m│[38;5;246m [32m██░░░░░░░░[38;5;246m [90m│[38;5;246m [32m23%[38;5;246m [90m│[38;5;246m [35m󰍛 230.0k/1000k[38;5;246m [90m│[38;5;246m [33m yuval/brz-934-agent-feature-brainstorm-poc[38;5;246m [90m│[38;5;246m [1m[37m  anotherbrizzai[0m
+  [38;5;147m⏵⏵ accept edits on[38;5;246m (shift+tab to cycle)[39m
+
+
+
