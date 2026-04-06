@@ -19,17 +19,17 @@ type mockPane struct {
 }
 
 func (m *mockPane) CapturePane() (string, error) { return m.content, nil }
-func (m *mockPane) IsPaneDead() bool              { return m.dead }
+func (m *mockPane) IsPaneDead() bool             { return m.dead }
 
 // --- Scenario types ---
 
 // ScenarioEvent describes something that happens at a point in time.
 type ScenarioEvent struct {
-	At         time.Duration // relative to scenario start
-	Hook       string        // hook status: "running", "waiting", "finished", "dead", or "" (no change)
-	Pane       string        // pane content to set (raw string or "@fixture:filename.txt" for golden file)
-	PaneDead   bool          // simulate pane death
-	Acknowledge bool         // simulate user acknowledging the session
+	At          time.Duration // relative to scenario start
+	Hook        string        // hook status: "running", "waiting", "finished", "dead", or "" (no change)
+	Pane        string        // pane content to set (raw string or "@fixture:filename.txt" for golden file)
+	PaneDead    bool          // simulate pane death
+	Acknowledge bool          // simulate user acknowledging the session
 }
 
 // ScenarioCheck asserts the session status at a point in time.
@@ -83,10 +83,6 @@ func runScenario(t *testing.T, sc Scenario) {
 		}
 		return timeline[i].at < timeline[j].at
 	})
-
-	var scenarioStart time.Time
-	scenarioStart = time.Now()
-	_ = scenarioStart // used conceptually for time tracking
 
 	currentHook := ""
 	var hookUpdatedAt time.Time
@@ -309,13 +305,13 @@ func TestScenarioStaleWaitingHookStaysFinished(t *testing.T) {
 	runScenario(t, Scenario{
 		Name: "stale waiting hook: override stays sticky across cycles",
 		Events: []ScenarioEvent{
-			{At: 0, Hook: "waiting", Pane: idlePane},                              // first cycle: override to finished
-			{At: 2 * time.Second, Pane: slightlyDifferentPane},                    // pane changes slightly (status bar)
-			{At: 4 * time.Second, Pane: idlePane},                                 // back to original
+			{At: 0, Hook: "waiting", Pane: idlePane},                                            // first cycle: override to finished
+			{At: 2 * time.Second, Pane: slightlyDifferentPane},                                  // pane changes slightly (status bar)
+			{At: 4 * time.Second, Pane: idlePane},                                               // back to original
 			{At: 6 * time.Second, Hook: "running", Pane: "⠋ Working...\nctrl+c to interrupt\n"}, // NEW hook resets flag
 		},
 		Checks: []ScenarioCheck{
-			{At: 0, Expected: StatusFinished},         // override fires
+			{At: 0, Expected: StatusFinished},               // override fires
 			{At: 2 * time.Second, Expected: StatusFinished}, // stays finished (stale hook, skip)
 			{At: 4 * time.Second, Expected: StatusFinished}, // still finished
 			{At: 6 * time.Second, Expected: StatusRunning},  // new hook, fresh evaluation
