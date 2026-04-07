@@ -761,11 +761,13 @@ func normalizeForHash(content string) string {
 	for _, sc := range spinnerChars {
 		content = strings.ReplaceAll(content, sc, "")
 	}
-	// Trim trailing whitespace per line and collapse consecutive blank lines.
+	// Trim trailing whitespace per line, strip right-margin animations,
+	// and collapse consecutive blank lines.
 	lines := strings.Split(content, "\n")
 	var result []string
 	prevBlank := false
 	for _, line := range lines {
+		line = stripRightMargin(line)
 		line = strings.TrimRight(line, " \t")
 		blank := line == ""
 		if blank && prevBlank {
@@ -775,6 +777,26 @@ func normalizeForHash(content string) string {
 		prevBlank = blank
 	}
 	return strings.Join(result, "\n")
+}
+
+// stripRightMargin truncates a line at the first run of 20+ consecutive spaces.
+// Claude Code renders animated elements (whimsical creature, etc.) at the far
+// right of the terminal, separated from real content by long space runs.
+// Stripping these prevents animations from affecting content hash stability.
+func stripRightMargin(line string) string {
+	const threshold = 20
+	count := 0
+	for i := 0; i < len(line); i++ {
+		if line[i] == ' ' {
+			count++
+			if count >= threshold {
+				return line[:i-threshold+1]
+			}
+		} else {
+			count = 0
+		}
+	}
+	return line
 }
 
 // hashContent returns a truncated SHA256 hash (16 hex chars) of the content.

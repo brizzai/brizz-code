@@ -145,4 +145,21 @@ func TestNormalizeForHash(t *testing.T) {
 	if strings.Contains(result, "\n\n\n") {
 		t.Errorf("normalizeForHash should collapse consecutive blank lines, got: %q", result)
 	}
+
+	// Should strip right-margin creature animation (20+ spaces → truncate).
+	lineWithCreature := "❯ my prompt text" + strings.Repeat(" ", 50) + "( .--. )"
+	result = normalizeForHash(lineWithCreature)
+	if strings.Contains(result, "( .--. )") {
+		t.Errorf("normalizeForHash should strip right-margin content, got: %q", result)
+	}
+	if !strings.Contains(result, "❯ my prompt text") {
+		t.Errorf("normalizeForHash should preserve left content, got: %q", result)
+	}
+
+	// Content without long space runs should be unchanged.
+	normalLine := "some code with    spaces"
+	result = normalizeForHash(normalLine)
+	if result != normalLine {
+		t.Errorf("normalizeForHash should not strip short space runs, got: %q", result)
+	}
 }
