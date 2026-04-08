@@ -130,12 +130,12 @@ func (d *BugReportDialog) openGitHubIssue(description string) tea.Cmd {
 			debuglog.Logger.Error("bug report: failed to create temp file", "err", err)
 			return bugReportOpenErrMsg{err: err}
 		}
+		defer os.Remove(tmpFile.Name())
 		if _, err := tmpFile.WriteString(body); err != nil {
 			tmpFile.Close()
 			return bugReportOpenErrMsg{err: err}
 		}
 		tmpFile.Close()
-		defer os.Remove(tmpFile.Name())
 
 		// Create issue via API (no URL length limit), then open in browser.
 		cmd := exec.Command("gh", "issue", "create",
