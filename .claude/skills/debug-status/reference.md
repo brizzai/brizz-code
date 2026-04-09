@@ -106,6 +106,23 @@ All in `~/.config/brizz-code/debug.log`:
 | `content changed while waiting` | Content hash changed during waiting state |
 | `content stable >10s` | Content hasn't changed for 10s during running state |
 
+## Status Snapshots
+
+Secret `D` hotkey captures a point-in-time diagnostic snapshot of the selected session.
+
+Location: `~/.config/brizz-code/snapshots/<timestamp>_<title>/`
+
+| File | Contents |
+|------|----------|
+| `pane_raw.txt` | Raw ANSI pane capture (copy to `testdata/` for golden tests) |
+| `pane_clean.txt` | ANSI-stripped for human reading |
+| `snapshot.json` | Session state, hook state, content tracking, pane detection, `mismatch` flag |
+| `debug_tail.txt` | Last 100 debug.log lines filtered for this session |
+
+The `snapshot.json` `detection.mismatch` field is `true` when pane detection disagrees with the TUI status — the key signal for status bugs.
+
+Implementation: `internal/ui/snapshot.go` (capture logic), `internal/session/session.go` `SnapshotData()` (state export).
+
 ## Hook Status Files
 
 Location: `~/.config/brizz-code/hooks/<instance_id>.json`

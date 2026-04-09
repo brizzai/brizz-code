@@ -26,6 +26,25 @@ Claude Code → hook event → hook-handler binary → status file → fsnotify 
 
 At each stage, ask: **what does this stage think the status is, and is it correct?**
 
+## Step 0: Check for snapshots (only if user mentions they took one)
+
+If the user says they captured a snapshot with the `D` hotkey, check it first. Pick the most recent one matching the timeframe they describe:
+
+```bash
+ls -lt ~/.config/brizz-code/snapshots/ | head -10
+```
+
+Then read the snapshot — it contains everything you need:
+
+```bash
+cat ~/.config/brizz-code/snapshots/<dir>/snapshot.json   # Session state, hook, detection, mismatch flag
+cat ~/.config/brizz-code/snapshots/<dir>/pane_clean.txt   # Human-readable pane content
+cat ~/.config/brizz-code/snapshots/<dir>/debug_tail.txt   # Last 100 debug log lines for this session
+# pane_raw.txt = ANSI-preserved capture, ready to copy to testdata/ for golden tests
+```
+
+The `snapshot.json` `detection.mismatch` field tells you immediately if pane detection disagrees with the TUI status. If a snapshot is available, you can often skip directly to Step 3 (Find the divergence).
+
 ## Step 1: Identify the session
 
 Ask the user: which session, what status they see, what they expect.

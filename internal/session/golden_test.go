@@ -10,7 +10,7 @@ import (
 )
 
 // Golden file tests: real ANSI pane captures from tmux, tested through the
-// full detection pipeline (stripANSI → extractRecentLines → detectStatus).
+// full detection pipeline (StripANSI → extractRecentLines → detectStatus).
 //
 // To add a regression test when a bug is found:
 //   1. tmux capture-pane -t <session> -p -e > internal/session/testdata/<name>.txt
@@ -38,7 +38,7 @@ func TestGoldenDetection(t *testing.T) {
 			}
 
 			raw := string(data)
-			stripped := stripANSI(raw)
+			stripped := StripANSI(raw)
 
 			log := debuglog.Logger
 			result := detectStatus(stripped, log)
@@ -62,7 +62,7 @@ func TestGoldenDetection(t *testing.T) {
 	}
 }
 
-// TestGoldenANSIStripping verifies that stripANSI produces clean output
+// TestGoldenANSIStripping verifies that StripANSI produces clean output
 // from real ANSI captures (no escape sequences remain).
 func TestGoldenANSIStripping(t *testing.T) {
 	entries, err := os.ReadDir("testdata")
@@ -80,7 +80,7 @@ func TestGoldenANSIStripping(t *testing.T) {
 				t.Fatalf("failed to load %s: %v", entry.Name(), err)
 			}
 
-			stripped := stripANSI(string(data))
+			stripped := StripANSI(string(data))
 
 			if strings.ContainsRune(stripped, '\x1b') {
 				t.Errorf("stripped output still contains ESC (\\x1b)")

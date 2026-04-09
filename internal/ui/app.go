@@ -97,6 +97,8 @@ type Home struct {
 	isAttaching atomic.Bool
 	err         error
 	errTime     time.Time
+	infoMsg     string
+	infoTime    time.Time
 
 	newDialog             *NewSessionDialog
 	confirmDialog         *ConfirmDialog
@@ -390,6 +392,14 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		select {
 		case h.statusTrigger <- struct{}{}:
 		default:
+		}
+		return h, nil
+
+	case statusSnapshotMsg:
+		if msg.err != nil {
+			h.setError(fmt.Errorf("snapshot: %w", msg.err))
+		} else {
+			h.setInfo("Snapshot saved: " + msg.path)
 		}
 		return h, nil
 
@@ -762,8 +772,14 @@ func (h *Home) View() string {
 		lineCount += 2
 	}
 
-	// Error message (overwrites last line if present).
-	if h.err != nil && time.Since(h.errTime) < 5*time.Second {
+	// Info/error flash message (most recent wins, overwrites last line).
+	showInfo := h.infoMsg != "" && time.Since(h.infoTime) < 5*time.Second
+	showErr := h.err != nil && time.Since(h.errTime) < 5*time.Second
+	if showInfo && (!showErr || h.infoTime.After(h.errTime)) {
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(" " + h.infoMsg))
+		lineCount++
+	} else if showErr {
 		b.WriteString("\n")
 		b.WriteString(ErrorStyle.Render(" " + h.err.Error()))
 		lineCount++
@@ -1018,6 +1034,15 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog, h.width, h.height, &h.renderStats, time.Since(h.startTime))
 		analytics.Track(analytics.EventBugReportOpened, nil)
 		return h, nil
+	case "D":
+		s := h.selectedSession()
+		if s == nil {
+			return h, nil
+		}
+		h.actionLog.Add("status snapshot", s.Title, true)
+		return h, func() tea.Msg {
+			return captureStatusSnapshot(s, s.ID)
+		}
 	case "?":
 		h.helpOverlay.Show()
 		return h, nil
@@ -2148,6 +2173,11 @@ func (h *Home) setError(err error) {
 			"category": strings.SplitN(err.Error(), ":", 2)[0],
 		})
 	}
+}
+
+func (h *Home) setInfo(msg string) {
+	h.infoMsg = msg
+	h.infoTime = time.Now()
 }
 
 // ensureExactHeight pads or truncates content to exactly n lines.

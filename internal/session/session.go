@@ -333,7 +333,7 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 	var paneContent string
 	var paneStatus Status
 	if content, err := s.getCapturer().CapturePane(); err == nil {
-		paneContent = stripANSI(content)
+		paneContent = StripANSI(content)
 		paneStatus = detectStatus(paneContent, log)
 	}
 
@@ -485,7 +485,7 @@ func (s *Session) updateStatusFromPane(oldStatus Status, log *slog.Logger) {
 		return // Keep previous status on capture failure.
 	}
 
-	content = stripANSI(content)
+	content = StripANSI(content)
 	status := detectStatus(content, log)
 
 	s.mu.Lock()
@@ -533,6 +533,52 @@ func (s *Session) ToRow() *SessionRow {
 		TitleGenerated:  s.TitleGenerated,
 		PromptCount:     s.PromptCount,
 	}
+}
+
+// StatusSnapshot holds internal diagnostic data for debugging status mismatches.
+type StatusSnapshot struct {
+	ID              string
+	Title           string
+	ProjectPath     string
+	TmuxSessionName string
+	ClaudeSessionID string
+
+	Status       Status
+	Acknowledged bool
+
+	HookStatus       string
+	HookUpdatedAt    time.Time
+	HookOverriddenAt time.Time
+
+	LastContentHash     string
+	LastContentChangeAt time.Time
+
+	DetectedPaneStatus Status // what detectStatus returns on the raw pane right now
+}
+
+// SnapshotData captures a point-in-time copy of all internal status fields.
+// rawPane should be the ANSI-preserved pane capture. detectStatus is called
+// outside the lock to avoid potential deadlocks from logging.
+func (s *Session) SnapshotData(rawPane string) StatusSnapshot {
+	s.mu.RLock()
+	snap := StatusSnapshot{
+		ID:                  s.ID,
+		Title:               s.Title,
+		ProjectPath:         s.ProjectPath,
+		TmuxSessionName:     s.TmuxSessionName,
+		ClaudeSessionID:     s.ClaudeSessionID,
+		Status:              s.Status,
+		Acknowledged:        s.Acknowledged,
+		HookStatus:          s.hookStatus,
+		HookUpdatedAt:       s.hookUpdatedAt,
+		HookOverriddenAt:    s.hookOverriddenAt,
+		LastContentHash:     s.lastContentHash,
+		LastContentChangeAt: s.lastContentChangeAt,
+	}
+	s.mu.RUnlock()
+
+	snap.DetectedPaneStatus = detectStatus(StripANSI(rawPane), debuglog.Logger)
+	return snap
 }
 
 // FromRow reconstructs a Session from a storage row, reconnecting to tmux.
@@ -756,7 +802,7 @@ func detectFinished(recentLines []string, recentContent string, log *slog.Logger
 // normalizeForHash normalizes pane content for stable hashing.
 // Strips ANSI, spinner chars, trailing whitespace, and collapses blank lines.
 func normalizeForHash(content string) string {
-	content = stripANSI(content)
+	content = StripANSI(content)
 	// Strip spinner characters.
 	for _, sc := range spinnerChars {
 		content = strings.ReplaceAll(content, sc, "")
@@ -841,9 +887,9 @@ func hashContent(content string) string {
 	return fmt.Sprintf("%x", h[:8])
 }
 
-// stripANSI removes ANSI escape sequences from content.
+// StripANSI removes ANSI escape sequences from content.
 // Uses O(n) single-pass algorithm to avoid regex backtracking issues.
-func stripANSI(content string) string {
+func StripANSI(content string) string {
 	// Fast path: no escape chars.
 	if !strings.ContainsRune(content, '\x1b') && !strings.ContainsRune(content, '\x9B') {
 		return content
