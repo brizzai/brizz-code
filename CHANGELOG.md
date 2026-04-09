@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-04-09
 
+## [1.2.0] - 2026-04-09
+
 ### Added
 
 - Agent team status detection: sub-agent permission prompts and "Waiting for team lead approval" now correctly show as waiting
@@ -61,6 +63,7 @@ Initial open-source release.
 - Changelog check on PRs with `/no-changelog` escape hatch
 
 [Unreleased]: https://github.com/brizzai/brizz-code/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.2.0
 [1.2.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.2.0
 [1.1.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.1.0
 [1.0.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.0.0
