@@ -761,9 +761,27 @@ func normalizeForHash(content string) string {
 	for _, sc := range spinnerChars {
 		content = strings.ReplaceAll(content, sc, "")
 	}
+	lines := strings.Split(content, "\n")
+
+	// Strip UI chrome: Claude Code renders input line, separators, and status bar
+	// at the bottom with animated elements (creature). Find the second-to-last
+	// separator line (the one ABOVE the input line) and cut everything from there.
+	// Layout: content | separator₁ | ❯ input | separator₂ | status bar
+	cutoff := len(lines)
+	separatorsFromBottom := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if isSeparatorLine(lines[i]) {
+			separatorsFromBottom++
+			if separatorsFromBottom >= 2 {
+				cutoff = i
+				break
+			}
+		}
+	}
+	lines = lines[:cutoff]
+
 	// Trim trailing whitespace per line, strip right-margin animations,
 	// and collapse consecutive blank lines.
-	lines := strings.Split(content, "\n")
 	var result []string
 	prevBlank := false
 	for _, line := range lines {
@@ -777,6 +795,24 @@ func normalizeForHash(content string) string {
 		prevBlank = blank
 	}
 	return strings.Join(result, "\n")
+}
+
+// isSeparatorLine checks if a line is predominantly box-drawing characters (─━═╌).
+// These separator lines mark the boundary between content and UI chrome in Claude Code.
+func isSeparatorLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) < 20 {
+		return false
+	}
+	boxChars := 0
+	total := 0
+	for _, r := range trimmed {
+		total++
+		if r == '─' || r == '━' || r == '═' || r == '╌' {
+			boxChars++
+		}
+	}
+	return total > 0 && boxChars*100/total >= 70
 }
 
 // stripRightMargin truncates a line at the first run of 20+ consecutive spaces.
