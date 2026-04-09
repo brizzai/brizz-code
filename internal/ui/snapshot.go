@@ -72,20 +72,20 @@ func buildSnapshotJSON(snap session.StatusSnapshot, hookFileRaw []byte, hookFile
 	m := map[string]any{
 		"captured_at": now.Format(time.RFC3339Nano),
 		"session": map[string]any{
-			"id":               snap.ID,
-			"title":            snap.Title,
-			"project_path":     snap.ProjectPath,
-			"tmux_session":     snap.TmuxSessionName,
+			"id":                snap.ID,
+			"title":             snap.Title,
+			"project_path":      snap.ProjectPath,
+			"tmux_session":      snap.TmuxSessionName,
 			"claude_session_id": snap.ClaudeSessionID,
-			"status":           string(snap.Status),
-			"acknowledged":     snap.Acknowledged,
+			"status":            string(snap.Status),
+			"acknowledged":      snap.Acknowledged,
 		},
 	}
 
 	hookMap := map[string]any{
-		"status":       snap.HookStatus,
-		"updated_at":   snap.HookUpdatedAt.Format(time.RFC3339),
-		"age":          fmtSnapshotDuration(now.Sub(snap.HookUpdatedAt)),
+		"status":        snap.HookStatus,
+		"updated_at":    snap.HookUpdatedAt.Format(time.RFC3339),
+		"age":           fmtSnapshotDuration(now.Sub(snap.HookUpdatedAt)),
 		"overridden_at": snap.HookOverriddenAt.Format(time.RFC3339),
 	}
 	if len(hookFileRaw) > 0 {
