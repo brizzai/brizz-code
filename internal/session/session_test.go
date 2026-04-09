@@ -63,6 +63,8 @@ func TestDetectStatus(t *testing.T) {
 		{"prompt indicator ❯", "❯\n", StatusFinished},
 		{"prompt with space", "> \n", StatusFinished},
 		{"idle pattern", "⏵⏵\n", StatusFinished},
+		{"spinner char mid-line not matched", "⏺ The test checks that ⠋ is gone\n❯\n", StatusFinished},
+		{"busy pattern in scrollback not matched", "1. Busy patterns → Running (`ctrl+c to interrupt`, `esc to interrupt`)\nmore text\nmore text\nmore text\nmore text\nmore text\n❯\n", StatusFinished},
 		{"no match", "random output text\nmore text\n", ""},
 	}
 
@@ -134,11 +136,11 @@ func TestHashContent(t *testing.T) {
 }
 
 func TestNormalizeForHash(t *testing.T) {
-	// Should strip spinner chars.
+	// Should remove entire lines containing spinner chars.
 	input := "⠋ Working on task\n\n\n\nDone"
 	result := normalizeForHash(input)
-	if strings.Contains(result, "⠋") {
-		t.Errorf("normalizeForHash should strip spinner chars")
+	if strings.Contains(result, "Working on task") {
+		t.Errorf("normalizeForHash should remove spinner lines entirely, got: %q", result)
 	}
 
 	// Should collapse consecutive blank lines (3+ newlines -> 2 newlines).

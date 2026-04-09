@@ -50,7 +50,7 @@ Scans last 50 non-empty lines of `tmux capture-pane` output after ANSI stripping
 
 **Priority order** (first match wins):
 1. Busy patterns → Running (`ctrl+c to interrupt`, `esc to interrupt`)
-2. Spinner characters → Running (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✳✽✶✢) — **skips lines containing "waiting for"**
+2. Spinner characters → Running (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✳✽✶✢) — **line-start only** (`HasPrefix` after trim), skips "waiting for" lines
 3. Whimsical activity (`· ↓` + `tokens` on same line) → Running
 4. Structural waiting checks (bottom 15 lines only) → Waiting:
    - Menu structure: `❯ 1.` + `2.` + `Esc to cancel` all present

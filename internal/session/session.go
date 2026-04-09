@@ -679,11 +679,14 @@ func extractRecentLines(lines []string, n int) []string {
 }
 
 // detectRunning checks for busy indicators, spinner chars, and whimsical activity patterns.
-func detectRunning(recentLines []string, recentContent string, log *slog.Logger) Status {
-	lowerContent := strings.ToLower(recentContent)
-
+func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
+	// Busy patterns only in bottom 5 lines — "ctrl+c to interrupt" always appears
+	// near the bottom. Checking all 50 lines false-positives on conversation text
+	// that discusses these patterns (meta-problem).
+	bottomN := min(5, len(recentLines))
+	bottomContent := strings.ToLower(strings.Join(recentLines[:bottomN], "\n"))
 	for _, pattern := range busyPatterns {
-		if strings.Contains(lowerContent, pattern) {
+		if strings.Contains(bottomContent, pattern) {
 			log.Debug("detectStatus: matched busy pattern", "pattern", pattern)
 			return StatusRunning
 		}
@@ -691,7 +694,7 @@ func detectRunning(recentLines []string, recentContent string, log *slog.Logger)
 
 	for _, line := range recentLines {
 		for _, sc := range spinnerChars {
-			if strings.Contains(line, sc) {
+			if strings.HasPrefix(strings.TrimSpace(line), sc) {
 				// Don't treat spinner chars as running if they're part of a
 				// team waiting indicator (e.g. "✢  Waiting for team lead approval").
 				lowerLine := strings.ToLower(line)
@@ -705,7 +708,9 @@ func detectRunning(recentLines []string, recentContent string, log *slog.Logger)
 	}
 
 	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)").
-	for _, line := range recentLines {
+	// Only check bottom 10 lines — the token counter line is always near the bottom.
+	whimsicalN := min(10, len(recentLines))
+	for _, line := range recentLines[:whimsicalN] {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "· ↓") && strings.Contains(lower, "tokens") {
 			log.Debug("detectStatus: matched whimsical activity pattern", "line", line)
@@ -800,14 +805,28 @@ func detectFinished(recentLines []string, recentContent string, log *slog.Logger
 }
 
 // normalizeForHash normalizes pane content for stable hashing.
-// Strips ANSI, spinner chars, trailing whitespace, and collapses blank lines.
+// Removes spinner lines, trailing whitespace, UI chrome, and collapses blank lines.
 func normalizeForHash(content string) string {
 	content = StripANSI(content)
-	// Strip spinner characters.
-	for _, sc := range spinnerChars {
-		content = strings.ReplaceAll(content, sc, "")
-	}
 	lines := strings.Split(content, "\n")
+
+	// Remove lines containing spinner characters entirely (not just the char).
+	// These are activity indicator lines with ephemeral whimsical words
+	// ("Seasoning…", "Thinking…") that change every few seconds.
+	filtered := lines[:0]
+	for _, line := range lines {
+		hasSpinner := false
+		for _, sc := range spinnerChars {
+			if strings.Contains(line, sc) {
+				hasSpinner = true
+				break
+			}
+		}
+		if !hasSpinner {
+			filtered = append(filtered, line)
+		}
+	}
+	lines = filtered
 
 	// Strip UI chrome: Claude Code renders input line, separators, and status bar
 	// at the bottom with animated elements (creature). Find the second-to-last
