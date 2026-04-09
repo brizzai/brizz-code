@@ -49,15 +49,34 @@ Read the actual code for current behavior — it changes as bugs are fixed.
 Scans last 50 non-empty lines of `tmux capture-pane` output after ANSI stripping.
 
 **Priority order** (first match wins):
-1. Busy patterns → Running
-2. Spinner characters → Running
-3. Whimsical activity (… + tokens) → Running
-4. Approval patterns → Waiting
+1. Busy patterns → Running (`ctrl+c to interrupt`, `esc to interrupt`)
+2. Spinner characters → Running (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✳✽✶✢) — **line-start only** (`HasPrefix` after trim), skips "waiting for" lines
+3. Whimsical activity (`· ↓` + `tokens` on same line) → Running
+4. Structural waiting checks (bottom 15 lines only) → Waiting:
+   - Menu structure: `❯ 1.` + `2.` + `Esc to cancel` all present
+   - Team box: line starting with `│` containing `Waiting for team lead`
+   - Text fallback: `Yes, allow once`, `No, and tell Claude`, `Do you trust the files`, `Allow this MCP server`
 5. Prompt indicators (❯ or >) → Finished
 6. Idle patterns → Finished
 7. No match → unknown (keeps previous)
 
 **Fundamental limitation**: Pane is a flat text buffer. It contains stale content from previous turns mixed with current state. Pattern matching cannot reliably distinguish current from stale.
+
+## Agent Team Status Detection
+
+Sub-agents (Claude agent team feature) don't fire hooks. The parent fires `Stop` when delegating, then the sub-agent operates independently. This creates a gap where hooks say "finished" but the session is actually waiting.
+
+**How it works:**
+- `applyHookFinished` checks paneStatus: if waiting → override to waiting
+- `detectWaiting` uses structural checks (not text patterns) to avoid false-positives
+- `detectRunning` skips spinner chars on "waiting for" lines (team box has animated spinner)
+- `applyHookRunning` does NOT override to waiting (false-positives from code in scrollback)
+
+**Common false-positive sources for waiting detection:**
+- Code diffs containing approval pattern strings (`(Y/n)`, `Continue?`)
+- Conversation text discussing detection patterns (meta-problem)
+- User numbered list input matching menu structure (`❯ 1. first item`, `2. second item`)
+- Fix: structural checks require multiple co-occurring cues, checked only near bottom of pane
 
 ## Key Files
 
@@ -81,8 +100,28 @@ All in `~/.config/brizz-code/debug.log`:
 | `status changed (hook)` | UpdateStatus changed status based on hook data |
 | `status changed (pane)` | UpdateStatus changed status based on pane capture |
 | `detectStatus: matched ...` | What pane pattern was detected |
+| `hook says finished but pane shows running` | Pane override: spinner detected with stale finished hook |
+| `hook says finished but pane shows waiting` | Pane override: team/sub-agent waiting with stale finished hook |
+| `hook says waiting but pane shows idle prompt` | Stale waiting hook overridden by idle pane |
 | `content changed while waiting` | Content hash changed during waiting state |
 | `content stable >10s` | Content hasn't changed for 10s during running state |
+
+## Status Snapshots
+
+Secret `D` hotkey captures a point-in-time diagnostic snapshot of the selected session.
+
+Location: `~/.config/brizz-code/snapshots/<timestamp>_<title>/`
+
+| File | Contents |
+|------|----------|
+| `pane_raw.txt` | Raw ANSI pane capture (copy to `testdata/` for golden tests) |
+| `pane_clean.txt` | ANSI-stripped for human reading |
+| `snapshot.json` | Session state, hook state, content tracking, pane detection, `mismatch` flag |
+| `debug_tail.txt` | Last 100 debug.log lines filtered for this session |
+
+The `snapshot.json` `detection.mismatch` field is `true` when pane detection disagrees with the TUI status — the key signal for status bugs.
+
+Implementation: `internal/ui/snapshot.go` (capture logic), `internal/session/session.go` `SnapshotData()` (state export).
 
 ## Hook Status Files
 

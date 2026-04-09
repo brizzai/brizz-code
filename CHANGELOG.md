@@ -7,15 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Terminal environment and rendering stats in bug reports to help diagnose scroll/rendering issues
-
-### Fixed
-
-- "Last used" time now updates on all interactions (approve, restart, new prompt), not just attach
-- Bug report dialog freezing permanently when `gh` CLI is not installed
-- Session stuck at "waiting" status after user interrupts/escapes a permission prompt
 
 ## [1.1.0] - 2026-03-21
 
