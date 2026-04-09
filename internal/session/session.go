@@ -448,6 +448,11 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		s.lastContentChangeAt = time.Now()
 		s.Status = StatusRunning
 		log.Info("content changed while waiting, assuming running")
+	} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) < 15*time.Second {
+		// Content recently changed — stay running to prevent flicker.
+		// Claude outputs in bursts; between bursts the hash is the same for a tick,
+		// causing oscillation back to waiting. The 15s cooldown covers burst gaps.
+		s.Status = StatusRunning
 	}
 }
 
