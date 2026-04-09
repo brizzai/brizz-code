@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-09
+
+### Added
+
+- Agent team status detection: sub-agent permission prompts and "Waiting for team lead approval" now correctly show as waiting
+- Command palette (`:` or `Ctrl+P`) — fuzzy-searchable list of all actions with shortcut hints, plus "Reload All Sessions" for bulk restart of dead/error sessions
+- Terminal environment and rendering stats in bug reports to help diagnose scroll/rendering issues
+
+### Improved
+
+- Status updates now respond in ~150ms instead of up to 2s via event-driven hook notifications
+
+### Fixed
+
+- Agent team sessions showing idle/running instead of waiting when sub-agent needs approval
+- Bug report dialog freezing permanently when `gh` CLI is not installed
+- "Last used" time now updates on all interactions (approve, restart, new prompt), not just attach
+- Status showing stale data immediately after detaching from a session
+- Status oscillating between idle and finished when stale waiting hook is present
+- Session stuck at "waiting" status after user interrupts/escapes a permission prompt
+
 
 ## [1.1.0] - 2026-03-21
 
@@ -39,6 +60,7 @@ Initial open-source release.
 - `/ship` release workflow — comment `/ship` on any issue or PR to release
 - Changelog check on PRs with `/no-changelog` escape hatch
 
-[Unreleased]: https://github.com/brizzai/brizz-code/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/brizzai/brizz-code/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.2.0
 [1.1.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.1.0
 [1.0.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.0.0
