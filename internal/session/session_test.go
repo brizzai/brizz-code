@@ -27,9 +27,9 @@ func TestStripANSI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := stripANSI(tt.input)
+			got := StripANSI(tt.input)
 			if got != tt.want {
-				t.Errorf("stripANSI(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("StripANSI(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -49,12 +49,22 @@ func TestDetectStatus(t *testing.T) {
 		{"spinner char", "⠋ Working...\n", StatusRunning},
 		{"whimsical pattern", "Clauding… (53s · ↓ 749 tokens)\n", StatusRunning},
 		{"approval yes allow", "some text\nYes, allow once\n", StatusWaiting},
-		{"approval continue", "Continue?\n", StatusWaiting},
-		{"approval yn", "(Y/n)\n", StatusWaiting},
+		{"approval no tell claude", "No, and tell Claude\n❯\n", StatusWaiting},
+		{"permission menu 3 options", "output\n❯ 1. Yes\n  2. Yes, during this session\n  3. No\nEsc to cancel · Tab to amend\n", StatusWaiting},
+		{"permission menu 2 options", "output\n❯ 1. Yes\n  2. No\nEsc to cancel\n", StatusWaiting},
+		{"user numbered list not menu", "❯ 1. issue_type for issues\n2. for issue type that are\n❯\n⏵⏵\n", StatusFinished},
+		{"subagent permission prompt", "Read(~/code/foo/bar.ts)\n\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, during this session\n  3. No\n\nEsc to cancel · Tab to amend\n", StatusWaiting},
+		{"team waiting box", "│ ✢  Waiting for team lead approval │\n│ ⏺ @explore │\n│ Permission request sent to team \"my-team\" leader │\n❯ \n⏵⏵\n", StatusWaiting},
+		{"team waiting text without box not matched", "Waiting for team lead approval\n❯ \n⏵⏵\n", StatusFinished},
+		{"team waiting mid-line box not matched", "caught by the box check (│ + Waiting for team lead on same line)\n❯ \n⏵⏵\n", StatusFinished},
+		{"menu line without full structure not matched", "❯ 1. some list item\nother text\n❯\n", StatusFinished},
+		{"yn pattern in code not matched", "code with (Y/n) in diff\n❯\n", StatusFinished},
 		{"prompt indicator >", "output\n>\n", StatusFinished},
 		{"prompt indicator ❯", "❯\n", StatusFinished},
 		{"prompt with space", "> \n", StatusFinished},
 		{"idle pattern", "⏵⏵\n", StatusFinished},
+		{"spinner char mid-line not matched", "⏺ The test checks that ⠋ is gone\n❯\n", StatusFinished},
+		{"busy pattern in scrollback not matched", "1. Busy patterns → Running (`ctrl+c to interrupt`, `esc to interrupt`)\nmore text\nmore text\nmore text\nmore text\nmore text\n❯\n", StatusFinished},
 		{"no match", "random output text\nmore text\n", ""},
 	}
 
@@ -126,15 +136,32 @@ func TestHashContent(t *testing.T) {
 }
 
 func TestNormalizeForHash(t *testing.T) {
-	// Should strip spinner chars.
+	// Should remove entire lines containing spinner chars.
 	input := "⠋ Working on task\n\n\n\nDone"
 	result := normalizeForHash(input)
-	if strings.Contains(result, "⠋") {
-		t.Errorf("normalizeForHash should strip spinner chars")
+	if strings.Contains(result, "Working on task") {
+		t.Errorf("normalizeForHash should remove spinner lines entirely, got: %q", result)
 	}
 
 	// Should collapse consecutive blank lines (3+ newlines -> 2 newlines).
 	if strings.Contains(result, "\n\n\n") {
 		t.Errorf("normalizeForHash should collapse consecutive blank lines, got: %q", result)
+	}
+
+	// Should strip right-margin creature animation (20+ spaces → truncate).
+	lineWithCreature := "❯ my prompt text" + strings.Repeat(" ", 50) + "( .--. )"
+	result = normalizeForHash(lineWithCreature)
+	if strings.Contains(result, "( .--. )") {
+		t.Errorf("normalizeForHash should strip right-margin content, got: %q", result)
+	}
+	if !strings.Contains(result, "❯ my prompt text") {
+		t.Errorf("normalizeForHash should preserve left content, got: %q", result)
+	}
+
+	// Content without long space runs should be unchanged.
+	normalLine := "some code with    spaces"
+	result = normalizeForHash(normalLine)
+	if result != normalLine {
+		t.Errorf("normalizeForHash should not strip short space runs, got: %q", result)
 	}
 }

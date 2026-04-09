@@ -26,6 +26,25 @@ Claude Code → hook event → hook-handler binary → status file → fsnotify 
 
 At each stage, ask: **what does this stage think the status is, and is it correct?**
 
+## Step 0: Check for snapshots (only if user mentions they took one)
+
+If the user says they captured a snapshot with the `D` hotkey, check it first. Pick the most recent one matching the timeframe they describe:
+
+```bash
+ls -lt ~/.config/brizz-code/snapshots/ | head -10
+```
+
+Then read the snapshot — it contains everything you need:
+
+```bash
+cat ~/.config/brizz-code/snapshots/<dir>/snapshot.json   # Session state, hook, detection, mismatch flag
+cat ~/.config/brizz-code/snapshots/<dir>/pane_clean.txt   # Human-readable pane content
+cat ~/.config/brizz-code/snapshots/<dir>/debug_tail.txt   # Last 100 debug log lines for this session
+# pane_raw.txt = ANSI-preserved capture, ready to copy to testdata/ for golden tests
+```
+
+The `snapshot.json` `detection.mismatch` field tells you immediately if pane detection disagrees with the TUI status. If a snapshot is available, you can often skip directly to Step 3 (Find the divergence).
+
 ## Step 1: Identify the session
 
 Ask the user: which session, what status they see, what they expect.
@@ -92,7 +111,27 @@ Build a timeline of events. Look for:
 - **Rapid oscillation**: Status bouncing between two states every few seconds
 - **Unexpected sequences**: Events in wrong order, missing expected events
 
-## Step 5: Go deeper if needed
+## Step 5: Check for agent team scenarios
+
+If the session uses Claude's agent team feature (sub-agents, `Explore(...)`, `@agent-name`):
+
+**Key symptoms:**
+- Hook file shows `Stop/finished` but pane shows a sub-agent permission prompt or "Waiting for team lead approval"
+- Status oscillates between running/idle/finished (spinner on "waiting for" line intermittently matches)
+- Hook is very stale (hookAge >> minutes) — parent delegated long ago, no new hooks from sub-agent
+
+**What to check:**
+- Does the pane show a numbered menu (`❯ 1. Yes`, `2. No`) with `Esc to cancel`? → Should be waiting
+- Does the pane show a box (`│ ✻ Waiting for team lead approval │`)? → Should be waiting
+- Is the spinner char on a line containing "waiting for"? → Should be skipped by detectRunning
+- Is there text containing approval patterns (`(Y/n)`, menu text) in code diffs or conversation output? → False positive source
+
+**Common agent team false-positives:**
+- User typed a numbered list as input (`❯ 1. first item`) → looks like permission menu
+- Session is editing/discussing status detection code → approval patterns appear in scrollback
+- Fix: structural checks require `Esc to cancel` for menu detection, `│` at line start for team box
+
+## Step 6: Go deeper if needed
 
 **Claude conversation log** (verify user actions):
 ```
@@ -125,3 +164,57 @@ After diagnosis, report:
 3. **Timeline**: Key events with timestamps showing where things went wrong
 4. **Root cause**: Why that stage produced wrong output
 5. **Recommended fix**: What would prevent this (code change, additional logging, etc.)
+
+## Step 7: Add regression test
+
+Every status bug should become a test so it never recurs. The project has two test frameworks for this:
+
+### Golden file test (detection bugs)
+
+For bugs where the pane content was misclassified (wrong `detectStatus` result):
+
+1. **Capture the pane** that triggered the bug:
+   ```bash
+   tmux capture-pane -t <tmux_session_name> -p -e > internal/session/testdata/<bug-name>.txt
+   ```
+   The `-e` flag preserves ANSI escape codes — critical for testing the full `stripANSI → detectStatus` pipeline.
+
+2. **Add a test entry** in `internal/session/golden_test.go`:
+   ```go
+   {"<bug-name>.txt", StatusWaiting, "description of what this pane shows"},
+   ```
+
+3. **Verify**: `go test -run TestGoldenDetection -v ./internal/session/` — should FAIL before fix, PASS after.
+
+### Scenario test (state transition bugs)
+
+For bugs where the status machine transitioned incorrectly (e.g., hook said waiting but `applyHookWaiting` overrode to finished):
+
+1. **Add a scenario** in `internal/session/scenario_test.go`:
+   ```go
+   func TestScenarioBugName(t *testing.T) {
+       runScenario(t, Scenario{
+           Name: "description of the bug",
+           Events: []ScenarioEvent{
+               {At: 0, Hook: "waiting", Pane: "content or @fixture:file.txt"},
+               // ... sequence of events that trigger the bug
+           },
+           Checks: []ScenarioCheck{
+               {At: 0, Expected: StatusWaiting},
+               // ... expected status at each point
+           },
+       })
+   }
+   ```
+
+2. **Scenario events** can set: hook status (`Hook`), pane content (`Pane`), pane death (`PaneDead`), user acknowledgement (`Acknowledge`). Pane content can reference a golden fixture with `"@fixture:filename.txt"`.
+
+3. **Scenario checks** assert the session status at a given time offset. The replay engine calls `UpdateStatus()` at each check point using a mock pane capturer (no real tmux needed).
+
+4. **Verify**: `go test -run TestScenarioBugName -v ./internal/session/` — should FAIL before fix, PASS after.
+
+### Which to use?
+
+- **Detection misclassification** (detectStatus returns wrong status for given pane content) → Golden file test
+- **State transition error** (correct detection but wrong status due to hook/pane interaction, timing, acknowledged flag) → Scenario test
+- **Both** → Add both: golden fixture for the pane + scenario for the transition sequence

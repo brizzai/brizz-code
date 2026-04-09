@@ -18,22 +18,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check CHANGELOG.md was modified
+      - name: Check for changelog fragment
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
 
-          if git diff --name-only "$BASE" "$HEAD" | grep -q '^CHANGELOG.md$'; then
-            echo "✅ CHANGELOG.md updated"
+          if git diff --name-only "$BASE" "$HEAD" | grep -q '^changelog/unreleased/.*\.md$'; then
+            echo "✅ Changelog fragment found"
           else
-            echo "::error::Missing changelog entry"
+            echo "::error::Missing changelog fragment"
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
-            echo "  This PR doesn't update CHANGELOG.md."
+            echo "  This PR doesn't have a changelog entry."
             echo ""
-            echo "  Please add a note under ## [Unreleased]"
-            echo "  describing what changed for users."
+            echo "  Add a fragment file in changelog/unreleased/:"
+            echo ""
+            echo "    changelog/unreleased/my-change.md"
+            echo ""
+            echo "    ---"
+            echo "    type: added|improved|fixed|changed|removed"
+            echo "    ---"
+            echo "    Description of the change for users"
             echo ""
             echo "  If this change doesn't need a changelog"
             echo "  entry (CI, typos, deps, etc.), comment:"

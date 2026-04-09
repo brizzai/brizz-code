@@ -33,6 +33,8 @@ type HookWatcher struct {
 	mu       sync.RWMutex
 	statuses map[string]*HookStatus // brizz session ID -> latest status
 
+	onChange chan struct{} // buffered(1), notifies when any status changes
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -68,6 +70,7 @@ func NewHookWatcher() (*HookWatcher, error) {
 		hooksDir: hooksDir,
 		watcher:  watcher,
 		statuses: make(map[string]*HookStatus),
+		onChange: make(chan struct{}, 1),
 		ctx:      ctx,
 		cancel:   cancel,
 	}, nil
@@ -81,6 +84,12 @@ func (w *HookWatcher) Start() {
 	}
 
 	w.loadExisting()
+
+	// Notify after loading existing files so TUI picks up pre-existing statuses quickly.
+	select {
+	case w.onChange <- struct{}{}:
+	default:
+	}
 
 	var debounceTimer *time.Timer
 	pendingFiles := make(map[string]bool)
@@ -135,7 +144,9 @@ func (w *HookWatcher) Start() {
 // Stop shuts down the watcher.
 func (w *HookWatcher) Stop() {
 	w.cancel()
-	_ = w.watcher.Close()
+	if w.watcher != nil {
+		_ = w.watcher.Close()
+	}
 }
 
 // GetStatus returns the hook status for a session, or nil if not available.
@@ -143,6 +154,12 @@ func (w *HookWatcher) GetStatus(sessionID string) *HookStatus {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.statuses[sessionID]
+}
+
+// Changes returns a channel that receives a notification when any hook status changes.
+// Buffered(1): callers may miss intermediate changes but will always see the latest state.
+func (w *HookWatcher) Changes() <-chan struct{} {
+	return w.onChange
 }
 
 // loadExisting reads all current status files on startup.
@@ -187,4 +204,10 @@ func (w *HookWatcher) processFile(filePath string) {
 	w.mu.Lock()
 	w.statuses[instanceID] = hookStatus
 	w.mu.Unlock()
+
+	// Notify listeners of the change (non-blocking).
+	select {
+	case w.onChange <- struct{}{}:
+	default:
+	}
 }
