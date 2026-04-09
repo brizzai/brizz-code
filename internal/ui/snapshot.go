@@ -38,8 +38,7 @@ func captureStatusSnapshot(s *session.Session, sessionID string) statusSnapshotM
 	// 3. Read hook file.
 	hookFilePath := filepath.Join(hooks.GetHooksDir(), sessionID+".json")
 	hookFileContent, _ := os.ReadFile(hookFilePath)
-	var hookFileInfo os.FileInfo
-	hookFileInfo, _ = os.Stat(hookFilePath)
+	hookFileInfo, _ := os.Stat(hookFilePath)
 
 	// 4. Filtered debug log tail.
 	debugTail := readFilteredDebugLog(sessionID, 100)
@@ -85,8 +84,8 @@ func buildSnapshotJSON(snap session.StatusSnapshot, hookFileRaw []byte, hookFile
 	hookMap := map[string]any{
 		"status":        snap.HookStatus,
 		"updated_at":    snap.HookUpdatedAt.Format(time.RFC3339),
-		"age":           fmtSnapshotDuration(now.Sub(snap.HookUpdatedAt)),
-		"overridden_at": snap.HookOverriddenAt.Format(time.RFC3339),
+		"age":           fmtSnapshotAge(snap.HookUpdatedAt, now),
+		"overridden_at": fmtSnapshotAge(snap.HookOverriddenAt, now),
 	}
 	if len(hookFileRaw) > 0 {
 		var parsed any
@@ -102,7 +101,7 @@ func buildSnapshotJSON(snap session.StatusSnapshot, hookFileRaw []byte, hookFile
 	m["content"] = map[string]any{
 		"hash":            snap.LastContentHash,
 		"last_change_at":  snap.LastContentChangeAt.Format(time.RFC3339),
-		"last_change_ago": fmtSnapshotDuration(now.Sub(snap.LastContentChangeAt)),
+		"last_change_ago": fmtSnapshotAge(snap.LastContentChangeAt, now),
 	}
 
 	paneDetected := string(snap.DetectedPaneStatus)
@@ -116,7 +115,11 @@ func buildSnapshotJSON(snap session.StatusSnapshot, hookFileRaw []byte, hookFile
 	return m
 }
 
-func fmtSnapshotDuration(d time.Duration) string {
+func fmtSnapshotAge(t time.Time, now time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := now.Sub(t)
 	if d < 0 {
 		return "0s"
 	}
