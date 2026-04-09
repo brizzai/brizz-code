@@ -15,6 +15,12 @@ import (
 	"github.com/brizzai/brizz-code/internal/tmux"
 )
 
+// PaneCapturer abstracts pane capture for testing.
+type PaneCapturer interface {
+	CapturePane() (string, error)
+	IsPaneDead() bool
+}
+
 // Status represents the current state of a session.
 type Status string
 
@@ -47,14 +53,16 @@ type Session struct {
 	PromptCount           int
 	ForkFromID            string // Transient: if set, start with --resume <id> --fork-session (cleared after start)
 
-	hookStatus    string
-	hookUpdatedAt time.Time
+	hookStatus       string
+	hookUpdatedAt    time.Time
+	hookOverriddenAt time.Time // timestamp of hook that was overridden by pane; prevents re-evaluation of same stale hook
 
 	lastContentHash     string
 	lastContentChangeAt time.Time
 
-	tmuxSession *tmux.Session
-	mu          sync.RWMutex
+	tmuxSession  *tmux.Session
+	paneCapturer PaneCapturer // optional override for testing; if nil, uses tmuxSession
+	mu           sync.RWMutex
 }
 
 // NewSession creates a new session for the given project path.
@@ -150,8 +158,19 @@ func (s *Session) GetHookStatus() string {
 	return s.hookStatus
 }
 
+// getCapturer returns the pane capturer (test override or real tmux session).
+func (s *Session) getCapturer() PaneCapturer {
+	if s.paneCapturer != nil {
+		return s.paneCapturer
+	}
+	return s.tmuxSession
+}
+
 // IsAlive checks if the tmux session exists.
 func (s *Session) IsAlive() bool {
+	if s.paneCapturer != nil {
+		return !s.paneCapturer.IsPaneDead()
+	}
 	return s.tmuxSession.Exists()
 }
 
@@ -194,10 +213,11 @@ func (s *Session) UpdateHookStatus(hs *HookStatus) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Reset content hash tracking when hook status changes (fresh tracking for new state).
-	if s.hookStatus != hs.Status {
+	// Reset tracking when hook genuinely changes (new event or new status).
+	if s.hookStatus != hs.Status || s.hookUpdatedAt != hs.UpdatedAt {
 		s.lastContentHash = ""
 		s.lastContentChangeAt = time.Time{}
+		s.hookOverriddenAt = time.Time{} // allow fresh evaluation of new hook
 	}
 	s.hookStatus = hs.Status
 	s.hookUpdatedAt = hs.UpdatedAt
@@ -285,7 +305,7 @@ func (s *Session) UpdateStatus() {
 	}
 
 	// Check if the pane's process has died (tmux alive but process crashed).
-	if s.tmuxSession.IsPaneDead() {
+	if s.getCapturer().IsPaneDead() {
 		s.SetStatus(StatusError)
 		log.Debug("status: pane dead", "old", oldStatus, "new", StatusError)
 		return
@@ -312,8 +332,8 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 	// Capture pane once for content change detection and pane-based overrides.
 	var paneContent string
 	var paneStatus Status
-	if content, err := s.tmuxSession.CapturePane(); err == nil {
-		paneContent = stripANSI(content)
+	if content, err := s.getCapturer().CapturePane(); err == nil {
+		paneContent = StripANSI(content)
 		paneStatus = detectStatus(paneContent, log)
 	}
 
@@ -376,6 +396,12 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *sl
 // applyHookWaiting handles hook status "waiting" with content change detection.
 // Must be called with s.mu held.
 func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *slog.Logger) {
+	// If this hook was already overridden by pane detection (stale hook),
+	// skip re-evaluation. A new hook (different timestamp) resets the flag.
+	if !s.hookOverriddenAt.IsZero() && s.hookOverriddenAt.Equal(s.hookUpdatedAt) {
+		return
+	}
+
 	// Hook says waiting — trust hooks unless pane clearly shows idle prompt.
 	//
 	// Why we allow pane override for finished only:
@@ -396,6 +422,7 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		}
 		s.lastContentHash = ""
 		s.lastContentChangeAt = time.Time{}
+		s.hookOverriddenAt = s.hookUpdatedAt // prevent re-evaluation of this stale hook
 		log.Info("hook says waiting but pane shows idle prompt, overriding to finished")
 		return
 	}
@@ -452,13 +479,13 @@ func (s *Session) applyHookFinished(paneStatus Status, log *slog.Logger) {
 func (s *Session) updateStatusFromPane(oldStatus Status, log *slog.Logger) {
 	log.Debug("no hook data, falling back to pane capture")
 
-	content, err := s.tmuxSession.CapturePane()
+	content, err := s.getCapturer().CapturePane()
 	if err != nil {
 		log.Warn("pane capture failed", "err", err)
 		return // Keep previous status on capture failure.
 	}
 
-	content = stripANSI(content)
+	content = StripANSI(content)
 	status := detectStatus(content, log)
 
 	s.mu.Lock()
@@ -506,6 +533,52 @@ func (s *Session) ToRow() *SessionRow {
 		TitleGenerated:  s.TitleGenerated,
 		PromptCount:     s.PromptCount,
 	}
+}
+
+// StatusSnapshot holds internal diagnostic data for debugging status mismatches.
+type StatusSnapshot struct {
+	ID              string
+	Title           string
+	ProjectPath     string
+	TmuxSessionName string
+	ClaudeSessionID string
+
+	Status       Status
+	Acknowledged bool
+
+	HookStatus       string
+	HookUpdatedAt    time.Time
+	HookOverriddenAt time.Time
+
+	LastContentHash     string
+	LastContentChangeAt time.Time
+
+	DetectedPaneStatus Status // what detectStatus returns on the raw pane right now
+}
+
+// SnapshotData captures a point-in-time copy of all internal status fields.
+// rawPane should be the ANSI-preserved pane capture. detectStatus is called
+// outside the lock to avoid potential deadlocks from logging.
+func (s *Session) SnapshotData(rawPane string) StatusSnapshot {
+	s.mu.RLock()
+	snap := StatusSnapshot{
+		ID:                  s.ID,
+		Title:               s.Title,
+		ProjectPath:         s.ProjectPath,
+		TmuxSessionName:     s.TmuxSessionName,
+		ClaudeSessionID:     s.ClaudeSessionID,
+		Status:              s.Status,
+		Acknowledged:        s.Acknowledged,
+		HookStatus:          s.hookStatus,
+		HookUpdatedAt:       s.hookUpdatedAt,
+		HookOverriddenAt:    s.hookOverriddenAt,
+		LastContentHash:     s.lastContentHash,
+		LastContentChangeAt: s.lastContentChangeAt,
+	}
+	s.mu.RUnlock()
+
+	snap.DetectedPaneStatus = detectStatus(StripANSI(rawPane), debuglog.Logger)
+	return snap
 }
 
 // FromRow reconstructs a Session from a storage row, reconnecting to tmux.
@@ -606,11 +679,14 @@ func extractRecentLines(lines []string, n int) []string {
 }
 
 // detectRunning checks for busy indicators, spinner chars, and whimsical activity patterns.
-func detectRunning(recentLines []string, recentContent string, log *slog.Logger) Status {
-	lowerContent := strings.ToLower(recentContent)
-
+func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
+	// Busy patterns only in bottom 5 lines — "ctrl+c to interrupt" always appears
+	// near the bottom. Checking all 50 lines false-positives on conversation text
+	// that discusses these patterns (meta-problem).
+	bottomN := min(5, len(recentLines))
+	bottomContent := strings.ToLower(strings.Join(recentLines[:bottomN], "\n"))
 	for _, pattern := range busyPatterns {
-		if strings.Contains(lowerContent, pattern) {
+		if strings.Contains(bottomContent, pattern) {
 			log.Debug("detectStatus: matched busy pattern", "pattern", pattern)
 			return StatusRunning
 		}
@@ -618,7 +694,7 @@ func detectRunning(recentLines []string, recentContent string, log *slog.Logger)
 
 	for _, line := range recentLines {
 		for _, sc := range spinnerChars {
-			if strings.Contains(line, sc) {
+			if strings.HasPrefix(strings.TrimSpace(line), sc) {
 				// Don't treat spinner chars as running if they're part of a
 				// team waiting indicator (e.g. "✢  Waiting for team lead approval").
 				lowerLine := strings.ToLower(line)
@@ -632,7 +708,9 @@ func detectRunning(recentLines []string, recentContent string, log *slog.Logger)
 	}
 
 	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)").
-	for _, line := range recentLines {
+	// Only check bottom 10 lines — the token counter line is always near the bottom.
+	whimsicalN := min(10, len(recentLines))
+	for _, line := range recentLines[:whimsicalN] {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "· ↓") && strings.Contains(lower, "tokens") {
 			log.Debug("detectStatus: matched whimsical activity pattern", "line", line)
@@ -727,18 +805,52 @@ func detectFinished(recentLines []string, recentContent string, log *slog.Logger
 }
 
 // normalizeForHash normalizes pane content for stable hashing.
-// Strips ANSI, spinner chars, trailing whitespace, and collapses blank lines.
+// Removes spinner lines, trailing whitespace, UI chrome, and collapses blank lines.
 func normalizeForHash(content string) string {
-	content = stripANSI(content)
-	// Strip spinner characters.
-	for _, sc := range spinnerChars {
-		content = strings.ReplaceAll(content, sc, "")
-	}
-	// Trim trailing whitespace per line and collapse consecutive blank lines.
+	content = StripANSI(content)
 	lines := strings.Split(content, "\n")
+
+	// Remove lines containing spinner characters entirely (not just the char).
+	// These are activity indicator lines with ephemeral whimsical words
+	// ("Seasoning…", "Thinking…") that change every few seconds.
+	filtered := lines[:0]
+	for _, line := range lines {
+		hasSpinner := false
+		for _, sc := range spinnerChars {
+			if strings.Contains(line, sc) {
+				hasSpinner = true
+				break
+			}
+		}
+		if !hasSpinner {
+			filtered = append(filtered, line)
+		}
+	}
+	lines = filtered
+
+	// Strip UI chrome: Claude Code renders input line, separators, and status bar
+	// at the bottom with animated elements (creature). Find the second-to-last
+	// separator line (the one ABOVE the input line) and cut everything from there.
+	// Layout: content | separator₁ | ❯ input | separator₂ | status bar
+	cutoff := len(lines)
+	separatorsFromBottom := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if isSeparatorLine(lines[i]) {
+			separatorsFromBottom++
+			if separatorsFromBottom >= 2 {
+				cutoff = i
+				break
+			}
+		}
+	}
+	lines = lines[:cutoff]
+
+	// Trim trailing whitespace per line, strip right-margin animations,
+	// and collapse consecutive blank lines.
 	var result []string
 	prevBlank := false
 	for _, line := range lines {
+		line = stripRightMargin(line)
 		line = strings.TrimRight(line, " \t")
 		blank := line == ""
 		if blank && prevBlank {
@@ -750,15 +862,53 @@ func normalizeForHash(content string) string {
 	return strings.Join(result, "\n")
 }
 
+// isSeparatorLine checks if a line is predominantly box-drawing characters (─━═╌).
+// These separator lines mark the boundary between content and UI chrome in Claude Code.
+func isSeparatorLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) < 20 {
+		return false
+	}
+	boxChars := 0
+	total := 0
+	for _, r := range trimmed {
+		total++
+		if r == '─' || r == '━' || r == '═' || r == '╌' {
+			boxChars++
+		}
+	}
+	return total > 0 && boxChars*100/total >= 70
+}
+
+// stripRightMargin truncates a line at the first run of 20+ consecutive spaces.
+// Claude Code renders animated elements (whimsical creature, etc.) at the far
+// right of the terminal, separated from real content by long space runs.
+// Stripping these prevents animations from affecting content hash stability.
+func stripRightMargin(line string) string {
+	const threshold = 20
+	count := 0
+	for i := 0; i < len(line); i++ {
+		if line[i] == ' ' {
+			count++
+			if count >= threshold {
+				return line[:i-threshold+1]
+			}
+		} else {
+			count = 0
+		}
+	}
+	return line
+}
+
 // hashContent returns a truncated SHA256 hash (16 hex chars) of the content.
 func hashContent(content string) string {
 	h := sha256.Sum256([]byte(content))
 	return fmt.Sprintf("%x", h[:8])
 }
 
-// stripANSI removes ANSI escape sequences from content.
+// StripANSI removes ANSI escape sequences from content.
 // Uses O(n) single-pass algorithm to avoid regex backtracking issues.
-func stripANSI(content string) string {
+func StripANSI(content string) string {
 	// Fast path: no escape chars.
 	if !strings.ContainsRune(content, '\x1b') && !strings.ContainsRune(content, '\x9B') {
 		return content

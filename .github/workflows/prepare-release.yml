@@ -158,14 +158,65 @@ jobs:
           # Always start fresh from master
           git checkout -B "$BRANCH" origin/master
 
-          # Roll changelog: [Unreleased] → [VERSION] - DATE
-          sed -i "s/^## \[Unreleased\]/## [Unreleased]\n\n## [${VERSION}] - ${DATE}/" CHANGELOG.md
+          # Merge changelog fragments into CHANGELOG.md
+          FRAGMENT_DIR="changelog/unreleased"
+
+          # Collect fragment files (exclude .gitkeep)
+          mapfile -t FRAGMENTS < <(find "$FRAGMENT_DIR" -name '*.md' -not -name '.gitkeep' 2>/dev/null | sort)
+
+          if [ "${#FRAGMENTS[@]}" -gt 0 ]; then
+            # Parse fragments and group by type
+            declare -A ENTRIES
+            TYPE_ORDER="added improved changed fixed removed deprecated security"
+
+            for f in "${FRAGMENTS[@]}"; do
+              TYPE=$(awk '/^type:/{print $2; exit}' "$f")
+              BODY=$(awk 'BEGIN{skip=1} /^---$/{if(skip){skip=0; next} else {found=1; next}} found{print}' "$f" | sed '/^$/d')
+              if [ -n "$TYPE" ] && [ -n "$BODY" ]; then
+                ENTRIES[$TYPE]+="- ${BODY}"$'\n'
+              fi
+            done
+
+            # Build the release section content and write to temp file
+            SECTION_FILE=$(mktemp)
+            for TYPE in $TYPE_ORDER; do
+              if [ -n "${ENTRIES[$TYPE]}" ]; then
+                # Capitalize type name for section header
+                HEADER=$(echo "$TYPE" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
+                printf '\n### %s\n\n%s' "$HEADER" "${ENTRIES[$TYPE]}" >> "$SECTION_FILE"
+              fi
+            done
+
+            if [ -s "$SECTION_FILE" ]; then
+              # Insert release section after ## [Unreleased] line
+              awk -v header="## [${VERSION}] - ${DATE}" -v sfile="$SECTION_FILE" '
+                /^## \[Unreleased\]/ {
+                  print
+                  print ""
+                  print header
+                  while ((getline line < sfile) > 0) print line
+                  close(sfile)
+                  next
+                }
+                { print }
+              ' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
+            fi
+            rm -f "$SECTION_FILE"
+
+            # Delete merged fragments (keep .gitkeep)
+            for f in "${FRAGMENTS[@]}"; do
+              rm "$f"
+            done
+          else
+            # No fragments — just roll the existing [Unreleased] section
+            sed -i "s/^## \[Unreleased\]/## [Unreleased]\n\n## [${VERSION}] - ${DATE}/" CHANGELOG.md
+          fi
 
           # Update comparison links at bottom
           REPO_URL="https://github.com/${{ github.repository }}"
           sed -i "s|\[Unreleased\]: \(.*\)/compare/.*\.\.\.HEAD|[Unreleased]: ${REPO_URL}/compare/v${VERSION}...HEAD\n[${VERSION}]: ${REPO_URL}/releases/tag/v${VERSION}|" CHANGELOG.md
 
-          git add CHANGELOG.md
+          git add CHANGELOG.md changelog/
           git commit -m "release: v${VERSION}"
           git push --force origin "$BRANCH"
 

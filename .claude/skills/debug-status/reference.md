@@ -50,7 +50,7 @@ Scans last 50 non-empty lines of `tmux capture-pane` output after ANSI stripping
 
 **Priority order** (first match wins):
 1. Busy patterns → Running (`ctrl+c to interrupt`, `esc to interrupt`)
-2. Spinner characters → Running (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✳✽✶✢) — **skips lines containing "waiting for"**
+2. Spinner characters → Running (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✳✽✶✢) — **line-start only** (`HasPrefix` after trim), skips "waiting for" lines
 3. Whimsical activity (`· ↓` + `tokens` on same line) → Running
 4. Structural waiting checks (bottom 15 lines only) → Waiting:
    - Menu structure: `❯ 1.` + `2.` + `Esc to cancel` all present
@@ -105,6 +105,23 @@ All in `~/.config/brizz-code/debug.log`:
 | `hook says waiting but pane shows idle prompt` | Stale waiting hook overridden by idle pane |
 | `content changed while waiting` | Content hash changed during waiting state |
 | `content stable >10s` | Content hasn't changed for 10s during running state |
+
+## Status Snapshots
+
+Secret `D` hotkey captures a point-in-time diagnostic snapshot of the selected session.
+
+Location: `~/.config/brizz-code/snapshots/<timestamp>_<title>/`
+
+| File | Contents |
+|------|----------|
+| `pane_raw.txt` | Raw ANSI pane capture (copy to `testdata/` for golden tests) |
+| `pane_clean.txt` | ANSI-stripped for human reading |
+| `snapshot.json` | Session state, hook state, content tracking, pane detection, `mismatch` flag |
+| `debug_tail.txt` | Last 100 debug.log lines filtered for this session |
+
+The `snapshot.json` `detection.mismatch` field is `true` when pane detection disagrees with the TUI status — the key signal for status bugs.
+
+Implementation: `internal/ui/snapshot.go` (capture logic), `internal/session/session.go` `SnapshotData()` (state export).
 
 ## Hook Status Files
 

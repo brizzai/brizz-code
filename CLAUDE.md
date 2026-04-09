@@ -25,6 +25,11 @@ Use [conventional commits](https://www.conventionalcommits.org/). Version is aut
 - `chore:`, `docs:`, `refactor:`, `test:`, `style:` → patch
 - Scopes are optional: `fix(hooks): ...`, `feat(ui): ...`
 
+## Changelog
+- Each PR adds a fragment file: `changelog/unreleased/<name>.md` with `type:` frontmatter (added/improved/fixed/changed/removed)
+- CI checks for fragment presence; comment `/no-changelog` to skip
+- At release time, fragments are merged into CHANGELOG.md and deleted
+
 ## Release
 - Comment `/ship` on any issue or PR to prepare a release
 - `/ship 2.0.0` to override the version

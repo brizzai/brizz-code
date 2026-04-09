@@ -1,0 +1,56 @@
+  technical, and hints at tmux.
+
+  What resonates?
+
+[38;5;239m[48;5;237m❯ [38;5;231mMore ideas[39m                                                                    [49m
+
+[38;5;231m⏺[39m [1mAbstract[0m [1m/[0m [1mCool[0m
+  - [1mNova[0m — burst of energy, many stars
+  - [1mApex[0m — top of the game
+  - [1mDrift[0m — sessions flowing in parallel
+  - [1mArc[0m — arcs of work converging
+  - [1mOnyx[0m — dark, sleek, terminal vibes
+
+  [1mAgent-Oriented[0m
+  - [1mColony[0m — agents in a colony
+  - [1mQuorum[0m — enough agents to get things done
+  - [1mSyndicate[0m — organized group working together
+  - [1mLegion[0m — army of coding agents
+  - [1mPack[0m — tight group, working as one
+
+  [1mDeveloper[0m [1m/[0m [1mHacker[0m
+  - [1mTurbo[0m — speed, parallel power
+  - [1mWarp[0m — warp-speed development
+  - [1mVolt[0m — electric, energetic
+  - [1mBlitz[0m — fast, aggressive execution
+  - [1mNitro[0m — raw acceleration
+
+  [1mMetaphor[0m
+  - [1mCanopy[0m — umbrella over all your sessions
+  - [1mNexus[0m — the connection point
+  - [1mPrism[0m — one input, many outputs
+  - [1mLattice[0m — interconnected grid of work
+  - [1mCortex[0m — the brain managing it all
+
+  [1mMinimal[0m [1m/[0m [1mOne-Syllable[0m
+  - [1mRig[0m — your coding rig
+  - [1mDock[0m — where sessions dock
+  - [1mMesh[0m — networked agents
+  - [1mRack[0m — rack of running sessions
+  - [1mDen[0m — your command center
+
+  Top picks from this batch: [1mCortex[0m, [1mPrism[0m, [1mWarp[0m, and [1mDen[0m.
+
+  [38;5;153m/remote-control[39m is active. Code in CLI or at
+  https://claude.ai/code/session_01MCXiU6ppNMCTdgJg9AVve5
+
+  [38;5;153m/remote-control[39m is active. Code in CLI or at
+  https://claude.ai/code/session_014rDVhcLoFec4BU7Ny6LQ19
+  [38;5;246m⎿[39m [38;5;246mPlease[39m [38;5;246mupgrade[39m [38;5;246mto[39m [38;5;246mthe[39m [38;5;246mlatest[39m [38;5;246mversion[39m [38;5;246mof[39m [38;5;246mthe[39m [38;5;246mClaude[39m [38;5;246mmobile[39m [38;5;246mapp[39m [38;5;246mto[39m [38;5;246msee[39m [38;5;246myour[39m [38;5;246mRemote[39m [38;5;246mControl[39m [38;5;246msessions.[39m
+
+[38;5;244m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [36m󰧑[39m [36mOpus[39m [36m4.6[39m [36m(1M[39m [36mcontext)[38;5;246m [90m│[38;5;246m [32m░░░░░░░░░░[38;5;246m [90m│[38;5;246m [32m2%[38;5;246m [90m│[38;5;246m [35m󰍛[39m [35m20.0k/1000k[38;5;246m [90m│[38;5;246m [33m[39m [33mfix/last-used-tracking[38;5;246m [90m│[38;5;246m [1m[37m[0m  [1m[37mbrizz-code[0m
+  [38;5;246mPR[39m [38;5;220m#36[39m
+

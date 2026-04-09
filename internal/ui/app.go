@@ -42,6 +42,7 @@ const (
 // Message types.
 type (
 	tickMsg          time.Time
+	hookChangedMsg   struct{} // HookWatcher detected a status file change
 	statusUpdateMsg  struct{ attachedSessionID string }
 	sessionDeleteMsg struct {
 		id               string
@@ -96,6 +97,8 @@ type Home struct {
 	isAttaching atomic.Bool
 	err         error
 	errTime     time.Time
+	infoMsg     string
+	infoTime    time.Time
 
 	newDialog             *NewSessionDialog
 	confirmDialog         *ConfirmDialog
@@ -237,15 +240,27 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		return h.handleTick()
 
+	case hookChangedMsg:
+		// HookWatcher detected a status file change. Do immediate hook-only sync.
+		h.workerMu.Lock()
+		h.syncHookStatuses(h.sessions)
+		h.rebuildFlatItems()
+		h.workerMu.Unlock()
+		return h, h.listenForHookChanges
+
 	case statusUpdateMsg:
 		// Returned after detaching from session.
 		h.isAttaching.Store(false)
-		// Trigger immediate background refresh.
+		// Immediate hook sync (data already in HookWatcher from hooks that fired during attach).
+		h.workerMu.Lock()
+		h.syncHookStatuses(h.sessions)
+		h.rebuildFlatItems()
+		h.workerMu.Unlock()
+		// Also trigger full background refresh for pane captures, git, etc.
 		select {
 		case h.statusTrigger <- struct{}{}:
 		default:
 		}
-		h.rebuildFlatItems()
 		return h, nil
 
 	case sessionCreateMsg:
@@ -377,6 +392,14 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		select {
 		case h.statusTrigger <- struct{}{}:
 		default:
+		}
+		return h, nil
+
+	case statusSnapshotMsg:
+		if msg.err != nil {
+			h.setError(fmt.Errorf("snapshot: %w", msg.err))
+		} else {
+			h.setInfo("Snapshot saved: " + msg.path)
 		}
 		return h, nil
 
@@ -594,6 +617,10 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 
+		// Start listening for hook changes.
+		if h.hookWatcher != nil {
+			return h, h.listenForHookChanges
+		}
 		return h, nil
 	}
 
@@ -745,8 +772,14 @@ func (h *Home) View() string {
 		lineCount += 2
 	}
 
-	// Error message (overwrites last line if present).
-	if h.err != nil && time.Since(h.errTime) < 5*time.Second {
+	// Info/error flash message (most recent wins, overwrites last line).
+	showInfo := h.infoMsg != "" && time.Since(h.infoTime) < 5*time.Second
+	showErr := h.err != nil && time.Since(h.errTime) < 5*time.Second
+	if showInfo && (!showErr || h.infoTime.After(h.errTime)) {
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(" " + h.infoMsg))
+		lineCount++
+	} else if showErr {
 		b.WriteString("\n")
 		b.WriteString(ErrorStyle.Render(" " + h.err.Error()))
 		lineCount++
@@ -1001,6 +1034,15 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.bugReport.Show(h.version, len(h.sessions), h.errorHistory, h.actionLog, h.width, h.height, &h.renderStats, time.Since(h.startTime))
 		analytics.Track(analytics.EventBugReportOpened, nil)
 		return h, nil
+	case "D":
+		s := h.selectedSession()
+		if s == nil {
+			return h, nil
+		}
+		h.actionLog.Add("status snapshot", s.Title, true)
+		return h, func() tea.Msg {
+			return captureStatusSnapshot(s, s.ID)
+		}
 	case "?":
 		h.helpOverlay.Show()
 		return h, nil
@@ -1635,6 +1677,20 @@ func (h *Home) previewTick() tea.Cmd {
 	})
 }
 
+// listenForHookChanges blocks until the HookWatcher signals a status change,
+// then returns a hookChangedMsg. Runs as a tea.Cmd in its own goroutine.
+func (h *Home) listenForHookChanges() tea.Msg {
+	if h.hookWatcher == nil {
+		return nil
+	}
+	select {
+	case <-h.hookWatcher.Changes():
+		return hookChangedMsg{}
+	case <-h.ctx.Done():
+		return nil
+	}
+}
+
 func (h *Home) handleTick() (tea.Model, tea.Cmd) {
 	// Trigger background worker (non-blocking).
 	select {
@@ -1669,6 +1725,53 @@ func (h *Home) statusWorker() {
 	}
 }
 
+// syncHookStatuses reads the latest hook statuses from the HookWatcher and applies
+// them to the given sessions. Caller must ensure thread-safe access to sessions.
+func (h *Home) syncHookStatuses(sessions []*session.Session) {
+	if h.hookWatcher == nil {
+		return
+	}
+	for _, s := range sessions {
+		hs := h.hookWatcher.GetStatus(s.ID)
+		if hs != nil {
+			oldClaudeSessionID := s.ClaudeSessionID
+			oldFirstPrompt := s.FirstPrompt
+			oldPromptCount := s.PromptCount
+			s.UpdateHookStatus(&session.HookStatus{
+				Status:      hs.Status,
+				SessionID:   hs.SessionID,
+				UpdatedAt:   hs.UpdatedAt,
+				UserPrompt:  hs.UserPrompt,
+				PromptCount: hs.PromptCount,
+			})
+			// Persist new Claude session ID if it changed.
+			if s.ClaudeSessionID != oldClaudeSessionID && s.ClaudeSessionID != "" {
+				if err := h.storage.UpdateClaudeSessionID(s.ID, s.ClaudeSessionID); err != nil {
+					debuglog.Logger.Error("storage: UpdateClaudeSessionID", "id", s.ID, "err", err)
+				}
+			}
+			// Persist prompt changes and reset title on every new prompt
+			// (for non-manually-renamed, non-Claude-named sessions).
+			if s.PromptCount != oldPromptCount {
+				if err := h.storage.UpdatePromptCount(s.ID, s.PromptCount); err != nil {
+					debuglog.Logger.Error("storage: UpdatePromptCount", "id", s.ID, "err", err)
+				}
+				if h.cfg.IsAutoNameEnabled() && s.TitleGenerated && !s.ManuallyRenamed && s.ClaudeSessionName == "" {
+					s.TitleGenerated = false
+					if err := h.storage.ResetTitleGenerated(s.ID); err != nil {
+						debuglog.Logger.Error("storage: ResetTitleGenerated", "id", s.ID, "err", err)
+					}
+				}
+			}
+			if s.FirstPrompt != "" && s.FirstPrompt != oldFirstPrompt {
+				if err := h.storage.UpdateFirstPrompt(s.ID, s.FirstPrompt); err != nil {
+					debuglog.Logger.Error("storage: UpdateFirstPrompt", "id", s.ID, "err", err)
+				}
+			}
+		}
+	}
+}
+
 func (h *Home) statusWorkerCycle() {
 	// Recover from panics to keep the worker alive.
 	defer func() {
@@ -1691,47 +1794,7 @@ func (h *Home) statusWorkerCycle() {
 	}
 
 	// 3. Sync hook status (fast: in-memory map lookups).
-	if h.hookWatcher != nil {
-		for _, s := range sessions {
-			hs := h.hookWatcher.GetStatus(s.ID)
-			if hs != nil {
-				oldClaudeSessionID := s.ClaudeSessionID
-				oldFirstPrompt := s.FirstPrompt
-				oldPromptCount := s.PromptCount
-				s.UpdateHookStatus(&session.HookStatus{
-					Status:      hs.Status,
-					SessionID:   hs.SessionID,
-					UpdatedAt:   hs.UpdatedAt,
-					UserPrompt:  hs.UserPrompt,
-					PromptCount: hs.PromptCount,
-				})
-				// Persist new Claude session ID if it changed.
-				if s.ClaudeSessionID != oldClaudeSessionID && s.ClaudeSessionID != "" {
-					if err := h.storage.UpdateClaudeSessionID(s.ID, s.ClaudeSessionID); err != nil {
-						debuglog.Logger.Error("storage: UpdateClaudeSessionID", "id", s.ID, "err", err)
-					}
-				}
-				// Persist prompt changes and reset title on every new prompt
-				// (for non-manually-renamed, non-Claude-named sessions).
-				if s.PromptCount != oldPromptCount {
-					if err := h.storage.UpdatePromptCount(s.ID, s.PromptCount); err != nil {
-						debuglog.Logger.Error("storage: UpdatePromptCount", "id", s.ID, "err", err)
-					}
-					if h.cfg.IsAutoNameEnabled() && s.TitleGenerated && !s.ManuallyRenamed && s.ClaudeSessionName == "" {
-						s.TitleGenerated = false
-						if err := h.storage.ResetTitleGenerated(s.ID); err != nil {
-							debuglog.Logger.Error("storage: ResetTitleGenerated", "id", s.ID, "err", err)
-						}
-					}
-				}
-				if s.FirstPrompt != "" && s.FirstPrompt != oldFirstPrompt {
-					if err := h.storage.UpdateFirstPrompt(s.ID, s.FirstPrompt); err != nil {
-						debuglog.Logger.Error("storage: UpdateFirstPrompt", "id", s.ID, "err", err)
-					}
-				}
-			}
-		}
-	}
+	h.syncHookStatuses(sessions)
 
 	// 3b. Auto-name: generate title for ONE session per cycle.
 	// Priority: manual (R key) > Claude session name > last prompt heuristic.
@@ -2110,6 +2173,11 @@ func (h *Home) setError(err error) {
 			"category": strings.SplitN(err.Error(), ":", 2)[0],
 		})
 	}
+}
+
+func (h *Home) setInfo(msg string) {
+	h.infoMsg = msg
+	h.infoTime = time.Now()
 }
 
 // ensureExactHeight pads or truncates content to exactly n lines.
