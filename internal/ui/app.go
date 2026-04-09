@@ -102,8 +102,8 @@ type Home struct {
 	isAttaching atomic.Bool
 	err         error
 	errTime     time.Time
-	infoMsg  string
-	infoTime time.Time
+	infoMsg     string
+	infoTime    time.Time
 
 	newDialog             *NewSessionDialog
 	confirmDialog         *ConfirmDialog
