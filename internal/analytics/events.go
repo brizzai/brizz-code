@@ -19,4 +19,6 @@ const (
 	EventErrorOccurred    = "error_occurred"
 	EventSettingsOpened   = "settings_opened"
 	EventBugReportOpened  = "bug_report_opened"
+	EventCommandPalette   = "command_palette"
+	EventReloadAll        = "reload_all"
 )

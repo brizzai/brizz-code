@@ -38,6 +38,7 @@ var allKeyBindings = []KeyBinding{
 	{Key: "/", BarKey: "/", BarDesc: "Filter", Desc: "Filter sessions", Section: "session"},
 
 	// Global.
+	{Key: ": / Ctrl+P", BarKey: ":", BarDesc: "Cmd", Desc: "Command palette", Section: "global"},
 	{Key: "S", BarKey: "S", BarDesc: "Set", Desc: "Open settings", Section: "global"},
 	{Key: "!", BarKey: "!", BarDesc: "Bug", Desc: "Bug report / diagnostics", Section: "global"},
 	{Key: "?", BarKey: "?", BarDesc: "Help", Desc: "Toggle help", Section: "global"},
