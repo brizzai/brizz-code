@@ -380,6 +380,15 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *sl
 		s.lastContentHash = hash
 		s.lastContentChangeAt = time.Now()
 	} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) > 10*time.Second {
+		// Don't flag as stale if tmux reports recent activity (hash normalization
+		// may strip the changing content, but tmux still sees raw output).
+		if s.tmuxSession != nil {
+			if activity, ok := s.tmuxSession.GetActivity(); ok {
+				if time.Since(time.Unix(activity, 0)) < 10*time.Second {
+					return // activity recent, trust the hook
+				}
+			}
+		}
 		// Content stable >10s while hook says running — hook is stale.
 		// Preserve idle if already acknowledged (don't bounce back to finished).
 		if oldStatus == StatusIdle {
@@ -398,7 +407,24 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *sl
 func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *slog.Logger) {
 	// If this hook was already overridden by pane detection (stale hook),
 	// skip re-evaluation. A new hook (different timestamp) resets the flag.
+	// Exception: if pane shows running (active spinner), the user approved the
+	// permission and Claude started working — no hook fires for permission grants.
 	if !s.hookOverriddenAt.IsZero() && s.hookOverriddenAt.Equal(s.hookUpdatedAt) {
+		// Check if pane has new activity (user approved, Claude started working).
+		if s.tmuxSession != nil {
+			if activity, ok := s.tmuxSession.GetActivity(); ok && activity > s.hookUpdatedAt.Unix() {
+				s.Status = StatusRunning
+				s.Acknowledged = false
+				log.Info("overridden waiting hook but pane has new activity, resuming",
+					"activity", activity, "hookAt", s.hookUpdatedAt.Unix())
+				return
+			}
+		}
+		if paneStatus == StatusRunning {
+			s.Status = StatusRunning
+			s.Acknowledged = false
+			log.Info("overridden waiting hook but pane shows running, resuming")
+		}
 		return
 	}
 
@@ -425,6 +451,18 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		s.hookOverriddenAt = s.hookUpdatedAt // prevent re-evaluation of this stale hook
 		log.Info("hook says waiting but pane shows idle prompt, overriding to finished")
 		return
+	}
+
+	// Check tmux window_activity — if pane produced output after the waiting hook,
+	// the user approved the permission and Claude started working.
+	if s.tmuxSession != nil {
+		if activity, ok := s.tmuxSession.GetActivity(); ok && activity > s.hookUpdatedAt.Unix() {
+			s.Status = StatusRunning
+			s.Acknowledged = false
+			log.Info("pane activity after waiting hook, assuming running",
+				"activity", activity, "hookAt", s.hookUpdatedAt.Unix())
+			return
+		}
 	}
 
 	s.Status = StatusWaiting
