@@ -335,8 +335,8 @@ func TestScenarioWaitingRunningCooldown(t *testing.T) {
 		Checks: []ScenarioCheck{
 			{At: 0, Expected: StatusWaiting},
 			{At: 3 * time.Second, Expected: StatusRunning},
-			{At: 7 * time.Second, Expected: StatusRunning},   // cooldown keeps it running
-			{At: 18 * time.Second, Expected: StatusWaiting},  // cooldown expired (3s + 15s), falls back
+			{At: 7 * time.Second, Expected: StatusRunning},  // cooldown keeps it running
+			{At: 18 * time.Second, Expected: StatusWaiting}, // cooldown expired (3s + 15s), falls back
 		},
 	})
 }
@@ -349,7 +349,7 @@ func TestScenarioOverriddenWaitingResumesOnSpinner(t *testing.T) {
 	runScenario(t, Scenario{
 		Name: "overridden waiting hook + pane spinner → running",
 		Events: []ScenarioEvent{
-			{At: 0, Hook: "waiting", Pane: "❯ \n"},                                             // override to finished (idle prompt)
+			{At: 0, Hook: "waiting", Pane: "❯ \n"},                                              // override to finished (idle prompt)
 			{At: 3 * time.Second, Pane: "⠋ Working on approved task...\nctrl+c to interrupt\n"}, // user approved, Claude running
 		},
 		Checks: []ScenarioCheck{
