@@ -410,16 +410,6 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 	// Exception: if pane shows running (active spinner), the user approved the
 	// permission and Claude started working — no hook fires for permission grants.
 	if !s.hookOverriddenAt.IsZero() && s.hookOverriddenAt.Equal(s.hookUpdatedAt) {
-		// Check if pane has new activity (user approved, Claude started working).
-		if s.tmuxSession != nil {
-			if activity, ok := s.tmuxSession.GetActivity(); ok && activity > s.hookUpdatedAt.Unix() {
-				s.Status = StatusRunning
-				s.Acknowledged = false
-				log.Info("overridden waiting hook but pane has new activity, resuming",
-					"activity", activity, "hookAt", s.hookUpdatedAt.Unix())
-				return
-			}
-		}
 		if paneStatus == StatusRunning {
 			s.Status = StatusRunning
 			s.Acknowledged = false
@@ -453,17 +443,10 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		return
 	}
 
-	// Check tmux window_activity — if pane produced output after the waiting hook,
-	// the user approved the permission and Claude started working.
-	if s.tmuxSession != nil {
-		if activity, ok := s.tmuxSession.GetActivity(); ok && activity > s.hookUpdatedAt.Unix() {
-			s.Status = StatusRunning
-			s.Acknowledged = false
-			log.Info("pane activity after waiting hook, assuming running",
-				"activity", activity, "hookAt", s.hookUpdatedAt.Unix())
-			return
-		}
-	}
+	// NOTE: window_activity is NOT used here — sub-agents produce output continuously
+	// while the permission prompt sits at the bottom, so activity > hookUpdatedAt is
+	// always true during agent team work. Content hash change detection below is the
+	// correct mechanism for waiting→running (it detects actual pane content changes).
 
 	s.Status = StatusWaiting
 	s.Acknowledged = false
