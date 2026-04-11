@@ -438,8 +438,9 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 	hash := hashContent(normalizeForHash(paneContent))
 	if s.lastContentHash == "" {
 		// First tick in waiting state — save baseline hash.
+		// Don't set lastContentChangeAt here — it should only be set on actual
+		// content changes, otherwise the cooldown triggers falsely on the next tick.
 		s.lastContentHash = hash
-		s.lastContentChangeAt = time.Now()
 	} else if hash != s.lastContentHash {
 		// Content changed — user acted on the prompt.
 		// Transition to running (approval is the most common action).

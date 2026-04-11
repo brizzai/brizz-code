@@ -330,13 +330,13 @@ func TestScenarioWaitingRunningCooldown(t *testing.T) {
 			{At: 0, Hook: "waiting", Pane: "permission prompt\n❯ 1. Yes\n  2. No\nEsc to cancel\n"},
 			{At: 3 * time.Second, Pane: "Claude is working now\nsome output\n"}, // content changed → running
 			{At: 7 * time.Second},  // same content, within 15s cooldown
-			{At: 16 * time.Second}, // same content, past 15s cooldown
+			{At: 18 * time.Second}, // same content, 15s after the content change
 		},
 		Checks: []ScenarioCheck{
 			{At: 0, Expected: StatusWaiting},
 			{At: 3 * time.Second, Expected: StatusRunning},
-			{At: 7 * time.Second, Expected: StatusRunning},  // cooldown keeps it running
-			{At: 16 * time.Second, Expected: StatusWaiting}, // cooldown expired, falls back
+			{At: 7 * time.Second, Expected: StatusRunning},   // cooldown keeps it running
+			{At: 18 * time.Second, Expected: StatusWaiting},  // cooldown expired (3s + 15s), falls back
 		},
 	})
 }
