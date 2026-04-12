@@ -44,8 +44,8 @@ const (
 
 // PendingDelete holds state for a deferred session deletion (undo window).
 type PendingDelete struct {
-	Nonce         string             // unique ID for timer matching
-	Session       *session.Session   // kept alive (tmux still running)
+	Nonce         string              // unique ID for timer matching
+	Session       *session.Session    // kept alive (tmux still running)
 	Row           *session.SessionRow // DB snapshot for re-insert
 	RepoPath      string
 	DestroyWS     bool
