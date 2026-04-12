@@ -1,0 +1,26 @@
+exclude: '^internal/session/testdata/'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        description: Runs gofmt on Go source files
+        entry: gofmt -l -w
+        language: system
+        types: [go]
+      - id: go-vet
+        name: go vet
+        description: Runs go vet on the whole module
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false
