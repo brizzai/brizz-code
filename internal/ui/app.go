@@ -145,7 +145,7 @@ type Home struct {
 	slotBindings      map[int]string // slot (0-9) -> session ID
 	lastSlotTapSlot   int            // -1 when no pending tap
 	lastSlotTapAt     time.Time
-	slotAssignPending bool
+	slotAssignMode    int // 0=off, 1=bind pending (=<digit>), 2=unbind pending (==<digit>)
 	slotAssignExpires time.Time
 
 	// Config.
@@ -300,8 +300,8 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return h.handleSessionCreateResult(msg)
 
 	case slotAssignTimeoutMsg:
-		if h.slotAssignPending && !time.Now().Before(h.slotAssignExpires) {
-			h.slotAssignPending = false
+		if h.slotAssignMode != 0 && !time.Now().Before(h.slotAssignExpires) {
+			h.slotAssignMode = 0
 		}
 		return h, nil
 
@@ -1079,9 +1079,14 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, tea.Batch(h.fetchBranchList(repoPath), spinnerTickCmd)
 	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		digit := int(msg.String()[0] - '0')
-		if h.slotAssignPending {
-			h.slotAssignPending = false
+		switch h.slotAssignMode {
+		case 1:
+			h.slotAssignMode = 0
 			h.bindCurrentSessionToSlot(digit)
+			return h, nil
+		case 2:
+			h.slotAssignMode = 0
+			h.unbindSlot(digit)
 			return h, nil
 		}
 		return h.jumpToSlot(digit)
@@ -1091,9 +1096,19 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.bindCurrentSessionToSlot(digit)
 		return h, nil
 	case "=":
-		h.slotAssignPending = true
+		switch h.slotAssignMode {
+		case 0:
+			h.slotAssignMode = 1
+			h.setInfo("Slot: digit=bind · = again=unbind · Esc=cancel")
+		case 1:
+			h.slotAssignMode = 2
+			h.setInfo("Unbind slot: digit=clear · Esc=cancel")
+		default:
+			h.slotAssignMode = 0
+			h.setInfo("Slot assign cancelled")
+			return h, nil
+		}
 		h.slotAssignExpires = time.Now().Add(2 * time.Second)
-		h.setInfo("Assign slot 0-9 (Esc to cancel)")
 		return h, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return slotAssignTimeoutMsg{} })
 	case "/":
 		h.filterActive = true
@@ -1102,8 +1117,8 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, nil
 	case "esc":
 		// Cancel pending slot-assign leader.
-		if h.slotAssignPending {
-			h.slotAssignPending = false
+		if h.slotAssignMode != 0 {
+			h.slotAssignMode = 0
 			h.setInfo("Slot assign cancelled")
 			return h, nil
 		}
@@ -2168,11 +2183,16 @@ func (h *Home) layoutMode() string {
 }
 
 // bindCurrentSessionToSlot persists the selected session under the given slot,
-// replacing any prior binding for either the slot or the session.
+// replacing any prior binding for either the slot or the session. Re-binding
+// the same session to its existing slot toggles the binding off (unbind).
 func (h *Home) bindCurrentSessionToSlot(slot int) {
 	s := h.selectedSession()
 	if s == nil {
 		h.setError(fmt.Errorf("select a session first"))
+		return
+	}
+	if existing, ok := h.slotBindings[slot]; ok && existing == s.ID {
+		h.unbindSlot(slot)
 		return
 	}
 	if err := h.storage.BindSlot(slot, s.ID); err != nil {
@@ -2187,6 +2207,30 @@ func (h *Home) bindCurrentSessionToSlot(slot int) {
 	h.slotBindings[slot] = s.ID
 	h.actionLog.Add("bind slot", fmt.Sprintf("%d → %s", slot, s.Title), true)
 	h.setInfo(fmt.Sprintf("Slot %d → %s", slot, s.Title))
+	h.sidebarDirty = true
+}
+
+// unbindSlot clears the given slot's binding, if any.
+func (h *Home) unbindSlot(slot int) {
+	id, ok := h.slotBindings[slot]
+	if !ok {
+		h.setInfo(fmt.Sprintf("Slot %d already unbound", slot))
+		return
+	}
+	title := id
+	if s, ok := h.sessionByID[id]; ok {
+		title = s.Title
+	}
+	if err := h.storage.UnbindSlot(slot); err != nil {
+		h.setError(fmt.Errorf("unbind slot: %w", err))
+		return
+	}
+	delete(h.slotBindings, slot)
+	if h.lastSlotTapSlot == slot {
+		h.lastSlotTapSlot = -1
+	}
+	h.actionLog.Add("unbind slot", fmt.Sprintf("%d (was %s)", slot, title), true)
+	h.setInfo(fmt.Sprintf("Slot %d cleared", slot))
 	h.sidebarDirty = true
 }
 
