@@ -625,14 +625,16 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		h.sessions = msg.sessions
 		h.rebuildSessionMap()
-		// Prune slot bindings whose session no longer exists.
+		// Keep only bindings whose session is present in the loaded view. Do
+		// NOT delete absent bindings from storage here: BRIZZ_DEMO_PREFIX and
+		// similar filters shrink the session set transiently, and writing back
+		// would permanently destroy real bindings. The FK cascade on session
+		// delete handles the only case where a binding should actually vanish.
 		if msg.slotBindings != nil {
 			h.slotBindings = make(map[int]string, len(msg.slotBindings))
 			for slot, id := range msg.slotBindings {
 				if _, ok := h.sessionByID[id]; ok {
 					h.slotBindings[slot] = id
-				} else {
-					_ = h.storage.UnbindSlot(slot)
 				}
 			}
 		}
@@ -968,6 +970,13 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Snapshot and clear the double-tap window: only a consecutive digit press
+	// should attach, so any other key falling through this switch invalidates
+	// the window for free. The digit case restores the snapshot before jumping.
+	prevSlotTapSlot := h.lastSlotTapSlot
+	prevSlotTapAt := h.lastSlotTapAt
+	h.lastSlotTapSlot = -1
+
 	switch msg.String() {
 	case "j", "down":
 		h.cursor = NextSelectableItem(h.flatItems, h.cursor, 1)
@@ -1089,6 +1098,9 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			h.unbindSlot(digit)
 			return h, nil
 		}
+		// Restore double-tap state so two consecutive digit presses attach.
+		h.lastSlotTapSlot = prevSlotTapSlot
+		h.lastSlotTapAt = prevSlotTapAt
 		return h.jumpToSlot(digit)
 	case "alt+0", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
 		s := msg.String()
