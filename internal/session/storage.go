@@ -152,6 +152,13 @@ func (s *StateDB) migrate() error {
 		}
 	}
 
+	// Pinned repos table for sticky repo headers.
+	_, err = s.db.Exec(`CREATE TABLE IF NOT EXISTS pinned_repos (repo_path TEXT PRIMARY KEY)`)
+	if err != nil {
+		debuglog.Logger.Error("migration failed: create pinned_repos table", "error", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -324,6 +331,45 @@ func (s *StateDB) ResetTitleGenerated(id string) error {
 func (s *StateDB) UpdatePromptCount(id string, count int) error {
 	_, err := s.db.Exec("UPDATE sessions SET prompt_count = ? WHERE id = ?", count, id)
 	return err
+}
+
+// PinRepo adds a repo to the pinned set (idempotent).
+func (s *StateDB) PinRepo(repoPath string) error {
+	_, err := s.db.Exec("INSERT OR IGNORE INTO pinned_repos (repo_path) VALUES (?)", repoPath)
+	if err != nil {
+		debuglog.Logger.Error("failed to pin repo", "repo", repoPath, "error", err)
+	}
+	return err
+}
+
+// UnpinRepo removes a repo from the pinned set.
+func (s *StateDB) UnpinRepo(repoPath string) error {
+	_, err := s.db.Exec("DELETE FROM pinned_repos WHERE repo_path = ?", repoPath)
+	if err != nil {
+		debuglog.Logger.Error("failed to unpin repo", "repo", repoPath, "error", err)
+	}
+	return err
+}
+
+// LoadPinnedRepos returns all pinned repo paths.
+func (s *StateDB) LoadPinnedRepos() ([]string, error) {
+	rows, err := s.db.Query("SELECT repo_path FROM pinned_repos ORDER BY repo_path")
+	if err != nil {
+		debuglog.Logger.Error("failed to load pinned repos", "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var repos []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			debuglog.Logger.Error("failed to scan pinned repo row", "error", err)
+			return nil, err
+		}
+		repos = append(repos, path)
+	}
+	return repos, rows.Err()
 }
 
 func boolToInt(b bool) int {
