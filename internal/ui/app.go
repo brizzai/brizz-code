@@ -715,11 +715,9 @@ func (h *Home) View() string {
 		contentHeight = 1
 	}
 
-	gitInfo := h.snapshotGitInfo()
-
 	switch h.layoutMode() {
 	case "single":
-		sidebar := RenderSidebar(h.flatItems, h.sessions, gitInfo, h.cursor, h.viewOffset, h.width, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.cursor, h.viewOffset, h.width, contentHeight)
 		b.WriteString(sidebar)
 	case "stacked":
 		sidebarHeight := (contentHeight * 55) / 100
@@ -727,7 +725,7 @@ func (h *Home) View() string {
 			sidebarHeight = 3
 		}
 		previewHeight := contentHeight - sidebarHeight - 1 // 1 for separator
-		sidebar := RenderSidebar(h.flatItems, h.sessions, gitInfo, h.cursor, h.viewOffset, h.width, sidebarHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.cursor, h.viewOffset, h.width, sidebarHeight)
 		b.WriteString(sidebar)
 		b.WriteString("\n")
 		b.WriteString(DimStyle.Render(strings.Repeat("─", h.width)))
@@ -747,7 +745,7 @@ func (h *Home) View() string {
 		if h.focusMode && !h.sidebarDirty && h.cachedSidebar != "" {
 			leftPanel = h.cachedSidebar
 		} else {
-			leftPanel = RenderSidebar(h.flatItems, h.sessions, gitInfo, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.cursor, h.viewOffset, sidebarWidth, contentHeight)
 			leftPanel = ensureExactHeight(leftPanel, contentHeight)
 			leftPanel = ensureExactWidth(leftPanel, sidebarWidth)
 			h.cachedSidebar = leftPanel
