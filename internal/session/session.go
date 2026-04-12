@@ -380,6 +380,15 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *sl
 		s.lastContentHash = hash
 		s.lastContentChangeAt = time.Now()
 	} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) > 10*time.Second {
+		// Don't flag as stale if tmux reports recent activity (hash normalization
+		// may strip the changing content, but tmux still sees raw output).
+		if s.tmuxSession != nil {
+			if activity, ok := s.tmuxSession.GetActivity(); ok {
+				if time.Since(time.Unix(activity, 0)) < 10*time.Second {
+					return // activity recent, trust the hook
+				}
+			}
+		}
 		// Content stable >10s while hook says running — hook is stale.
 		// Preserve idle if already acknowledged (don't bounce back to finished).
 		if oldStatus == StatusIdle {
@@ -398,7 +407,14 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *sl
 func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *slog.Logger) {
 	// If this hook was already overridden by pane detection (stale hook),
 	// skip re-evaluation. A new hook (different timestamp) resets the flag.
+	// Exception: if pane shows running (active spinner), the user approved the
+	// permission and Claude started working — no hook fires for permission grants.
 	if !s.hookOverriddenAt.IsZero() && s.hookOverriddenAt.Equal(s.hookUpdatedAt) {
+		if paneStatus == StatusRunning {
+			s.Status = StatusRunning
+			s.Acknowledged = false
+			log.Info("overridden waiting hook but pane shows running, resuming")
+		}
 		return
 	}
 
@@ -427,6 +443,11 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		return
 	}
 
+	// NOTE: window_activity is NOT used here — sub-agents produce output continuously
+	// while the permission prompt sits at the bottom, so activity > hookUpdatedAt is
+	// always true during agent team work. Content hash change detection below is the
+	// correct mechanism for waiting→running (it detects actual pane content changes).
+
 	s.Status = StatusWaiting
 	s.Acknowledged = false
 
@@ -438,8 +459,9 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 	hash := hashContent(normalizeForHash(paneContent))
 	if s.lastContentHash == "" {
 		// First tick in waiting state — save baseline hash.
+		// Don't set lastContentChangeAt here — it should only be set on actual
+		// content changes, otherwise the cooldown triggers falsely on the next tick.
 		s.lastContentHash = hash
-		s.lastContentChangeAt = time.Now()
 	} else if hash != s.lastContentHash {
 		// Content changed — user acted on the prompt.
 		// Transition to running (approval is the most common action).
@@ -448,6 +470,11 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		s.lastContentChangeAt = time.Now()
 		s.Status = StatusRunning
 		log.Info("content changed while waiting, assuming running")
+	} else if !s.lastContentChangeAt.IsZero() && time.Since(s.lastContentChangeAt) < 15*time.Second {
+		// Content recently changed — stay running to prevent flicker.
+		// Claude outputs in bursts; between bursts the hash is the same for a tick,
+		// causing oscillation back to waiting. The 15s cooldown covers burst gaps.
+		s.Status = StatusRunning
 	}
 }
 
