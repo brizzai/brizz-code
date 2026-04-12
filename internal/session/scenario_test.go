@@ -319,6 +319,46 @@ func TestScenarioStaleWaitingHookStaysFinished(t *testing.T) {
 	})
 }
 
+func TestScenarioWaitingRunningCooldown(t *testing.T) {
+	// Regression: when hook says "waiting" but Claude is actively working
+	// (e.g. AskUserQuestion response doesn't fire UserPromptSubmit), content
+	// changes in bursts. Between bursts the hash is the same for a tick,
+	// causing oscillation back to waiting. The 15s cooldown prevents this.
+	runScenario(t, Scenario{
+		Name: "waiting → content changes → stays running during cooldown",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "waiting", Pane: "permission prompt\n❯ 1. Yes\n  2. No\nEsc to cancel\n"},
+			{At: 3 * time.Second, Pane: "Claude is working now\nsome output\n"}, // content changed → running
+			{At: 7 * time.Second},  // same content, within 15s cooldown
+			{At: 18 * time.Second}, // same content, 15s after the content change
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusWaiting},
+			{At: 3 * time.Second, Expected: StatusRunning},
+			{At: 7 * time.Second, Expected: StatusRunning},  // cooldown keeps it running
+			{At: 18 * time.Second, Expected: StatusWaiting}, // cooldown expired (3s + 15s), falls back
+		},
+	})
+}
+
+func TestScenarioOverriddenWaitingResumesOnSpinner(t *testing.T) {
+	// Regression: hook says "waiting" but was already overridden to finished (stale).
+	// User approved the permission, Claude starts working (spinner visible).
+	// No UserPromptSubmit fires for permission grants. The overridden hook's
+	// early return must still check pane for running and resume.
+	runScenario(t, Scenario{
+		Name: "overridden waiting hook + pane spinner → running",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "waiting", Pane: "❯ \n"},                                              // override to finished (idle prompt)
+			{At: 3 * time.Second, Pane: "⠋ Working on approved task...\nctrl+c to interrupt\n"}, // user approved, Claude running
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusFinished},              // override fires
+			{At: 3 * time.Second, Expected: StatusRunning}, // pane spinner detected despite overridden hook
+		},
+	})
+}
+
 func TestScenarioFinishedAutoResumeRunning(t *testing.T) {
 	runScenario(t, Scenario{
 		Name: "hook=finished but pane shows spinner → override to running",
