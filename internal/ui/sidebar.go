@@ -132,9 +132,17 @@ func CollectGroupInfo(sessions []*session.Session, repoPath string) RepoGroupInf
 }
 
 // RenderSidebar renders the session list with repo grouping and cursor.
-func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map[string]*git.RepoInfo, cursor, viewOffset, width, height int) string {
+// slotBindings maps slot number (0-9) to session ID; an inverse lookup
+// decorates bound sessions with a [N] badge.
+func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map[string]*git.RepoInfo, slotBindings map[int]string, cursor, viewOffset, width, height int) string {
 	if len(items) == 0 {
 		return renderEmptyState(width, height)
+	}
+
+	// Invert bindings: session ID -> slot number.
+	slotBySession := make(map[string]int, len(slotBindings))
+	for slot, id := range slotBindings {
+		slotBySession[id] = slot
 	}
 
 	var b strings.Builder
@@ -185,7 +193,13 @@ func RenderSidebar(items []SidebarItem, sessions []*session.Session, gitInfo map
 		} else if item.Pending != nil {
 			b.WriteString(renderPendingItem(item.Pending, item.IsLast, width, i == cursor))
 		} else {
-			b.WriteString(renderSessionItem(item.Session, item.IsLast, width, i == cursor))
+			slot := -1
+			if item.Session != nil {
+				if n, ok := slotBySession[item.Session.ID]; ok {
+					slot = n
+				}
+			}
+			b.WriteString(renderSessionItem(item.Session, item.IsLast, width, i == cursor, slot))
 		}
 		if i < visibleEnd-1 {
 			b.WriteString("\n")
@@ -371,7 +385,7 @@ func renderPRBadge(pr *github.PR, selected bool) string {
 	return style.Render(result)
 }
 
-func renderSessionItem(s *session.Session, isLast bool, width int, selected bool) string {
+func renderSessionItem(s *session.Session, isLast bool, width int, selected bool, slot int) string {
 	status := s.GetStatus()
 	symbolRaw := StatusSymbolRaw(status)
 	title := s.Title
@@ -382,8 +396,14 @@ func renderSessionItem(s *session.Session, isLast bool, width int, selected bool
 		connector = treeLast
 	}
 
-	// Truncate title if needed.
-	maxTitleLen := width - 10 // account for tree + symbol + spacing
+	// Slot badge: " [N]" (4 cols) when bound, empty otherwise.
+	slotRaw := ""
+	if slot >= 0 && slot <= 9 {
+		slotRaw = fmt.Sprintf(" [%d]", slot)
+	}
+
+	// Truncate title if needed, accounting for the slot badge width.
+	maxTitleLen := width - 10 - len(slotRaw)
 	if maxTitleLen < 10 {
 		maxTitleLen = 10
 	}
@@ -394,20 +414,26 @@ func renderSessionItem(s *session.Session, isLast bool, width int, selected bool
 	// Selection prefix: ▶ when selected, space when not — both 1 char wide.
 	selPrefix := " "
 	treeStyle := DimStyle
-	var styledSymbol, styledTitle string
+	var styledSymbol, styledTitle, styledSlot string
 
 	if selected {
 		selPrefix = SessionSelectionPrefix.Render("▶")
 		treeStyle = TreeConnectorSelStyle
 		styledSymbol = SessionStatusSelStyle.Render(symbolRaw)
 		styledTitle = SessionTitleSelStyle.Render(" " + title + " ")
+		if slotRaw != "" {
+			styledSlot = SessionStatusSelStyle.Render(slotRaw)
+		}
 	} else {
 		styledSymbol = StatusSymbol(status)
 		styledTitle = TitleStyleForStatus(status).Render(title)
+		if slotRaw != "" {
+			styledSlot = SlotBadgeStyle.Render(slotRaw)
+		}
 	}
 
 	styledConnector := treeStyle.Render(connector)
-	return fmt.Sprintf(" %s%s %s %s", selPrefix, styledConnector, styledSymbol, styledTitle)
+	return fmt.Sprintf(" %s%s %s %s%s", selPrefix, styledConnector, styledSymbol, styledTitle, styledSlot)
 }
 
 func renderPendingItem(pw *PendingWorkspace, isLast bool, width int, selected bool) string {

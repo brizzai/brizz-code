@@ -584,3 +584,114 @@ func TestMigrationIdempotent(t *testing.T) {
 		t.Errorf("expected 1 session, got %d", len(sessions))
 	}
 }
+
+func TestSlotBindings(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now()
+	saveSession := func(id string) {
+		if err := db.SaveSession(&SessionRow{
+			ID: id, Title: id, ProjectPath: "/tmp/p",
+			Status: "idle", CreatedAt: now,
+		}); err != nil {
+			t.Fatalf("SaveSession %s: %v", id, err)
+		}
+	}
+	saveSession("sess-a")
+	saveSession("sess-b")
+	saveSession("sess-c")
+
+	// Initial: no bindings.
+	bindings, err := db.LoadSlotBindings()
+	if err != nil {
+		t.Fatalf("LoadSlotBindings: %v", err)
+	}
+	if len(bindings) != 0 {
+		t.Errorf("expected 0 bindings, got %d", len(bindings))
+	}
+
+	// Bind.
+	if err := db.BindSlot(1, "sess-a"); err != nil {
+		t.Fatalf("BindSlot 1→a: %v", err)
+	}
+	if err := db.BindSlot(2, "sess-b"); err != nil {
+		t.Fatalf("BindSlot 2→b: %v", err)
+	}
+
+	bindings, _ = db.LoadSlotBindings()
+	if bindings[1] != "sess-a" || bindings[2] != "sess-b" {
+		t.Errorf("unexpected bindings: %v", bindings)
+	}
+
+	// Rebind slot 1 to a different session — old session clears.
+	if err := db.BindSlot(1, "sess-c"); err != nil {
+		t.Fatalf("rebind slot 1: %v", err)
+	}
+	bindings, _ = db.LoadSlotBindings()
+	if bindings[1] != "sess-c" {
+		t.Errorf("slot 1 should be sess-c, got %q", bindings[1])
+	}
+	if _, ok := bindings[2]; !ok || bindings[2] != "sess-b" {
+		t.Errorf("slot 2 should still be sess-b, got %v", bindings)
+	}
+
+	// Move a session to a new slot — old slot clears (uniqueness on session_id).
+	if err := db.BindSlot(5, "sess-b"); err != nil {
+		t.Fatalf("move sess-b to slot 5: %v", err)
+	}
+	bindings, _ = db.LoadSlotBindings()
+	if _, ok := bindings[2]; ok {
+		t.Errorf("slot 2 should be cleared when sess-b moves, got %v", bindings)
+	}
+	if bindings[5] != "sess-b" {
+		t.Errorf("slot 5 should be sess-b, got %q", bindings[5])
+	}
+
+	// Unbind.
+	if err := db.UnbindSlot(1); err != nil {
+		t.Fatalf("UnbindSlot: %v", err)
+	}
+	bindings, _ = db.LoadSlotBindings()
+	if _, ok := bindings[1]; ok {
+		t.Errorf("slot 1 should be unbound")
+	}
+
+	// Out-of-range slot rejected.
+	if err := db.BindSlot(10, "sess-a"); err == nil {
+		t.Error("BindSlot(10) should reject out-of-range slot")
+	}
+	if err := db.BindSlot(-1, "sess-a"); err == nil {
+		t.Error("BindSlot(-1) should reject out-of-range slot")
+	}
+
+	// FK cascade: deleting a session drops its binding.
+	if err := db.BindSlot(3, "sess-a"); err != nil {
+		t.Fatalf("BindSlot 3→a: %v", err)
+	}
+	if err := db.DeleteSession("sess-a"); err != nil {
+		t.Fatalf("DeleteSession: %v", err)
+	}
+	bindings, _ = db.LoadSlotBindings()
+	if _, ok := bindings[3]; ok {
+		t.Errorf("slot 3 should be cleared by FK cascade after sess-a delete, got %v", bindings)
+	}
+
+	// Explicit DeleteSlotBindingForSession also works.
+	if err := db.BindSlot(4, "sess-c"); err != nil {
+		t.Fatalf("BindSlot 4→c: %v", err)
+	}
+	if err := db.DeleteSlotBindingForSession("sess-c"); err != nil {
+		t.Fatalf("DeleteSlotBindingForSession: %v", err)
+	}
+	bindings, _ = db.LoadSlotBindings()
+	if _, ok := bindings[4]; ok {
+		t.Errorf("slot 4 should be cleared by explicit delete, got %v", bindings)
+	}
+}

@@ -63,18 +63,20 @@ type (
 		content   string
 	}
 	loadSessionsMsg struct {
-		sessions    []*session.Session
-		ghAvailable bool
-		warning     string
-		err         error
+		sessions     []*session.Session
+		slotBindings map[int]string
+		ghAvailable  bool
+		warning      string
+		err          error
 	}
-	openEditorMsg      struct{ err error }
-	openPRMsg          struct{ err error }
-	quickApproveMsg    struct{ err error }
-	spinnerTickMsg     struct{}
-	previewTickMsg     time.Time
-	focusTickMsg       time.Time
-	reloadAllResultMsg struct {
+	openEditorMsg        struct{ err error }
+	openPRMsg            struct{ err error }
+	quickApproveMsg      struct{ err error }
+	spinnerTickMsg       struct{}
+	previewTickMsg       time.Time
+	focusTickMsg         time.Time
+	slotAssignTimeoutMsg struct{}
+	reloadAllResultMsg   struct {
 		restarted int
 		skipped   int
 		errors    []string
@@ -139,6 +141,13 @@ type Home struct {
 	filterActive bool
 	filterText   string
 
+	// Slot hotkeys (RTS-style quick access: digit=jump, double-digit=attach, alt+digit or =<digit>=bind).
+	slotBindings      map[int]string // slot (0-9) -> session ID
+	lastSlotTapSlot   int            // -1 when no pending tap
+	lastSlotTapAt     time.Time
+	slotAssignPending bool
+	slotAssignExpires time.Time
+
 	// Config.
 	cfg     *config.Config
 	version string
@@ -179,6 +188,8 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home
 		storage:               storage,
 		sessionByID:           make(map[string]*session.Session),
 		repoExpanded:          make(map[string]bool),
+		slotBindings:          make(map[int]string),
+		lastSlotTapSlot:       -1,
 		newDialog:             NewNewSessionDialog(),
 		confirmDialog:         NewConfirmDialog(),
 		renameDialog:          NewRenameDialog(),
@@ -287,6 +298,12 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionCreateResultMsg:
 		return h.handleSessionCreateResult(msg)
+
+	case slotAssignTimeoutMsg:
+		if h.slotAssignPending && !time.Now().Before(h.slotAssignExpires) {
+			h.slotAssignPending = false
+		}
+		return h, nil
 
 	case sessionDeleteMsg:
 		if msg.err != nil {
@@ -608,6 +625,17 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		h.sessions = msg.sessions
 		h.rebuildSessionMap()
+		// Prune slot bindings whose session no longer exists.
+		if msg.slotBindings != nil {
+			h.slotBindings = make(map[int]string, len(msg.slotBindings))
+			for slot, id := range msg.slotBindings {
+				if _, ok := h.sessionByID[id]; ok {
+					h.slotBindings[slot] = id
+				} else {
+					_ = h.storage.UnbindSlot(slot)
+				}
+			}
+		}
 		// Default all repos to expanded on first load.
 		groups := session.GroupByRepo(h.sessions)
 		for repo := range groups {
@@ -717,7 +745,7 @@ func (h *Home) View() string {
 
 	switch h.layoutMode() {
 	case "single":
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, h.width, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, h.width, contentHeight)
 		b.WriteString(sidebar)
 	case "stacked":
 		sidebarHeight := (contentHeight * 55) / 100
@@ -725,7 +753,7 @@ func (h *Home) View() string {
 			sidebarHeight = 3
 		}
 		previewHeight := contentHeight - sidebarHeight - 1 // 1 for separator
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, h.width, sidebarHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, h.width, sidebarHeight)
 		b.WriteString(sidebar)
 		b.WriteString("\n")
 		b.WriteString(DimStyle.Render(strings.Repeat("─", h.width)))
@@ -745,7 +773,7 @@ func (h *Home) View() string {
 		if h.focusMode && !h.sidebarDirty && h.cachedSidebar != "" {
 			leftPanel = h.cachedSidebar
 		} else {
-			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
 			leftPanel = ensureExactHeight(leftPanel, contentHeight)
 			leftPanel = ensureExactWidth(leftPanel, sidebarWidth)
 			h.cachedSidebar = leftPanel
@@ -1049,12 +1077,36 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		h.branchDialog.ShowLoading()
 		return h, tea.Batch(h.fetchBranchList(repoPath), spinnerTickCmd)
+	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		digit := int(msg.String()[0] - '0')
+		if h.slotAssignPending {
+			h.slotAssignPending = false
+			h.bindCurrentSessionToSlot(digit)
+			return h, nil
+		}
+		return h.jumpToSlot(digit)
+	case "alt+0", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
+		s := msg.String()
+		digit := int(s[len(s)-1] - '0')
+		h.bindCurrentSessionToSlot(digit)
+		return h, nil
+	case "=":
+		h.slotAssignPending = true
+		h.slotAssignExpires = time.Now().Add(2 * time.Second)
+		h.setInfo("Assign slot 0-9 (Esc to cancel)")
+		return h, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return slotAssignTimeoutMsg{} })
 	case "/":
 		h.filterActive = true
 		h.filterInput.Focus()
 		analytics.Track(analytics.EventFilterUsed, nil)
 		return h, nil
 	case "esc":
+		// Cancel pending slot-assign leader.
+		if h.slotAssignPending {
+			h.slotAssignPending = false
+			h.setInfo("Slot assign cancelled")
+			return h, nil
+		}
 		// Clear active filter.
 		if h.filterText != "" {
 			h.filterText = ""
@@ -1683,6 +1735,19 @@ func (h *Home) deleteSession(id string) {
 		debuglog.Logger.Error("failed to delete session from storage", "id", id, "err", err)
 	}
 
+	// Clear any slot binding pointing at this session. FK cascade handles the
+	// DB row, but the in-memory map needs explicit cleanup for the UI.
+	for slot, sid := range h.slotBindings {
+		if sid == id {
+			delete(h.slotBindings, slot)
+		}
+	}
+	if h.lastSlotTapSlot >= 0 {
+		if sid, ok := h.slotBindings[h.lastSlotTapSlot]; !ok || sid == id {
+			h.lastSlotTapSlot = -1
+		}
+	}
+
 	// Remove hook status file.
 	if err := os.Remove(filepath.Join(hooks.GetHooksDir(), id+".json")); err != nil && !os.IsNotExist(err) {
 		debuglog.Logger.Error("failed to remove hook status file", "id", id, "err", err)
@@ -2102,6 +2167,79 @@ func (h *Home) layoutMode() string {
 	return "dual"
 }
 
+// bindCurrentSessionToSlot persists the selected session under the given slot,
+// replacing any prior binding for either the slot or the session.
+func (h *Home) bindCurrentSessionToSlot(slot int) {
+	s := h.selectedSession()
+	if s == nil {
+		h.setError(fmt.Errorf("select a session first"))
+		return
+	}
+	if err := h.storage.BindSlot(slot, s.ID); err != nil {
+		h.setError(fmt.Errorf("bind slot: %w", err))
+		return
+	}
+	for k, v := range h.slotBindings {
+		if v == s.ID {
+			delete(h.slotBindings, k)
+		}
+	}
+	h.slotBindings[slot] = s.ID
+	h.actionLog.Add("bind slot", fmt.Sprintf("%d → %s", slot, s.Title), true)
+	h.setInfo(fmt.Sprintf("Slot %d → %s", slot, s.Title))
+	h.sidebarDirty = true
+}
+
+// jumpToSlot moves the cursor to the session bound at the given slot.
+// A second press of the same slot within 400ms also attaches.
+func (h *Home) jumpToSlot(slot int) (tea.Model, tea.Cmd) {
+	sessID, ok := h.slotBindings[slot]
+	if !ok {
+		h.setInfo(fmt.Sprintf("Slot %d unbound", slot))
+		return h, nil
+	}
+	s, ok := h.sessionByID[sessID]
+	if !ok {
+		delete(h.slotBindings, slot)
+		_ = h.storage.UnbindSlot(slot)
+		h.setError(fmt.Errorf("slot %d was stale, cleared", slot))
+		return h, nil
+	}
+
+	// Expand the repo group if collapsed, so the session is visible and selectable.
+	repo := session.GetRepoRoot(s.ProjectPath)
+	if !h.repoExpanded[repo] {
+		h.repoExpanded[repo] = true
+		h.rebuildFlatItems()
+	}
+
+	idx := -1
+	for i, item := range h.flatItems {
+		if !item.IsRepoHeader && item.Session != nil && item.Session.ID == sessID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		// Likely hidden by an active filter.
+		h.setInfo(fmt.Sprintf("Slot %d hidden by filter", slot))
+		return h, nil
+	}
+
+	isDoubleTap := h.lastSlotTapSlot == slot &&
+		time.Since(h.lastSlotTapAt) < 400*time.Millisecond
+	h.cursor = idx
+	h.syncViewport()
+	if isDoubleTap {
+		h.lastSlotTapSlot = -1
+		h.actionLog.Add("attach via slot", fmt.Sprintf("%d", slot), true)
+		return h, h.attachSelected()
+	}
+	h.lastSlotTapSlot = slot
+	h.lastSlotTapAt = time.Now()
+	return h, h.fetchPreviewForSelected()
+}
+
 func (h *Home) selectedSession() *session.Session {
 	if h.cursor < 0 || h.cursor >= len(h.flatItems) || h.flatItems[h.cursor].IsRepoHeader {
 		return nil
@@ -2202,6 +2340,12 @@ func (h *Home) loadSessions() tea.Msg {
 		sessions = filtered
 	}
 
+	slotBindings, err := h.storage.LoadSlotBindings()
+	if err != nil {
+		debuglog.Logger.Error("failed to load slot bindings", "err", err)
+		slotBindings = map[int]string{}
+	}
+
 	// These block but run in the tea.Cmd goroutine, not Update().
 	configDir := hooks.GetClaudeConfigDir()
 	hooks.InjectClaudeHooks(configDir)
@@ -2214,7 +2358,7 @@ func (h *Home) loadSessions() tea.Msg {
 		warning = "claude CLI not found — install Claude Code to create sessions"
 	}
 
-	return loadSessionsMsg{sessions: sessions, ghAvailable: ghAvailable, warning: warning}
+	return loadSessionsMsg{sessions: sessions, slotBindings: slotBindings, ghAvailable: ghAvailable, warning: warning}
 }
 
 func (h *Home) setError(err error) {

@@ -79,6 +79,7 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
 - Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, : or Ctrl+P command palette, S settings, ! bug report/diagnostics, ? help, q quit
+- Session hotkeys (RTS-style): `Alt+0-9` (or `=` then digit) binds the selected session to a slot; plain `0-9` jumps to the bound session (double-tap within 400ms also attaches); `[N]` badge in sidebar marks bound sessions; bindings persist in SQLite `slot_bindings` table (FK cascade on session delete)
 - Command palette (: / Ctrl+P): fuzzy-searchable list of all actions; palette-only commands include "Reload All Sessions" (restarts all dead/error sessions)
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)

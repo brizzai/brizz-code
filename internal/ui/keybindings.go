@@ -36,6 +36,9 @@ var allKeyBindings = []KeyBinding{
 	{Key: "Y", BarKey: "Y", BarDesc: "Approve", Desc: "Quick approve permission", Section: "session"},
 	{Key: "b", BarKey: "b", BarDesc: "Branch", Desc: "Switch git branch", Section: "session"},
 	{Key: "/", BarKey: "/", BarDesc: "Filter", Desc: "Filter sessions", Section: "session"},
+	{Key: "0-9", Desc: "Jump to slot (double-tap to attach)", Section: "session"},
+	{Key: "Alt+0-9", Desc: "Bind session to slot", Section: "session"},
+	{Key: "= then digit", Desc: "Bind slot (fallback if Alt unsupported)", Section: "session"},
 
 	// Global.
 	{Key: ": / Ctrl+P", BarKey: ":", BarDesc: "Cmd", Desc: "Command palette", Section: "global"},
