@@ -7,6 +7,7 @@ updates:
       day: monday
     labels:
       - dependencies
+      - no-changelog
     open-pull-requests-limit: 10
 
   - package-ecosystem: gomod
@@ -16,4 +17,5 @@ updates:
       day: monday
     labels:
       - dependencies
+      - no-changelog
     open-pull-requests-limit: 10
