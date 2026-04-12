@@ -2,8 +2,6 @@ package ui
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -1279,8 +1277,7 @@ func (h *Home) confirmDeleteSelected() tea.Cmd {
 	}
 
 	details := []string{
-		"tmux session terminated",
-		"Terminal history lost",
+		"Press z to undo within 5s",
 	}
 	if isLastInRepo {
 		details = append(details, "Last session in this repo")
@@ -1780,9 +1777,7 @@ func (h *Home) deferDelete(msg sessionDeleteMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Generate nonce for timer matching.
-	nonceBytes := make([]byte, 8)
-	_, _ = rand.Read(nonceBytes)
-	nonce := hex.EncodeToString(nonceBytes)
+	nonce := fmt.Sprintf("%s-%d", msg.id, time.Now().UnixNano())
 
 	// Push onto undo stack.
 	h.pendingDeletes = append(h.pendingDeletes, PendingDelete{
@@ -1920,7 +1915,15 @@ func (h *Home) finalizeAllPendingDeletes() {
 		if err := os.Remove(filepath.Join(hooks.GetHooksDir(), pd.Session.ID+".json")); err != nil && !os.IsNotExist(err) {
 			debuglog.Logger.Error("failed to remove hook status file on quit", "id", pd.Session.ID, "err", err)
 		}
-		// Note: workspace destruction skipped on quit (async operation, app is exiting).
+		// Best-effort workspace destruction on quit.
+		if pd.DestroyWS && pd.WorkspaceName != "" {
+			provider := workspace.ResolveProvider(pd.RepoPath)
+			if provider != nil && provider.CanDestroy() {
+				if err := provider.Destroy(pd.RepoPath, pd.WorkspaceName); err != nil {
+					debuglog.Logger.Error("failed to destroy workspace on quit", "id", pd.Session.ID, "workspace", pd.WorkspaceName, "err", err)
+				}
+			}
+		}
 	}
 	h.pendingDeletes = nil
 }
