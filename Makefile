@@ -43,4 +43,4 @@ install: build
 	cp $(BUILD_DIR)/$(BINARY) ~/.local/bin/
 
 setup:
-	git config core.hooksPath .githooks
+	pre-commit install
