@@ -78,8 +78,10 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
-- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, : or Ctrl+P command palette, S settings, ! bug report/diagnostics, ? help, q quit
+- Keybindings: j/k nav, Enter attach, Space jump to next waiting/finished, a new session (instant, repo-scoped), n new session (any repo, path autocomplete), w new worktree session (base branch + new branch), d delete (Y to also destroy workspace, D to also remove repo), z undo delete (5s window), r restart, R rename, e editor, p open PR in browser, Y quick approve (waiting sessions), / filter, : or Ctrl+P command palette, S settings, ! bug report/diagnostics, ? help, q quit
 - Command palette (: / Ctrl+P): fuzzy-searchable list of all actions; palette-only commands include "Reload All Sessions" (restarts all dead/error sessions)
+- Undo delete: `z` key restores last deleted session within 5s window (stacked — multiple deletes each undoable). Tmux kept alive during window for full restore.
+- Pinned repos: repos auto-pinned on session creation, persist in SQLite. Empty repos show dimmed with "(empty)". `d` on empty repo header unpins it. `D` in delete dialog also removes repo.
 - Tmux status bar configured per session with detach hint (ctrl+q)
 - Attach uses PTY with Ctrl+Q intercept for clean detach (creack/pty + golang.org/x/term)
 - Repo headers show branch name (), dirty indicator (*), and PR badge (#N)
