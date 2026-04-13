@@ -359,6 +359,45 @@ func TestScenarioOverriddenWaitingResumesOnSpinner(t *testing.T) {
 	})
 }
 
+func TestScenarioRealANSIPermissionCursorOnOption2(t *testing.T) {
+	// Regression: when the user moves the menu cursor off option 1, detectWaiting
+	// used to require "❯ 1." and failed. The pipeline then fell through to
+	// detectFinished which false-matched "❯ 2. …" as an idle prompt, flipping
+	// the acknowledged session to idle. Captured from snapshot
+	// 2026-04-13T12-36-25_brainstorm-conversation-cache-.
+	fixture := "pane_waiting_permission_cursor_opt2.txt"
+	if _, err := os.Stat(filepath.Join("testdata", fixture)); err != nil {
+		t.Skipf("fixture %s not available", fixture)
+	}
+
+	runScenario(t, Scenario{
+		Name: "permission menu, cursor on option 2: stays waiting across ticks",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "waiting", Pane: "@fixture:" + fixture},
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusWaiting},
+			{At: 4 * time.Second, Expected: StatusWaiting},
+			{At: 8 * time.Second, Expected: StatusWaiting},
+		},
+	})
+}
+
+func TestScenarioPermissionCursorOnOption3(t *testing.T) {
+	// Plain-text counterpart for cursor-on-option-3 — no real ANSI fixture
+	// needed because detection runs on StripANSI'd content.
+	pane := "some output\nDo you want to proceed?\n  1. Yes\n  2. No, tell Claude\n❯ 3. Ask every time\nEsc to cancel\n"
+	runScenario(t, Scenario{
+		Name: "permission menu, cursor on option 3: detected as waiting",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "waiting", Pane: pane},
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusWaiting},
+		},
+	})
+}
+
 func TestScenarioFinishedAutoResumeRunning(t *testing.T) {
 	runScenario(t, Scenario{
 		Name: "hook=finished but pane shows spinner → override to running",
