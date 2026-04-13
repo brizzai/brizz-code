@@ -398,6 +398,42 @@ func TestScenarioPermissionCursorOnOption3(t *testing.T) {
 	})
 }
 
+func TestScenarioStaleWaitingWithSubagentSpelunking(t *testing.T) {
+	// Regression: when a user approves a permission and Claude launches an
+	// Explore sub-agent, hooks stop firing. The pane shows active sub-agent
+	// work ("✳ Spelunking… (3m 14s · ↑ 1.8k tokens)"). Before the fix,
+	// detectRunning's whimsical check only matched `· ↓ tokens`, so the
+	// sub-agent activity line was ignored. Detection periodically returned
+	// Finished, applyHookWaiting's pane override fired, and the session
+	// (acknowledged) collapsed to idle.
+	//
+	// With `· ↑` matching, detection reliably returns Running on the
+	// spelunking fixture, so the override to finished never fires even
+	// when Acknowledged=true.
+	// Captured from snapshot 2026-04-13T18-03-40_align-button-figma-design-syst.
+	fixture := "pane_running_subagent_spelunking_up_arrow.txt"
+	if _, err := os.Stat(filepath.Join("testdata", fixture)); err != nil {
+		t.Skipf("fixture %s not available", fixture)
+	}
+
+	runScenario(t, Scenario{
+		Name: "stale waiting hook + acknowledged + sub-agent spelunking: transitions waiting→running, never idle",
+		Events: []ScenarioEvent{
+			// Waiting on permission prompt, user previously acknowledged the session.
+			{At: 0, Hook: "waiting", Pane: "permission prompt\n❯ 1. Yes\n  2. No\nEsc to cancel\n", Acknowledge: true},
+			// User approves; Claude launches Explore sub-agent. No new hook fires.
+			{At: 3 * time.Second, Pane: "@fixture:" + fixture},
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusWaiting},
+			// Content changed while waiting AND pane shows whimsical running signal:
+			// must end up Running. Before the fix, pane detection would intermittently
+			// return Finished → Acknowledged collapsed it to Idle.
+			{At: 3 * time.Second, Expected: StatusRunning},
+		},
+	})
+}
+
 func TestScenarioFinishedAutoResumeRunning(t *testing.T) {
 	runScenario(t, Scenario{
 		Name: "hook=finished but pane shows spinner → override to running",

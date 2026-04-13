@@ -734,12 +734,14 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 		}
 	}
 
-	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)").
+	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)"
+	// for inbound tokens, or "Spelunking… (3m 14s · ↑ 1.8k tokens)" for sub-agent
+	// output). Either arrow + "tokens" on the same line is durable running signal.
 	// Only check bottom 10 lines — the token counter line is always near the bottom.
 	whimsicalN := min(10, len(recentLines))
 	for _, line := range recentLines[:whimsicalN] {
 		lower := strings.ToLower(line)
-		if strings.Contains(lower, "· ↓") && strings.Contains(lower, "tokens") {
+		if strings.Contains(lower, "tokens") && (strings.Contains(lower, "· ↓") || strings.Contains(lower, "· ↑")) {
 			log.Debug("detectStatus: matched whimsical activity pattern", "line", line)
 			return StatusRunning
 		}

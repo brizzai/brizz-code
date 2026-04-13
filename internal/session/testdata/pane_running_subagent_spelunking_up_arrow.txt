@@ -1,0 +1,36 @@
+     [2m[38;2;248;248;242m 15[0m [38;2;248;248;242m [39m        [38;2;248;248;242mghost:[39m
+     [2m[38;2;248;248;242m 16[0m [38;2;248;248;242m [39m          [38;2;230;219;116m'bg-transparent[39m [38;2;230;219;116mtext-[var(--ds-btn-text-text-active)][39m [38;2;230;219;116mhover:bg-[var(--ds-btn-text-bg-hover)][39m [38;2;230;219;116mhover:text-[var(--ds-btn-text-text-active)][39m [38;2;230;219;116mactive:bg-[v[39m
+     [2m[38;2;248;248;242m [0m   [38;2;248;248;242m [38;2;230;219;116mar(--ds-btn-text-bg-hover)]/70[39m [38;2;230;219;116mdisabled:text-[var(--ds-btn-text-text-disabled)][39m [38;2;230;219;116m[&_svg]:text-[var(--ds-btn-text-icon-active)][39m [38;2;230;219;116maria-expanded:bg-[var(--ds-btn-te[39m
+     [2m[38;2;248;248;242m [0m   [38;2;248;248;242m [38;2;230;219;116mxt-bg-hover)]'[38;2;248;248;242m,[39m
+
+[38;5;114m⏺[39m [1mUpdate[0m(src/components/ui/button.utils.ts)
+[38;5;246m  ⎿  [39mAdded [1m1[0m line, removed [1m1[0m line
+     [2m[38;2;248;248;242m 13 [0m[38;2;248;248;242m           [38;2;230;219;116m'bg-transparent text-[var(--ds-btn-secondary-text-active)] border-[var(--ds-btn-secondary-border-active)] hover:bg-[var(--ds-blue-700)]/10 hover:bord[39m
+     [2m[38;2;248;248;242m    [0m[38;2;248;248;242m [38;2;230;219;116mer-[var(--ds-btn-secondary-border-hover)] hover:text-[var(--ds-btn-secondary-text-hover)] active:bg-[var(--ds-btn-secondary-bg-pressed)] active:text-[var(--ds-[39m
+     [2m[38;2;248;248;242m    [0m[38;2;248;248;242m [38;2;230;219;116mbtn-secondary-text-pressed)] active:border-[var(--ds-btn-secondary-border-pressed)] disabled:text-[var(--ds-btn-secondary-text-disabled)] disabled:border-[var([39m
+     [2m[38;2;248;248;242m    [0m[38;2;248;248;242m [38;2;230;219;116m--ds-btn-secondary-border-disabled)] [&_svg]:text-[var(--ds-btn-secondary-icon-active)] aria-expanded:bg-[var(--ds-blue-700)]/10'[38;2;248;248;242m,[39m
+     [2m[38;2;248;248;242m 14 [0m[38;2;248;248;242m         secondary: [38;2;230;219;116m'bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground'[38;2;248;248;242m,[39m
+     [2m[38;2;248;248;242m 15 [0m[38;2;248;248;242m         ghost:[39m
+     [38;2;220;90;90m[48;2;61;1;0m 16 -[38;2;248;248;242m          'bg-transparent text-[var(--ds-btn-text-text-active)] hover:bg-[var(--ds-[48;2;92;2;0mbtn[48;2;61;1;0m-[48;2;92;2;0mtext-bg-hover[48;2;61;1;0m)] hover:text-[var(--ds-btn-text-text-active)] active:bg-[v[39m[49m
+     [38;2;220;90;90m[48;2;61;1;0m    -[38;2;248;248;242mar(--ds-[48;2;92;2;0mbtn[48;2;61;1;0m-[48;2;92;2;0mtext-bg-hover[48;2;61;1;0m)]/[48;2;92;2;0m70[48;2;61;1;0m disabled:text-[var(--ds-btn-text-text-disabled)] [&_svg]:text-[var(--ds-btn-text-icon-active)] aria-expanded:bg-[var(--ds-[48;2;92;2;0mbtn[48;2;61;1;0m-[48;2;92;2;0mte[39m[49m
+     [38;2;220;90;90m[48;2;61;1;0m    -[38;2;248;248;242m[48;2;92;2;0mxt-bg-hover[48;2;61;1;0m)]',                                                                                                                                                [39m[49m
+     [38;2;80;200;80m[48;2;2;40;0m 16 +[38;2;248;248;242m          [38;2;230;219;116m'bg-transparent text-[var(--ds-btn-text-text-active)] hover:bg-[var(--ds-[48;2;4;71;0mblue[48;2;2;40;0m-[48;2;4;71;0m700[48;2;2;40;0m)][48;2;4;71;0m/10[48;2;2;40;0m hover:text-[var(--ds-btn-text-text-active)] active:bg-[var(--d[39m[49m
+     [38;2;80;200;80m[48;2;2;40;0m    +[38;2;230;219;116ms-[48;2;4;71;0mblue[48;2;2;40;0m-[48;2;4;71;0m700[48;2;2;40;0m)]/[48;2;4;71;0m20[48;2;2;40;0m disabled:text-[var(--ds-btn-text-text-disabled)] [&_svg]:text-[var(--ds-btn-text-icon-active)] aria-expanded:bg-[var(--ds-[48;2;4;71;0mblue[48;2;2;40;0m-[48;2;4;71;0m700[48;2;2;40;0m)][48;2;4;71;0m/10[48;2;2;40;0m'[38;2;248;248;242m,      [39m[49m
+     [2m[38;2;248;248;242m 17[0m [38;2;248;248;242m [39m        [38;2;248;248;242mlink:[39m [38;2;230;219;116m'text-[var(--ds-btn-link-text-active)][39m [38;2;230;219;116munderline-offset-4[39m [38;2;230;219;116mhover:underline[39m [38;2;230;219;116mhover:text-[var(--ds-btn-link-text-hover)][39m [38;2;230;219;116mdisabled:text-[var(--ds-btn-[39m
+     [2m[38;2;248;248;242m [0m   [38;2;248;248;242m [38;2;230;219;116mlink-text-disabled)][39m [38;2;230;219;116m[&_svg]:text-[var(--ds-btn-link-icon-active)]'[38;2;248;248;242m,[39m
+     [2m[38;2;248;248;242m 18[0m [38;2;248;248;242m [39m
+     [2m[38;2;248;248;242m 19[0m [38;2;248;248;242m [39m        [38;2;248;248;242maccent:[39m
+
+[38;5;231m⏺[39m Now auditing the toolbar component sizes you're seeing in the screenshot.
+
+[38;5;246m⏺[39m Searching for [1m1[0m pattern, reading [1m1[0m file… [38;5;246m(ctrl+o to expand)[39m
+[38;5;246m  ⎿  "(Button|ToggleGroup|Toggle|Select|Input)[^a-zA-Z]"[39m
+
+[38;5;174m✳[39m [38;5;174mSpelunking… [38;5;246m(3m 14s · ↑[39m [38;5;246m1.8k tokens)[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [36m󰧑 Opus 4.6 (1M context)[38;5;246m [90m│[38;5;246m [32m███░░░░░░░[38;5;246m [90m│[38;5;246m [32m30%[38;5;246m [90m│[38;5;246m [35m󰍛 300.0k/1000k[38;5;246m [90m│[38;5;246m [33m yuval/brz-1232-buttons-figma-thing[38;5;246m [90m│[38;5;246m [1m[37m  anotherbrizzai[0m
+  [38;5;147m⏵⏵[39m [38;5;147maccept[39m [38;5;147medits[39m [38;5;147mon[38;5;246m (shift+tab[39m [38;5;246mto[39m [38;5;246mcycle)[39m
+
