@@ -390,11 +390,13 @@ type ConfirmDialog struct {
 	height         int
 	onYes          func() tea.Msg
 	onYesWorkspace func() tea.Msg
+	onRemoveRepo   func() tea.Msg
 	dialogType     string // "danger", "warning", "info"
 	title          string
 	subject        string
 	details        []string
 	hasWorkspace   bool
+	hasRemoveRepo  bool
 	workspaceName  string
 }
 
@@ -413,6 +415,8 @@ func (d *ConfirmDialog) ShowDanger(title, subject string, details []string, onYe
 	d.onYes = onYes
 	d.hasWorkspace = false
 	d.onYesWorkspace = nil
+	d.hasRemoveRepo = false
+	d.onRemoveRepo = nil
 	d.workspaceName = ""
 }
 
@@ -427,6 +431,38 @@ func (d *ConfirmDialog) ShowDangerWithWorkspace(title, subject string, details [
 	d.hasWorkspace = true
 	d.workspaceName = workspaceName
 	d.onYesWorkspace = onYesWorkspace
+	d.hasRemoveRepo = false
+	d.onRemoveRepo = nil
+}
+
+// ShowDangerLastInRepo shows a danger dialog with the "D +Remove Repo" option for the last session in a pinned repo.
+func (d *ConfirmDialog) ShowDangerLastInRepo(title, subject string, details []string, onYes func() tea.Msg, onRemoveRepo func() tea.Msg) {
+	d.visible = true
+	d.dialogType = "danger"
+	d.title = title
+	d.subject = subject
+	d.details = details
+	d.onYes = onYes
+	d.hasWorkspace = false
+	d.onYesWorkspace = nil
+	d.hasRemoveRepo = true
+	d.onRemoveRepo = onRemoveRepo
+	d.workspaceName = ""
+}
+
+// ShowDangerLastInRepoWithWorkspace shows a danger dialog with both workspace destroy and remove repo options.
+func (d *ConfirmDialog) ShowDangerLastInRepoWithWorkspace(title, subject string, details []string, workspaceName string, onYes func() tea.Msg, onYesWorkspace func() tea.Msg, onRemoveRepo func() tea.Msg) {
+	d.visible = true
+	d.dialogType = "danger"
+	d.title = title
+	d.subject = subject
+	d.details = details
+	d.onYes = onYes
+	d.hasWorkspace = true
+	d.workspaceName = workspaceName
+	d.onYesWorkspace = onYesWorkspace
+	d.hasRemoveRepo = true
+	d.onRemoveRepo = onRemoveRepo
 }
 
 // Show shows a basic info-style confirmation dialog (backward compatible).
@@ -449,6 +485,13 @@ func (d *ConfirmDialog) SetSize(w, h int) {
 func (d *ConfirmDialog) Update(msg tea.Msg) (*ConfirmDialog, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
+		case "D":
+			if d.hasRemoveRepo && d.onRemoveRepo != nil {
+				cb := d.onRemoveRepo
+				d.Hide()
+				return d, func() tea.Msg { return cb() }
+			}
+			return d, nil
 		case "Y":
 			if d.hasWorkspace && d.onYesWorkspace != nil {
 				cb := d.onYesWorkspace
@@ -537,12 +580,22 @@ func (d *ConfirmDialog) View() string {
 			Render("Y +Workspace") + "  "
 	}
 
+	var repoBtn string
+	if d.hasRemoveRepo {
+		repoBtn = lipgloss.NewStyle().
+			Background(ColorOrange).
+			Foreground(ColorBg).
+			Bold(true).
+			Padding(0, 1).
+			Render("D +Remove Repo") + "  "
+	}
+
 	cancelBtn := lipgloss.NewStyle().
 		Background(ColorBorder).
 		Foreground(ColorText).
 		Padding(0, 1).
 		Render("n Cancel")
-	b.WriteString(actionBtn + "  " + wsBtn + cancelBtn)
+	b.WriteString(actionBtn + "  " + wsBtn + repoBtn + cancelBtn)
 
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

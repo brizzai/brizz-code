@@ -40,13 +40,21 @@ type RepoGroupInfo struct {
 // expanded maps repo path -> whether the group is expanded.
 // filter, when non-empty, only includes sessions whose title contains the filter string.
 // pending workspaces are injected as phantom entries under their repo group.
-func BuildFlatItems(sessions []*session.Session, pending []*PendingWorkspace, expanded map[string]bool, filter string) []SidebarItem {
+// pinnedRepos includes repos that should appear even with no sessions.
+func BuildFlatItems(sessions []*session.Session, pending []*PendingWorkspace, expanded map[string]bool, filter string, pinnedRepos map[string]bool) []SidebarItem {
 	groups := session.GroupByRepo(sessions)
 
 	// Include repos that only have pending workspaces (no sessions yet).
 	for _, pw := range pending {
 		if _, exists := groups[pw.RepoPath]; !exists {
 			groups[pw.RepoPath] = nil
+		}
+	}
+
+	// Include pinned repos even if they have no sessions or pending workspaces.
+	for repo := range pinnedRepos {
+		if _, exists := groups[repo]; !exists {
+			groups[repo] = nil
 		}
 	}
 
@@ -314,13 +322,22 @@ func renderRepoHeader(repoPath string, expanded bool, info RepoGroupInfo, repoIn
 		prStr = " " + renderPRBadge(repoInfo.PR, selected)
 	}
 
+	isEmpty := info.SessionCount == 0
+
 	if selected {
 		icon := SessionSelectionPrefix.Render(expandIcon)
 		styledName := SessionTitleSelStyle.Render(" " + name + " ")
+		if isEmpty {
+			emptyLabel := SessionStatusSelStyle.Render("(empty)")
+			return fmt.Sprintf(" %s %s %s", icon, styledName, emptyLabel) + prStr
+		}
 		styledCount := SessionStatusSelStyle.Render(fmt.Sprintf("(%d)", info.SessionCount))
 		return fmt.Sprintf(" %s %s%s%s %s", icon, styledName, branchStr, dirtyStr, styledCount) + statsStr + prStr
 	}
 	icon := DimStyle.Render(expandIcon)
+	if isEmpty {
+		return fmt.Sprintf(" %s %s %s", icon, DimStyle.Render(name), DimStyle.Render("(empty)")) + prStr
+	}
 	return fmt.Sprintf(" %s %s%s%s %s", icon, RepoHeaderStyle.Render(name), branchStr, dirtyStr, countStr) + statsStr + prStr
 }
 
