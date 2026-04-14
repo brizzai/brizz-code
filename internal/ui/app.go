@@ -27,6 +27,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
 const (
@@ -168,6 +169,9 @@ type Home struct {
 	slotAssignMode    int // 0=off, 1=bind pending (=<digit>), 2=unbind pending (==<digit>)
 	slotAssignExpires time.Time
 
+	// Floating toast overlay (bottom-right).
+	toasts *ToastStack
+
 	// Config.
 	cfg     *config.Config
 	version string
@@ -210,6 +214,7 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home
 		repoExpanded:          make(map[string]bool),
 		slotBindings:          make(map[int]string),
 		lastSlotTapSlot:       -1,
+		toasts:                NewToastStack(),
 		pinnedRepos:           make(map[string]bool),
 		newDialog:             NewNewSessionDialog(),
 		confirmDialog:         NewConfirmDialog(),
@@ -715,7 +720,17 @@ func (h *Home) View() string {
 	if h.width == 0 {
 		return lipgloss.NewStyle().Bold(true).Foreground(ColorAccent).Render("   brizz-code")
 	}
+	base := h.renderBody()
+	toast := h.toasts.View(h.width)
+	if toast == "" {
+		return base
+	}
+	// Bottom-right, with a 1-cell right margin and a 1-row lift so the toast
+	// clears the help-bar baseline.
+	return overlay.Composite(toast, base, overlay.Right, overlay.Bottom, -1, -1)
+}
 
+func (h *Home) renderBody() string {
 	// Modals take priority.
 	if h.helpOverlay.IsVisible() {
 		return h.helpOverlay.View()
@@ -853,19 +868,6 @@ func (h *Home) View() string {
 		b.WriteString("\n")
 		b.WriteString(h.renderHelpBar())
 		lineCount += 2
-	}
-
-	// Info/error flash message (most recent wins, overwrites last line).
-	showInfo := h.infoMsg != "" && time.Since(h.infoTime) < 5*time.Second
-	showErr := h.err != nil && time.Since(h.errTime) < 5*time.Second
-	if showInfo && (!showErr || h.infoTime.After(h.errTime)) {
-		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(" " + h.infoMsg))
-		lineCount++
-	} else if showErr {
-		b.WriteString("\n")
-		b.WriteString(ErrorStyle.Render(" " + h.err.Error()))
-		lineCount++
 	}
 
 	// Track height mismatches (counter for bug report, log only on first occurrence).
@@ -2667,6 +2669,7 @@ func (h *Home) setError(err error) {
 	h.errTime = time.Now()
 	if err != nil {
 		h.errorHistory.Add(err.Error())
+		h.toasts.Add(ToastError, err.Error())
 		analytics.Track(analytics.EventErrorOccurred, map[string]interface{}{
 			"category": strings.SplitN(err.Error(), ":", 2)[0],
 		})
@@ -2676,6 +2679,7 @@ func (h *Home) setError(err error) {
 func (h *Home) setInfo(msg string) {
 	h.infoMsg = msg
 	h.infoTime = time.Now()
+	h.toasts.Add(ToastInfo, msg)
 }
 
 // buildPaletteCommands returns all available commands for the command palette.
