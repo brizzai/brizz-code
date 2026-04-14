@@ -489,13 +489,39 @@ func (s *Session) applyHookFinished(paneStatus Status, log *slog.Logger) {
 		s.Status = StatusRunning
 		s.Acknowledged = false
 		log.Info("hook says finished but pane shows running, overriding")
-	} else if paneStatus == StatusWaiting {
+		return
+	}
+	if paneStatus == StatusWaiting {
 		// Hook says finished (e.g. parent Stop when delegating to sub-agent)
 		// but pane shows a permission prompt — sub-agent is waiting for approval.
 		s.Status = StatusWaiting
 		s.Acknowledged = false
 		log.Info("hook says finished but pane shows waiting, overriding")
-	} else if s.Acknowledged {
+		return
+	}
+	// Pane detection says "finished" or gave no signal. Before committing to
+	// that, corroborate with tmux window_activity: if the pane was written to
+	// in the last few seconds, Claude's TUI is actively rendering (spinner
+	// animation, sub-agent output bursts that briefly push the spinner line
+	// out of the recent-lines window). Hold the previous state instead of
+	// flipping, so a single-tick pane-detection miss doesn't cause idle/finished
+	// oscillation while Claude is actually working.
+	//
+	// This is only safe in the hook=finished path: here recent activity means
+	// "Claude is writing output", which argues against finished. In the
+	// hook=waiting path (see applyHookWaiting), activity can be sub-agent
+	// output while the permission prompt sits unanswered, so activity there
+	// can't distinguish "user approved" from "user still deciding".
+	if s.tmuxSession != nil {
+		if activity, ok := s.tmuxSession.GetActivity(); ok {
+			if time.Since(time.Unix(activity, 0)) < 3*time.Second {
+				log.Info("hook says finished, pane ambiguous/idle, but tmux activity <3s — holding state",
+					"paneStatus", paneStatus, "current", s.Status)
+				return
+			}
+		}
+	}
+	if s.Acknowledged {
 		s.Status = StatusIdle
 	} else {
 		s.Status = StatusFinished
