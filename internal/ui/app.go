@@ -2570,18 +2570,6 @@ func (h *Home) selectedPreview() (*session.Session, string) {
 	return s, content
 }
 
-func (h *Home) selectedRepoInfo() *git.RepoInfo {
-	s := h.selectedSession()
-	if s == nil {
-		return nil
-	}
-	repo := session.GetRepoRoot(s.ProjectPath)
-	h.workerMu.Lock()
-	info := h.gitInfoCache[repo]
-	h.workerMu.Unlock()
-	return info
-}
-
 // repoInfoFromSnap returns repo info for the selected session using a snapshot
 // of gitInfoCache. Safe to call from View() without holding workerMu.
 func (h *Home) repoInfoFromSnap(snap map[string]*git.RepoInfo) *git.RepoInfo {
