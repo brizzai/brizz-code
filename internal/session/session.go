@@ -782,11 +782,11 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 	//   "Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)" — extended thinking
 	// Both contain `tokens` and `· ↓`/`· ↑` inside a trailing ")".
 	// The `)` suffix + `tokens` + arrow marker combo is specific enough to avoid
-	// false-positives from conversation text (which won't have all three in a
-	// standalone bottom-10 line).
-	// Only check bottom 10 lines — the token counter line is always near the bottom.
-	whimsicalN := min(10, len(recentLines))
-	for _, line := range recentLines[:whimsicalN] {
+	// false-positives from conversation text — safe to scan all 50 recent lines.
+	// (Unlike raw spinner chars, which false-positive on CLI tool output.)
+	// Scanning all lines is important because plan execution pushes the activity
+	// line far from the bottom as checklist items expand below it.
+	for _, line := range recentLines {
 		if isWhimsicalActivity(line) {
 			log.Debug("detectStatus: matched whimsical activity pattern", "line", strings.TrimRight(line, " \t"))
 			return StatusRunning
@@ -806,7 +806,35 @@ func isWhimsicalActivity(line string) bool {
 	lower := strings.ToLower(strings.TrimRight(line, " \t"))
 	return strings.HasSuffix(lower, ")") &&
 		strings.Contains(lower, "tokens") &&
-		(strings.Contains(lower, "· ↓") || strings.Contains(lower, "· ↑"))
+		(strings.Contains(lower, "· ↓") || strings.Contains(lower, "· ↑")) &&
+		hasWhimsicalDuration(lower)
+}
+
+// hasWhimsicalDuration checks for Claude's duration counter pattern "(Ns", "(Nm Ns",
+// "(Nh Nm" inside the line — e.g. "(53s", "(5m 42s", "(1h 2m". This anchors the
+// whimsical check to actual activity lines and prevents false-positives from
+// conversation text that coincidentally mentions "tokens" + "· ↓"/"· ↑" + ")".
+func hasWhimsicalDuration(lower string) bool {
+	// Look for "(<digits><unit>" where unit is s, m, or h.
+	for i := 0; i < len(lower)-2; i++ {
+		if lower[i] != '(' {
+			continue
+		}
+		// Must have digit after '('.
+		j := i + 1
+		if j >= len(lower) || lower[j] < '0' || lower[j] > '9' {
+			continue
+		}
+		// Scan digits.
+		for j < len(lower) && lower[j] >= '0' && lower[j] <= '9' {
+			j++
+		}
+		// Must end with a time unit.
+		if j < len(lower) && (lower[j] == 's' || lower[j] == 'm' || lower[j] == 'h') {
+			return true
+		}
+	}
+	return false
 }
 
 // detectWaiting checks for permission prompts using structural layout checks.
