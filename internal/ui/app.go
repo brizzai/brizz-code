@@ -778,7 +778,7 @@ func (h *Home) renderBody() string {
 
 	switch h.layoutMode() {
 	case "single":
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, h.width, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.slotBindings, h.cursor, h.viewOffset, h.width, contentHeight)
 		b.WriteString(sidebar)
 	case "stacked":
 		sidebarHeight := (contentHeight * 55) / 100
@@ -786,7 +786,7 @@ func (h *Home) renderBody() string {
 			sidebarHeight = 3
 		}
 		previewHeight := contentHeight - sidebarHeight - 1 // 1 for separator
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, h.width, sidebarHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.slotBindings, h.cursor, h.viewOffset, h.width, sidebarHeight)
 		b.WriteString(sidebar)
 		b.WriteString("\n")
 		b.WriteString(DimStyle.Render(strings.Repeat("─", h.width)))
@@ -806,7 +806,7 @@ func (h *Home) renderBody() string {
 		if h.focusMode && !h.sidebarDirty && h.cachedSidebar != "" {
 			leftPanel = h.cachedSidebar
 		} else {
-			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.slotBindings, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
 			leftPanel = ensureExactHeight(leftPanel, contentHeight)
 			leftPanel = ensureExactWidth(leftPanel, sidebarWidth)
 			h.cachedSidebar = leftPanel
@@ -1775,7 +1775,9 @@ func (h *Home) openPRInBrowser() tea.Cmd {
 		return nil
 	}
 
+	h.workerMu.Lock()
 	info := h.gitInfoCache[repo]
+	h.workerMu.Unlock()
 	if info == nil || info.PR == nil || info.PR.URL == "" {
 		debuglog.Logger.Debug("openPR: no PR for branch", "repo", repo)
 		h.setError(fmt.Errorf("no PR for this branch"))
@@ -2565,7 +2567,22 @@ func (h *Home) selectedRepoInfo() *git.RepoInfo {
 		return nil
 	}
 	repo := session.GetRepoRoot(s.ProjectPath)
-	return h.gitInfoCache[repo]
+	h.workerMu.Lock()
+	info := h.gitInfoCache[repo]
+	h.workerMu.Unlock()
+	return info
+}
+
+// snapshotGitInfo returns a shallow copy of gitInfoCache taken under workerMu,
+// safe to read concurrently with the worker goroutine.
+func (h *Home) snapshotGitInfo() map[string]*git.RepoInfo {
+	h.workerMu.Lock()
+	defer h.workerMu.Unlock()
+	snap := make(map[string]*git.RepoInfo, len(h.gitInfoCache))
+	for k, v := range h.gitInfoCache {
+		snap[k] = v
+	}
+	return snap
 }
 
 // --- Internal helpers ---
