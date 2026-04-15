@@ -765,6 +765,15 @@ func (h *Home) renderBody() string {
 
 	var b strings.Builder
 
+	// Snapshot gitInfoCache under lock — the worker goroutine writes to
+	// it concurrently, and View() must not read the live map without a lock.
+	h.workerMu.Lock()
+	gitInfoSnap := make(map[string]*git.RepoInfo, len(h.gitInfoCache))
+	for k, v := range h.gitInfoCache {
+		gitInfoSnap[k] = v
+	}
+	h.workerMu.Unlock()
+
 	// Header.
 	header := h.renderHeader()
 	b.WriteString(header)
@@ -778,7 +787,7 @@ func (h *Home) renderBody() string {
 
 	switch h.layoutMode() {
 	case "single":
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, h.width, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, gitInfoSnap, h.slotBindings, h.cursor, h.viewOffset, h.width, contentHeight)
 		b.WriteString(sidebar)
 	case "stacked":
 		sidebarHeight := (contentHeight * 55) / 100
@@ -786,13 +795,13 @@ func (h *Home) renderBody() string {
 			sidebarHeight = 3
 		}
 		previewHeight := contentHeight - sidebarHeight - 1 // 1 for separator
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, h.width, sidebarHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, gitInfoSnap, h.slotBindings, h.cursor, h.viewOffset, h.width, sidebarHeight)
 		b.WriteString(sidebar)
 		b.WriteString("\n")
 		b.WriteString(DimStyle.Render(strings.Repeat("─", h.width)))
 		b.WriteString("\n")
 		s, content := h.selectedPreview()
-		preview := RenderPreview(s, content, h.selectedRepoInfo(), h.width, previewHeight, h.focusMode)
+		preview := RenderPreview(s, content, h.repoInfoFromSnap(gitInfoSnap), h.width, previewHeight, h.focusMode)
 		b.WriteString(preview)
 	default: // dual
 		sidebarWidth := h.width * 35 / 100
@@ -806,7 +815,7 @@ func (h *Home) renderBody() string {
 		if h.focusMode && !h.sidebarDirty && h.cachedSidebar != "" {
 			leftPanel = h.cachedSidebar
 		} else {
-			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.gitInfoCache, h.slotBindings, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+			leftPanel = RenderSidebar(h.flatItems, h.sessions, gitInfoSnap, h.slotBindings, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
 			leftPanel = ensureExactHeight(leftPanel, contentHeight)
 			leftPanel = ensureExactWidth(leftPanel, sidebarWidth)
 			h.cachedSidebar = leftPanel
@@ -814,7 +823,7 @@ func (h *Home) renderBody() string {
 		}
 
 		s, content := h.selectedPreview()
-		rightPanel := RenderPreview(s, content, h.selectedRepoInfo(), previewWidth, contentHeight, h.focusMode)
+		rightPanel := RenderPreview(s, content, h.repoInfoFromSnap(gitInfoSnap), previewWidth, contentHeight, h.focusMode)
 
 		// Build separator as explicit lines.
 		sepColor := ColorBorder
@@ -2566,6 +2575,16 @@ func (h *Home) selectedRepoInfo() *git.RepoInfo {
 	}
 	repo := session.GetRepoRoot(s.ProjectPath)
 	return h.gitInfoCache[repo]
+}
+
+// repoInfoFromSnap returns repo info for the selected session using a snapshot
+// of gitInfoCache. Safe to call from View() without holding workerMu.
+func (h *Home) repoInfoFromSnap(snap map[string]*git.RepoInfo) *git.RepoInfo {
+	s := h.selectedSession()
+	if s == nil {
+		return nil
+	}
+	return snap[session.GetRepoRoot(s.ProjectPath)]
 }
 
 // --- Internal helpers ---
