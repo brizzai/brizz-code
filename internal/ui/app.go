@@ -1784,7 +1784,9 @@ func (h *Home) openPRInBrowser() tea.Cmd {
 		return nil
 	}
 
+	h.workerMu.Lock()
 	info := h.gitInfoCache[repo]
+	h.workerMu.Unlock()
 	if info == nil || info.PR == nil || info.PR.URL == "" {
 		debuglog.Logger.Debug("openPR: no PR for branch", "repo", repo)
 		h.setError(fmt.Errorf("no PR for this branch"))
@@ -2574,7 +2576,10 @@ func (h *Home) selectedRepoInfo() *git.RepoInfo {
 		return nil
 	}
 	repo := session.GetRepoRoot(s.ProjectPath)
-	return h.gitInfoCache[repo]
+	h.workerMu.Lock()
+	info := h.gitInfoCache[repo]
+	h.workerMu.Unlock()
+	return info
 }
 
 // repoInfoFromSnap returns repo info for the selected session using a snapshot

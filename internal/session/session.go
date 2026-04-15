@@ -482,6 +482,12 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		// Claude outputs in bursts; between bursts the hash is the same for a tick,
 		// causing oscillation back to waiting. The 15s cooldown covers burst gaps.
 		s.Status = StatusRunning
+	} else if paneStatus == StatusRunning {
+		// Content hash is stable (normalizeForHash strips spinner/whimsical lines)
+		// and cooldown expired, but pane detection sees an active running indicator
+		// (spinner char or whimsical activity). Trust the pane — Claude is working.
+		// Self-correcting: a Stop hook or idle prompt will override when done.
+		s.Status = StatusRunning
 	}
 }
 

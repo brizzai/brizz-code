@@ -477,3 +477,32 @@ func TestScenarioExtendedThinkingNoOscillation(t *testing.T) {
 		},
 	})
 }
+
+func TestScenarioStaleWaitingWithActiveSpinner(t *testing.T) {
+	// Regression: user approves a PermissionRequest and Claude starts working.
+	// No UserPromptSubmit fires for permission grants, so the hook stays "waiting".
+	// The pane shows an active spinner (✳ Newspapering…) but normalizeForHash
+	// strips it, making the content hash stable. After the 15s cooldown expired,
+	// status reverted to waiting even though Claude was clearly running.
+	//
+	// Fix: applyHookWaiting checks paneStatus as a fallback — if pane detection
+	// sees running indicators after cooldown, trust the pane and stay running.
+	// Captured from snapshot 2026-04-15T14-07-00_align-button-figma-design-syst.
+	fixture := "pane_running_stale_waiting_spinner.txt"
+	if _, err := os.Stat(filepath.Join("testdata", fixture)); err != nil {
+		t.Skipf("fixture %s not available", fixture)
+	}
+
+	runScenario(t, Scenario{
+		Name: "stale waiting hook + active spinner: stays running after cooldown",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "waiting", Pane: "permission prompt\n❯ 1. Yes\n  2. No\nEsc to cancel\n"},
+			{At: 3 * time.Second, Pane: "@fixture:" + fixture}, // user approved, Claude running
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusWaiting},
+			{At: 3 * time.Second, Expected: StatusRunning},  // content changed → running
+			{At: 20 * time.Second, Expected: StatusRunning}, // 15s cooldown expired, but pane says running → stays running
+		},
+	})
+}

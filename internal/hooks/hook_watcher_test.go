@@ -41,6 +41,7 @@ func TestHookWatcherChangesNotifiesOnProcessFile(t *testing.T) {
 	hs := w.GetStatus("test-instance")
 	if hs == nil {
 		t.Fatal("expected non-nil HookStatus")
+		return
 	}
 	if hs.Status != "running" {
 		t.Errorf("expected status 'running', got %q", hs.Status)
@@ -127,6 +128,7 @@ func TestHookWatcherLoadExistingNotifies(t *testing.T) {
 	hs := w.GetStatus("pre-existing")
 	if hs == nil {
 		t.Fatal("expected non-nil HookStatus for pre-existing file")
+		return
 	}
 	if hs.Status != "waiting" {
 		t.Errorf("expected status 'waiting', got %q", hs.Status)

@@ -29,6 +29,7 @@ var goldenTests = []struct {
 	{"pane_finished_permission_mode.txt", StatusFinished, "permission mode bar (⏵⏵)"},
 	{"pane_finished_conversation_whimsical_markers.txt", StatusFinished, "idle pane with scrollback text mentioning `· ↓`/`· ↑` + `tokens` (meta false-positive guard)"},
 	{"pane_running_extended_thinking.txt", StatusRunning, "extended thinking with `· ↓ tokens · thinking with high effort)` format"},
+	{"pane_running_stale_waiting_spinner.txt", StatusRunning, "active spinner (✳) with idle prompt — Claude running after permission approved"},
 }
 
 func TestGoldenDetection(t *testing.T) {
