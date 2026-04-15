@@ -489,13 +489,39 @@ func (s *Session) applyHookFinished(paneStatus Status, log *slog.Logger) {
 		s.Status = StatusRunning
 		s.Acknowledged = false
 		log.Info("hook says finished but pane shows running, overriding")
-	} else if paneStatus == StatusWaiting {
+		return
+	}
+	if paneStatus == StatusWaiting {
 		// Hook says finished (e.g. parent Stop when delegating to sub-agent)
 		// but pane shows a permission prompt — sub-agent is waiting for approval.
 		s.Status = StatusWaiting
 		s.Acknowledged = false
 		log.Info("hook says finished but pane shows waiting, overriding")
-	} else if s.Acknowledged {
+		return
+	}
+	// Pane detection says "finished" or gave no signal. Before committing to
+	// that, corroborate with tmux window_activity: if the pane was written to
+	// in the last few seconds, Claude's TUI is actively rendering (spinner
+	// animation, sub-agent output bursts that briefly push the spinner line
+	// out of the recent-lines window). Hold the previous state instead of
+	// flipping, so a single-tick pane-detection miss doesn't cause idle/finished
+	// oscillation while Claude is actually working.
+	//
+	// This is only safe in the hook=finished path: here recent activity means
+	// "Claude is writing output", which argues against finished. In the
+	// hook=waiting path (see applyHookWaiting), activity can be sub-agent
+	// output while the permission prompt sits unanswered, so activity there
+	// can't distinguish "user approved" from "user still deciding".
+	if s.tmuxSession != nil {
+		if activity, ok := s.tmuxSession.GetActivity(); ok {
+			if time.Since(time.Unix(activity, 0)) < 3*time.Second {
+				log.Info("hook says finished, pane ambiguous/idle, but tmux activity <3s — holding state",
+					"paneStatus", paneStatus, "current", s.Status)
+				return
+			}
+		}
+	}
+	if s.Acknowledged {
 		s.Status = StatusIdle
 	} else {
 		s.Status = StatusFinished
@@ -734,13 +760,19 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 		}
 	}
 
-	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)").
+	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)"
+	// for inbound tokens, or "Spelunking… (3m 14s · ↑ 1.8k tokens)" for sub-agent
+	// output). The `tokens)` suffix anchors this to the parens-enclosed counter —
+	// conversation text that mentions `· ↓` / `· ↑` / `tokens` (e.g. commit messages,
+	// docs, or chat discussing this very detection) won't close with `tokens)`.
 	// Only check bottom 10 lines — the token counter line is always near the bottom.
 	whimsicalN := min(10, len(recentLines))
 	for _, line := range recentLines[:whimsicalN] {
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "· ↓") && strings.Contains(lower, "tokens") {
-			log.Debug("detectStatus: matched whimsical activity pattern", "line", line)
+		trimmed := strings.TrimRight(line, " \t")
+		lower := strings.ToLower(trimmed)
+		if strings.HasSuffix(lower, "tokens)") &&
+			(strings.Contains(lower, "· ↓") || strings.Contains(lower, "· ↑")) {
+			log.Debug("detectStatus: matched whimsical activity pattern", "line", trimmed)
 			return StatusRunning
 		}
 	}
@@ -758,25 +790,26 @@ func detectWaiting(recentLines []string, _ string, log *slog.Logger) Status {
 	}
 
 	// Structural check: numbered permission menu.
-	// Requires three cues: a "❯ 1." line, a "2." line, AND "Esc to cancel"
-	// nearby. The Esc to cancel line only appears in Claude's interactive
-	// prompts, preventing false-positives from user input numbered lists.
-	hasMenu1 := false
-	hasMenu2 := false
+	// Requires three cues: a cursor-on-numbered-option line ("❯ N."), at least
+	// one other numbered option line, AND "Esc to cancel" nearby. The cursor
+	// may sit on any option (1, 2, 3…) depending on what the user has highlighted.
+	// Esc to cancel only appears in Claude's interactive prompts, preventing
+	// false-positives from user input numbered lists.
+	hasCursorOnOption := false
+	hasOtherOption := false
 	hasEscCancel := false
 	for i := 0; i < bottomN; i++ {
 		trimmed := strings.TrimSpace(recentLines[i])
-		if strings.HasPrefix(trimmed, "❯ 1.") {
-			hasMenu1 = true
-		}
-		if strings.HasPrefix(trimmed, "2.") {
-			hasMenu2 = true
+		if strings.HasPrefix(trimmed, "❯ ") && isNumberedMenuOption(strings.TrimPrefix(trimmed, "❯ ")) {
+			hasCursorOnOption = true
+		} else if isNumberedMenuOption(trimmed) {
+			hasOtherOption = true
 		}
 		if strings.Contains(strings.ToLower(trimmed), "esc to cancel") {
 			hasEscCancel = true
 		}
 	}
-	if hasMenu1 && hasMenu2 && hasEscCancel {
+	if hasCursorOnOption && hasOtherOption && hasEscCancel {
 		log.Debug("detectStatus: matched permission menu structure")
 		return StatusWaiting
 	}
@@ -805,6 +838,21 @@ func detectWaiting(recentLines []string, _ string, log *slog.Logger) Status {
 	return ""
 }
 
+// isNumberedMenuOption reports whether s starts with "<digits>.".
+// Used to distinguish permission-menu cursor lines ("❯ 2. Yes…") from
+// idle prompt lines ("❯ " or "❯ some user text").
+func isNumberedMenuOption(s string) bool {
+	sawDigit := false
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			sawDigit = true
+			continue
+		}
+		return sawDigit && r == '.'
+	}
+	return false
+}
+
 // detectFinished checks for prompt indicators and idle patterns.
 func detectFinished(recentLines []string, recentContent string, log *slog.Logger) Status {
 	if len(recentLines) == 0 {
@@ -816,6 +864,20 @@ func detectFinished(recentLines []string, recentContent string, log *slog.Logger
 	for i := 0; i < scanLimit; i++ {
 		line := strings.TrimSpace(recentLines[i])
 		if line == ">" || line == "❯" || strings.HasPrefix(line, "> ") || strings.HasPrefix(line, "❯ ") {
+			// Skip permission-menu cursor lines ("❯ 2. Yes…") — those are
+			// waiting state, not idle prompts. Defense-in-depth: detectWaiting
+			// should have caught these earlier, but if a new menu variant
+			// slips past it, we don't want to silently flip to finished.
+			remainder := line
+			switch {
+			case strings.HasPrefix(line, "❯ "):
+				remainder = strings.TrimPrefix(line, "❯ ")
+			case strings.HasPrefix(line, "> "):
+				remainder = strings.TrimPrefix(line, "> ")
+			}
+			if isNumberedMenuOption(remainder) {
+				continue
+			}
 			log.Debug("detectStatus: matched prompt", "line", line, "linesFromBottom", i)
 			return StatusFinished
 		}

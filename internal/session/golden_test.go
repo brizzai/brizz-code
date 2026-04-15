@@ -23,8 +23,11 @@ var goldenTests = []struct {
 	desc     string // what this fixture tests
 }{
 	{"pane_waiting_permission_3opt.txt", StatusWaiting, "3-option permission menu with Esc to cancel"},
+	{"pane_waiting_permission_cursor_opt2.txt", StatusWaiting, "permission menu with cursor on option 2 (not option 1)"},
+	{"pane_running_subagent_spelunking_up_arrow.txt", StatusRunning, "sub-agent (Explore) with whimsical `· ↑ tokens` output counter"},
 	{"pane_finished_idle_prompt.txt", StatusFinished, "idle Claude prompt (❯)"},
 	{"pane_finished_permission_mode.txt", StatusFinished, "permission mode bar (⏵⏵)"},
+	{"pane_finished_conversation_whimsical_markers.txt", StatusFinished, "idle pane with scrollback text mentioning `· ↓`/`· ↑` + `tokens` (meta false-positive guard)"},
 }
 
 func TestGoldenDetection(t *testing.T) {
