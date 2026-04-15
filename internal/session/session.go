@@ -758,7 +758,11 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 		}
 	}
 
-	for _, line := range recentLines {
+	// Spinner chars only in bottom 10 lines — active Claude spinners sit right
+	// above the prompt chrome. Checking all 50 lines false-positives on CLI tool
+	// output (e.g. braille spinners from `linear`, `npm`) baked into scrollback.
+	spinnerN := min(10, len(recentLines))
+	for _, line := range recentLines[:spinnerN] {
 		for _, sc := range spinnerChars {
 			if strings.HasPrefix(strings.TrimSpace(line), sc) {
 				// Don't treat spinner chars as running if they're part of a
