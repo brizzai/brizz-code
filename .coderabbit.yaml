@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: go
+early_access: false
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - master
+  path_filters:
+    - "!**/*.pb.go"
+    - "!**/mocks/**"
+    - "!build/**"
+    - "!vendor/**"
+    - "!chrome-extension/icons/**"
+  path_instructions:
+    - path: "internal/ui/**"
+      instructions: |
+        Bubble Tea conventions: no blocking I/O in Update() — all tmux/git/gh
+        calls must be dispatched via the worker goroutine. Flag anything that
+        calls tmux/git/exec directly inside a message handler.
+    - path: "internal/hooks/**"
+      instructions: |
+        Status files live under ~/.config/brizz-code/hooks/<session_id>.json.
+        Hooks are authoritative: never override hook=running with pane=waiting.
+    - path: ".github/workflows/**"
+      instructions: |
+        Public repo — flag any use of pull_request_target that also checks out
+        the PR head SHA with secrets in env. Flag missing minimal permissions
+        blocks and any secret echoed to logs.
+tools:
+  golangci-lint:
+    enabled: true
+  gitleaks:
+    enabled: true
