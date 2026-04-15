@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-15
+
+### Added
+
+- RTS-style session hotkeys: bind the selected session to a numbered slot with `Alt+0-9` (or `=` then a digit), jump with plain `0-9`, double-tap within 400ms to also attach. Unbind by re-pressing `Alt+<N>` on the already-bound session, or `==` then the digit to clear any slot. Bound sessions show a `[N]` badge in the sidebar and persist across restarts.
+- Undo delete (z key): restore deleted sessions within 5 seconds. Sticky repos: empty repo groups persist in sidebar until dismissed.
+
+### Fixed
+
+- Fatal "concurrent map read and map write" crash caused by unlocked reads of the git info cache during render
+- Status detection: sessions with `hook=finished` no longer flap between "running" and "finished" during active sub-agent work. `applyHookFinished` now corroborates pane-detected "finished" with tmux window activity — if the pane was written to in the last 3 seconds, hold the previous state instead of flipping.
+- Status detection: permission menus where the cursor is on option 2 or 3 (not just option 1) are now correctly detected as "waiting" instead of flipping the session to idle.
+- Status detection: sessions running Explore sub-agents (with the `· ↑ tokens` output counter) stay marked as "running" instead of collapsing to "idle" when a stale waiting hook is in play.
+- Status detection: idle sessions no longer get stuck at "running" when their scrollback contains text that mentions the whimsical token counter (e.g. commit messages or docs referencing `· ↓`/`· ↑` + `tokens`).
+
 ## [1.2.0] - 2026-04-09
 
 ## [1.2.0] - 2026-04-09
@@ -62,7 +77,8 @@ Initial open-source release.
 - `/ship` release workflow — comment `/ship` on any issue or PR to release
 - Changelog check on PRs with `/no-changelog` escape hatch
 
-[Unreleased]: https://github.com/brizzai/brizz-code/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/brizzai/brizz-code/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.3.0
 [1.2.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.2.0
 [1.2.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.2.0
 [1.1.0]: https://github.com/brizzai/brizz-code/releases/tag/v1.1.0
