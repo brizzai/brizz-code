@@ -778,8 +778,8 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 	}
 
 	// Whimsical activity pattern (Claude 2.1.25+). Two known formats:
-	//   "Clauding… (53s · ↓ 749 tokens)"                                — standard
-	//   "Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)" — extended thinking
+	//   "· Clauding… (53s · ↓ 749 tokens)"                                    — standard
+	//   "· Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)" — extended thinking
 	// Both contain `tokens` and `· ↓`/`· ↑` inside a trailing ")".
 	// The `)` suffix + `tokens` + arrow marker combo is specific enough to avoid
 	// false-positives from conversation text — safe to scan all 50 recent lines.
