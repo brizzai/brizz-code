@@ -27,6 +27,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
 const (
@@ -37,7 +38,20 @@ const (
 	layoutBreakpointDual   = 80
 	helpBarHeight          = 2 // border line + shortcuts
 	statusRoundRobin       = 5 // sessions per tick
+	undoDeleteTimeout      = 5 * time.Second
 )
+
+// PendingDelete holds state for a deferred session deletion (undo window).
+type PendingDelete struct {
+	Nonce         string              // unique ID for timer matching
+	Session       *session.Session    // kept alive (tmux still running)
+	Row           *session.SessionRow // DB snapshot for re-insert
+	RepoPath      string
+	DestroyWS     bool
+	WorkspaceName string
+	UnpinRepo     bool // true if user chose D +Remove Repo
+	DeletedAt     time.Time
+}
 
 // Message types.
 type (
@@ -49,6 +63,11 @@ type (
 		err              error
 		destroyWorkspace bool
 		workspaceName    string
+		unpinRepo        bool
+		repoPath         string
+	}
+	pendingDeleteExpireMsg struct {
+		nonce string
 	}
 	sessionRestartMsg struct {
 		id  string
@@ -63,18 +82,20 @@ type (
 		content   string
 	}
 	loadSessionsMsg struct {
-		sessions    []*session.Session
-		ghAvailable bool
-		warning     string
-		err         error
+		sessions     []*session.Session
+		slotBindings map[int]string
+		ghAvailable  bool
+		warning      string
+		err          error
 	}
-	openEditorMsg      struct{ err error }
-	openPRMsg          struct{ err error }
-	quickApproveMsg    struct{ err error }
-	spinnerTickMsg     struct{}
-	previewTickMsg     time.Time
-	focusTickMsg       time.Time
-	reloadAllResultMsg struct {
+	openEditorMsg        struct{ err error }
+	openPRMsg            struct{ err error }
+	quickApproveMsg      struct{ err error }
+	spinnerTickMsg       struct{}
+	previewTickMsg       time.Time
+	focusTickMsg         time.Time
+	slotAssignTimeoutMsg struct{}
+	reloadAllResultMsg   struct {
 		restarted int
 		skipped   int
 		errors    []string
@@ -116,6 +137,8 @@ type Home struct {
 	commandPalette        *CommandPaletteDialog
 
 	pendingWorkspaces []*PendingWorkspace // in-flight workspace creations
+	pendingDeletes    []PendingDelete     // undo stack for deferred deletions
+	pinnedRepos       map[string]bool     // pinned repo paths (persist in SQLite)
 
 	repoExpanded     map[string]bool // repo path -> expanded state
 	previewCache     map[string]string
@@ -138,6 +161,16 @@ type Home struct {
 	filterInput  textinput.Model
 	filterActive bool
 	filterText   string
+
+	// Slot hotkeys (RTS-style quick access: digit=jump, double-digit=attach, alt+digit or =<digit>=bind).
+	slotBindings      map[int]string // slot (0-9) -> session ID
+	lastSlotTapSlot   int            // -1 when no pending tap
+	lastSlotTapAt     time.Time
+	slotAssignMode    int // 0=off, 1=bind pending (=<digit>), 2=unbind pending (==<digit>)
+	slotAssignExpires time.Time
+
+	// Floating toast overlay (bottom-right).
+	toasts *ToastStack
 
 	// Config.
 	cfg     *config.Config
@@ -179,6 +212,10 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home
 		storage:               storage,
 		sessionByID:           make(map[string]*session.Session),
 		repoExpanded:          make(map[string]bool),
+		slotBindings:          make(map[int]string),
+		lastSlotTapSlot:       -1,
+		toasts:                NewToastStack(),
+		pinnedRepos:           make(map[string]bool),
 		newDialog:             NewNewSessionDialog(),
 		confirmDialog:         NewConfirmDialog(),
 		renameDialog:          NewRenameDialog(),
@@ -288,33 +325,22 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionCreateResultMsg:
 		return h.handleSessionCreateResult(msg)
 
+	case slotAssignTimeoutMsg:
+		if h.slotAssignMode != 0 && !time.Now().Before(h.slotAssignExpires) {
+			h.slotAssignMode = 0
+		}
+		return h, nil
+
 	case sessionDeleteMsg:
 		if msg.err != nil {
 			h.setError(msg.err)
-		} else {
-			analytics.Track(analytics.EventSessionDeleted, nil)
-			// Resolve provider before deleting session (need project path).
-			var destroyProvider workspace.Provider
-			var destroyRepoPath string
-			if msg.destroyWorkspace && msg.workspaceName != "" {
-				if s, ok := h.sessionByID[msg.id]; ok {
-					destroyRepoPath = session.GetRepoRoot(s.ProjectPath)
-					destroyProvider = workspace.ResolveProvider(destroyRepoPath)
-				}
-			}
-			h.deleteSession(msg.id)
-			// If workspace destroy requested, do it async.
-			if destroyProvider != nil && destroyProvider.CanDestroy() {
-				wsName := msg.workspaceName
-				repoPath := destroyRepoPath
-				sid := msg.id
-				return h, func() tea.Msg {
-					err := destroyProvider.Destroy(repoPath, wsName)
-					return workspaceDestroyResultMsg{sessionID: sid, err: err}
-				}
-			}
+			return h, nil
 		}
-		return h, nil
+		analytics.Track(analytics.EventSessionDeleted, nil)
+		return h.deferDelete(msg)
+
+	case pendingDeleteExpireMsg:
+		return h.handlePendingDeleteExpire(msg)
 
 	case sessionRestartMsg:
 		if msg.err != nil {
@@ -608,9 +634,34 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		h.sessions = msg.sessions
 		h.rebuildSessionMap()
+		// Keep only bindings whose session is present in the loaded view. Do
+		// NOT delete absent bindings from storage here: BRIZZ_DEMO_PREFIX and
+		// similar filters shrink the session set transiently, and writing back
+		// would permanently destroy real bindings. The FK cascade on session
+		// delete handles the only case where a binding should actually vanish.
+		if msg.slotBindings != nil {
+			h.slotBindings = make(map[int]string, len(msg.slotBindings))
+			for slot, id := range msg.slotBindings {
+				if _, ok := h.sessionByID[id]; ok {
+					h.slotBindings[slot] = id
+				}
+			}
+		}
+		// Load pinned repos from storage.
+		if pinnedPaths, err := h.storage.LoadPinnedRepos(); err == nil {
+			for _, p := range pinnedPaths {
+				h.pinnedRepos[p] = true
+			}
+		}
 		// Default all repos to expanded on first load.
 		groups := session.GroupByRepo(h.sessions)
 		for repo := range groups {
+			if _, exists := h.repoExpanded[repo]; !exists {
+				h.repoExpanded[repo] = true
+			}
+		}
+		// Also expand pinned repos that have no sessions.
+		for repo := range h.pinnedRepos {
 			if _, exists := h.repoExpanded[repo]; !exists {
 				h.repoExpanded[repo] = true
 			}
@@ -669,7 +720,17 @@ func (h *Home) View() string {
 	if h.width == 0 {
 		return lipgloss.NewStyle().Bold(true).Foreground(ColorAccent).Render("   brizz-code")
 	}
+	base := h.renderBody()
+	toast := h.toasts.View(h.width)
+	if toast == "" {
+		return base
+	}
+	// Bottom-right, with a 1-cell right margin and a 1-row lift so the toast
+	// clears the help-bar baseline.
+	return overlay.Composite(toast, base, overlay.Right, overlay.Bottom, -1, -1)
+}
 
+func (h *Home) renderBody() string {
 	// Modals take priority.
 	if h.helpOverlay.IsVisible() {
 		return h.helpOverlay.View()
@@ -717,7 +778,7 @@ func (h *Home) View() string {
 
 	switch h.layoutMode() {
 	case "single":
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.cursor, h.viewOffset, h.width, contentHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.slotBindings, h.cursor, h.viewOffset, h.width, contentHeight)
 		b.WriteString(sidebar)
 	case "stacked":
 		sidebarHeight := (contentHeight * 55) / 100
@@ -725,7 +786,7 @@ func (h *Home) View() string {
 			sidebarHeight = 3
 		}
 		previewHeight := contentHeight - sidebarHeight - 1 // 1 for separator
-		sidebar := RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.cursor, h.viewOffset, h.width, sidebarHeight)
+		sidebar := RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.slotBindings, h.cursor, h.viewOffset, h.width, sidebarHeight)
 		b.WriteString(sidebar)
 		b.WriteString("\n")
 		b.WriteString(DimStyle.Render(strings.Repeat("─", h.width)))
@@ -745,7 +806,7 @@ func (h *Home) View() string {
 		if h.focusMode && !h.sidebarDirty && h.cachedSidebar != "" {
 			leftPanel = h.cachedSidebar
 		} else {
-			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.cursor, h.viewOffset, sidebarWidth, contentHeight)
+			leftPanel = RenderSidebar(h.flatItems, h.sessions, h.snapshotGitInfo(), h.slotBindings, h.cursor, h.viewOffset, sidebarWidth, contentHeight)
 			leftPanel = ensureExactHeight(leftPanel, contentHeight)
 			leftPanel = ensureExactWidth(leftPanel, sidebarWidth)
 			h.cachedSidebar = leftPanel
@@ -807,19 +868,6 @@ func (h *Home) View() string {
 		b.WriteString("\n")
 		b.WriteString(h.renderHelpBar())
 		lineCount += 2
-	}
-
-	// Info/error flash message (most recent wins, overwrites last line).
-	showInfo := h.infoMsg != "" && time.Since(h.infoTime) < 5*time.Second
-	showErr := h.err != nil && time.Since(h.errTime) < 5*time.Second
-	if showInfo && (!showErr || h.infoTime.After(h.errTime)) {
-		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(" " + h.infoMsg))
-		lineCount++
-	} else if showErr {
-		b.WriteString("\n")
-		b.WriteString(ErrorStyle.Render(" " + h.err.Error()))
-		lineCount++
 	}
 
 	// Track height mismatches (counter for bug report, log only on first occurrence).
@@ -940,6 +988,13 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Snapshot and clear the double-tap window: only a consecutive digit press
+	// should attach, so any other key falling through this switch invalidates
+	// the window for free. The digit case restores the snapshot before jumping.
+	prevSlotTapSlot := h.lastSlotTapSlot
+	prevSlotTapAt := h.lastSlotTapAt
+	h.lastSlotTapSlot = -1
+
 	switch msg.String() {
 	case "j", "down":
 		h.cursor = NextSelectableItem(h.flatItems, h.cursor, 1)
@@ -1014,10 +1069,33 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		return h, h.forkSelected()
 	case "d":
+		// Handle d on empty pinned repo header: unpin directly.
+		if h.cursor >= 0 && h.cursor < len(h.flatItems) && h.flatItems[h.cursor].IsRepoHeader {
+			item := h.flatItems[h.cursor]
+			if h.countSessionsForRepo(item.RepoPath) == 0 && h.pinnedRepos[item.RepoPath] {
+				delete(h.pinnedRepos, item.RepoPath)
+				if err := h.storage.UnpinRepo(item.RepoPath); err != nil {
+					debuglog.Logger.Error("failed to unpin repo", "repo", item.RepoPath, "err", err)
+				}
+				h.actionLog.Add("unpin repo", filepath.Base(item.RepoPath), true)
+				h.rebuildFlatItems()
+				// Fix cursor if it's now out of bounds.
+				if h.cursor >= len(h.flatItems) {
+					h.cursor = len(h.flatItems) - 1
+				}
+				if h.cursor < 0 {
+					h.cursor = 0
+				}
+				return h, nil
+			}
+			return h, nil // non-empty repo header, ignore
+		}
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("delete session", s.Title, true)
 		}
 		return h, h.confirmDeleteSelected()
+	case "z":
+		return h.undoDelete()
 	case "r":
 		if s := h.selectedSession(); s != nil {
 			h.actionLog.Add("restart session", s.Title, true)
@@ -1049,12 +1127,54 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		h.branchDialog.ShowLoading()
 		return h, tea.Batch(h.fetchBranchList(repoPath), spinnerTickCmd)
+	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		digit := int(msg.String()[0] - '0')
+		switch h.slotAssignMode {
+		case 1:
+			h.slotAssignMode = 0
+			h.bindCurrentSessionToSlot(digit)
+			return h, nil
+		case 2:
+			h.slotAssignMode = 0
+			h.unbindSlot(digit)
+			return h, nil
+		}
+		// Restore double-tap state so two consecutive digit presses attach.
+		h.lastSlotTapSlot = prevSlotTapSlot
+		h.lastSlotTapAt = prevSlotTapAt
+		return h.jumpToSlot(digit)
+	case "alt+0", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
+		s := msg.String()
+		digit := int(s[len(s)-1] - '0')
+		h.bindCurrentSessionToSlot(digit)
+		return h, nil
+	case "=":
+		switch h.slotAssignMode {
+		case 0:
+			h.slotAssignMode = 1
+			h.setInfo("Slot: digit=bind · = again=unbind · Esc=cancel")
+		case 1:
+			h.slotAssignMode = 2
+			h.setInfo("Unbind slot: digit=clear · Esc=cancel")
+		default:
+			h.slotAssignMode = 0
+			h.setInfo("Slot assign cancelled")
+			return h, nil
+		}
+		h.slotAssignExpires = time.Now().Add(2 * time.Second)
+		return h, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return slotAssignTimeoutMsg{} })
 	case "/":
 		h.filterActive = true
 		h.filterInput.Focus()
 		analytics.Track(analytics.EventFilterUsed, nil)
 		return h, nil
 	case "esc":
+		// Cancel pending slot-assign leader.
+		if h.slotAssignMode != 0 {
+			h.slotAssignMode = 0
+			h.setInfo("Slot assign cancelled")
+			return h, nil
+		}
 		// Clear active filter.
 		if h.filterText != "" {
 			h.filterText = ""
@@ -1100,6 +1220,8 @@ func (h *Home) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if h.controlClient != nil {
 			h.controlClient.Close()
 		}
+		// Finalize all pending deletes before quitting.
+		h.finalizeAllPendingDeletes()
 		analytics.Track(analytics.EventAppQuit, map[string]interface{}{
 			"uptime_seconds": int(time.Since(h.startTime).Seconds()),
 		})
@@ -1187,9 +1309,15 @@ func (h *Home) handleSessionCreateResult(msg sessionCreateResultMsg) (tea.Model,
 	h.rebuildSessionMap()
 	h.workerMu.Unlock()
 
-	// Ensure the repo group is expanded for the new session.
+	// Ensure the repo group is expanded for the new session and pin it.
 	repo := session.GetRepoRoot(s.ProjectPath)
 	h.repoExpanded[repo] = true
+	if !h.pinnedRepos[repo] {
+		h.pinnedRepos[repo] = true
+		if err := h.storage.PinRepo(repo); err != nil {
+			debuglog.Logger.Error("failed to pin repo", "repo", repo, "err", err)
+		}
+	}
 	h.rebuildFlatItems()
 
 	// Save to storage.
@@ -1220,28 +1348,45 @@ func (h *Home) confirmDeleteSelected() tea.Cmd {
 
 	id := s.ID
 	wsName := s.WorkspaceName
+	repoPath := session.GetRepoRoot(s.ProjectPath)
+	isLastInRepo := h.countSessionsForRepo(repoPath) == 1 && h.pinnedRepos[repoPath]
+	hasDestroyableWorkspace := false
 
 	if wsName != "" {
-		repoPath := session.GetRepoRoot(s.ProjectPath)
 		provider := workspace.ResolveProvider(repoPath)
-		if provider.CanDestroy() {
-			h.confirmDialog.ShowDangerWithWorkspace("Delete Session?", s.Title, []string{
-				"tmux session terminated",
-				"Terminal history lost",
-			}, wsName, func() tea.Msg {
-				return sessionDeleteMsg{id: id}
-			}, func() tea.Msg {
-				return sessionDeleteMsg{id: id, destroyWorkspace: true, workspaceName: wsName}
-			})
-			return nil
-		}
+		hasDestroyableWorkspace = provider.CanDestroy()
 	}
-	h.confirmDialog.ShowDanger("Delete Session?", s.Title, []string{
-		"tmux session terminated",
-		"Terminal history lost",
-	}, func() tea.Msg {
+
+	details := []string{
+		"Press z to undo within 5s",
+	}
+	if isLastInRepo {
+		details = append(details, "Last session in this repo")
+	}
+
+	onYes := func() tea.Msg {
 		return sessionDeleteMsg{id: id}
-	})
+	}
+	onRemoveRepo := func() tea.Msg {
+		return sessionDeleteMsg{id: id, unpinRepo: true, repoPath: repoPath}
+	}
+
+	switch {
+	case hasDestroyableWorkspace && isLastInRepo:
+		onYesWS := func() tea.Msg {
+			return sessionDeleteMsg{id: id, destroyWorkspace: true, workspaceName: wsName}
+		}
+		h.confirmDialog.ShowDangerLastInRepoWithWorkspace("Delete Session?", s.Title, details, wsName, onYes, onYesWS, onRemoveRepo)
+	case hasDestroyableWorkspace:
+		onYesWS := func() tea.Msg {
+			return sessionDeleteMsg{id: id, destroyWorkspace: true, workspaceName: wsName}
+		}
+		h.confirmDialog.ShowDangerWithWorkspace("Delete Session?", s.Title, details, wsName, onYes, onYesWS)
+	case isLastInRepo:
+		h.confirmDialog.ShowDangerLastInRepo("Delete Session?", s.Title, details, onYes, onRemoveRepo)
+	default:
+		h.confirmDialog.ShowDanger("Delete Session?", s.Title, details, onYes)
+	}
 	return nil
 }
 
@@ -1665,35 +1810,53 @@ func (h *Home) openPRInBrowser() tea.Cmd {
 	}
 }
 
-func (h *Home) deleteSession(id string) {
-	s, ok := h.sessionByID[id]
+// deferDelete removes a session from the UI and DB but defers tmux/hook/workspace
+// cleanup for the undo window. Returns a tick command for expiry.
+func (h *Home) deferDelete(msg sessionDeleteMsg) (tea.Model, tea.Cmd) {
+	s, ok := h.sessionByID[msg.id]
 	if !ok {
-		return
+		return h, nil
 	}
 
-	debuglog.Logger.Info("deleting session", "id", id, "title", s.Title)
+	debuglog.Logger.Info("deferred delete", "id", msg.id, "title", s.Title)
 
-	// Kill tmux session if alive.
-	if s.IsAlive() {
-		if err := s.Kill(); err != nil {
-			debuglog.Logger.Error("failed to kill tmux session", "id", id, "err", err)
+	// Snapshot DB row before deleting.
+	row := s.ToRow()
+	repoPath := session.GetRepoRoot(s.ProjectPath)
+
+	// Delete from SQLite immediately (crash-safe).
+	if err := h.storage.DeleteSession(msg.id); err != nil {
+		debuglog.Logger.Error("failed to delete session from storage", "id", msg.id, "err", err)
+	}
+
+	// Handle repo unpin if requested.
+	if msg.unpinRepo {
+		delete(h.pinnedRepos, msg.repoPath)
+		if err := h.storage.UnpinRepo(msg.repoPath); err != nil {
+			debuglog.Logger.Error("failed to unpin repo", "repo", msg.repoPath, "err", err)
 		}
 	}
 
-	// Remove from storage.
-	if err := h.storage.DeleteSession(id); err != nil {
-		debuglog.Logger.Error("failed to delete session from storage", "id", id, "err", err)
+	// Clear any slot binding pointing at this session. FK cascade drops the
+	// DB row (triggered by the DeleteSession above), but the in-memory map
+	// needs explicit cleanup so the [N] badge disappears from the sidebar.
+	// Slot bindings do NOT survive undo: restoring the session via `z` leaves
+	// it unbound, and the user can re-press Alt+<N> to rebind.
+	for slot, sid := range h.slotBindings {
+		if sid == msg.id {
+			delete(h.slotBindings, slot)
+		}
+	}
+	if h.lastSlotTapSlot >= 0 {
+		if sid, ok := h.slotBindings[h.lastSlotTapSlot]; !ok || sid == msg.id {
+			h.lastSlotTapSlot = -1
+		}
 	}
 
-	// Remove hook status file.
-	if err := os.Remove(filepath.Join(hooks.GetHooksDir(), id+".json")); err != nil && !os.IsNotExist(err) {
-		debuglog.Logger.Error("failed to remove hook status file", "id", id, "err", err)
-	}
-
-	// Remove from list.
+	// Remove from in-memory session list.
 	var remaining []*session.Session
 	for _, sess := range h.sessions {
-		if sess.ID != id {
+		if sess.ID != msg.id {
 			remaining = append(remaining, sess)
 		}
 	}
@@ -1711,6 +1874,182 @@ func (h *Home) deleteSession(id string) {
 	if len(h.flatItems) > 0 && h.flatItems[h.cursor].IsRepoHeader {
 		h.cursor = NextSelectableItem(h.flatItems, h.cursor, 1)
 	}
+
+	// Generate nonce for timer matching.
+	nonce := fmt.Sprintf("%s-%d", msg.id, time.Now().UnixNano())
+
+	// Push onto undo stack.
+	h.pendingDeletes = append(h.pendingDeletes, PendingDelete{
+		Nonce:         nonce,
+		Session:       s,
+		Row:           row,
+		RepoPath:      repoPath,
+		DestroyWS:     msg.destroyWorkspace,
+		WorkspaceName: msg.workspaceName,
+		UnpinRepo:     msg.unpinRepo,
+		DeletedAt:     time.Now(),
+	})
+
+	// Show undo flash.
+	h.setInfo(h.buildUndoFlashMessage())
+
+	// Start expiry timer.
+	return h, tea.Tick(undoDeleteTimeout, func(t time.Time) tea.Msg {
+		return pendingDeleteExpireMsg{nonce: nonce}
+	})
+}
+
+// undoDelete restores the most recent pending delete.
+func (h *Home) undoDelete() (tea.Model, tea.Cmd) {
+	if len(h.pendingDeletes) == 0 {
+		return h, nil
+	}
+
+	// Pop most recent.
+	pd := h.pendingDeletes[len(h.pendingDeletes)-1]
+	h.pendingDeletes = h.pendingDeletes[:len(h.pendingDeletes)-1]
+
+	debuglog.Logger.Info("undo delete", "id", pd.Session.ID, "title", pd.Session.Title)
+
+	// Re-insert into SQLite.
+	if err := h.storage.SaveSession(pd.Row); err != nil {
+		h.setError(fmt.Errorf("undo failed: %w", err))
+		return h, nil
+	}
+
+	// Re-pin repo if it was unpinned.
+	if pd.UnpinRepo {
+		h.pinnedRepos[pd.RepoPath] = true
+		if err := h.storage.PinRepo(pd.RepoPath); err != nil {
+			debuglog.Logger.Error("failed to re-pin repo on undo", "repo", pd.RepoPath, "err", err)
+		}
+	}
+
+	// Re-add to session list (tmux is still alive).
+	h.workerMu.Lock()
+	h.sessions = append(h.sessions, pd.Session)
+	h.rebuildSessionMap()
+	h.workerMu.Unlock()
+
+	// Expand repo group and rebuild sidebar.
+	h.repoExpanded[pd.RepoPath] = true
+	h.rebuildFlatItems()
+
+	// Move cursor to restored session.
+	for i, item := range h.flatItems {
+		if !item.IsRepoHeader && item.Session != nil && item.Session.ID == pd.Session.ID {
+			h.cursor = i
+			h.syncViewport()
+			break
+		}
+	}
+
+	h.actionLog.Add("undo delete", pd.Session.Title, true)
+	h.setInfo(fmt.Sprintf("Restored %q", pd.Session.Title))
+	return h, nil
+}
+
+// handlePendingDeleteExpire finalizes a deferred delete after the undo window.
+func (h *Home) handlePendingDeleteExpire(msg pendingDeleteExpireMsg) (tea.Model, tea.Cmd) {
+	// Find by nonce.
+	idx := -1
+	for i, pd := range h.pendingDeletes {
+		if pd.Nonce == msg.nonce {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return h, nil // already undone
+	}
+
+	pd := h.pendingDeletes[idx]
+	h.pendingDeletes = append(h.pendingDeletes[:idx], h.pendingDeletes[idx+1:]...)
+
+	return h, h.finalizeDelete(pd)
+}
+
+// finalizeDelete performs the actual cleanup (tmux kill, hook removal, workspace destruction).
+func (h *Home) finalizeDelete(pd PendingDelete) tea.Cmd {
+	debuglog.Logger.Info("finalizing delete", "id", pd.Session.ID, "title", pd.Session.Title)
+
+	// Kill tmux session if alive.
+	if pd.Session.IsAlive() {
+		if err := pd.Session.Kill(); err != nil {
+			debuglog.Logger.Error("failed to kill tmux session", "id", pd.Session.ID, "err", err)
+		}
+	}
+
+	// Remove hook status file.
+	if err := os.Remove(filepath.Join(hooks.GetHooksDir(), pd.Session.ID+".json")); err != nil && !os.IsNotExist(err) {
+		debuglog.Logger.Error("failed to remove hook status file", "id", pd.Session.ID, "err", err)
+	}
+
+	// If workspace destroy requested, do it async.
+	if pd.DestroyWS && pd.WorkspaceName != "" {
+		repoPath := pd.RepoPath
+		wsName := pd.WorkspaceName
+		sid := pd.Session.ID
+		provider := workspace.ResolveProvider(repoPath)
+		if provider != nil && provider.CanDestroy() {
+			return func() tea.Msg {
+				err := provider.Destroy(repoPath, wsName)
+				return workspaceDestroyResultMsg{sessionID: sid, err: err}
+			}
+		}
+	}
+
+	return nil
+}
+
+// finalizeAllPendingDeletes cleans up all pending deletes synchronously (called on quit).
+func (h *Home) finalizeAllPendingDeletes() {
+	for _, pd := range h.pendingDeletes {
+		debuglog.Logger.Info("finalizing pending delete on quit", "id", pd.Session.ID, "title", pd.Session.Title)
+		if pd.Session.IsAlive() {
+			if err := pd.Session.Kill(); err != nil {
+				debuglog.Logger.Error("failed to kill tmux session on quit", "id", pd.Session.ID, "err", err)
+			}
+		}
+		if err := os.Remove(filepath.Join(hooks.GetHooksDir(), pd.Session.ID+".json")); err != nil && !os.IsNotExist(err) {
+			debuglog.Logger.Error("failed to remove hook status file on quit", "id", pd.Session.ID, "err", err)
+		}
+		// Best-effort workspace destruction on quit.
+		if pd.DestroyWS && pd.WorkspaceName != "" {
+			provider := workspace.ResolveProvider(pd.RepoPath)
+			if provider != nil && provider.CanDestroy() {
+				if err := provider.Destroy(pd.RepoPath, pd.WorkspaceName); err != nil {
+					debuglog.Logger.Error("failed to destroy workspace on quit", "id", pd.Session.ID, "workspace", pd.WorkspaceName, "err", err)
+				}
+			}
+		}
+	}
+	h.pendingDeletes = nil
+}
+
+// buildUndoFlashMessage builds the flash message for the undo prompt.
+func (h *Home) buildUndoFlashMessage() string {
+	n := len(h.pendingDeletes)
+	if n == 0 {
+		return ""
+	}
+	last := h.pendingDeletes[n-1]
+	title := last.Session.Title
+	if n == 1 {
+		return fmt.Sprintf("Deleted %q. z to undo", title)
+	}
+	return fmt.Sprintf("Deleted %q. z to undo (%d pending)", title, n)
+}
+
+// countSessionsForRepo counts live sessions for a given repo path.
+func (h *Home) countSessionsForRepo(repoPath string) int {
+	count := 0
+	for _, s := range h.sessions {
+		if session.GetRepoRoot(s.ProjectPath) == repoPath {
+			count++
+		}
+	}
+	return count
 }
 
 // --- Tick / status ---
@@ -2104,6 +2443,108 @@ func (h *Home) layoutMode() string {
 	return "dual"
 }
 
+// bindCurrentSessionToSlot persists the selected session under the given slot,
+// replacing any prior binding for either the slot or the session. Re-binding
+// the same session to its existing slot toggles the binding off (unbind).
+func (h *Home) bindCurrentSessionToSlot(slot int) {
+	s := h.selectedSession()
+	if s == nil {
+		h.setError(fmt.Errorf("select a session first"))
+		return
+	}
+	if existing, ok := h.slotBindings[slot]; ok && existing == s.ID {
+		h.unbindSlot(slot)
+		return
+	}
+	if err := h.storage.BindSlot(slot, s.ID); err != nil {
+		h.setError(fmt.Errorf("bind slot: %w", err))
+		return
+	}
+	for k, v := range h.slotBindings {
+		if v == s.ID {
+			delete(h.slotBindings, k)
+		}
+	}
+	h.slotBindings[slot] = s.ID
+	h.actionLog.Add("bind slot", fmt.Sprintf("%d → %s", slot, s.Title), true)
+	h.setInfo(fmt.Sprintf("Slot %d → %s", slot, s.Title))
+	h.sidebarDirty = true
+}
+
+// unbindSlot clears the given slot's binding, if any.
+func (h *Home) unbindSlot(slot int) {
+	id, ok := h.slotBindings[slot]
+	if !ok {
+		h.setInfo(fmt.Sprintf("Slot %d already unbound", slot))
+		return
+	}
+	title := id
+	if s, ok := h.sessionByID[id]; ok {
+		title = s.Title
+	}
+	if err := h.storage.UnbindSlot(slot); err != nil {
+		h.setError(fmt.Errorf("unbind slot: %w", err))
+		return
+	}
+	delete(h.slotBindings, slot)
+	if h.lastSlotTapSlot == slot {
+		h.lastSlotTapSlot = -1
+	}
+	h.actionLog.Add("unbind slot", fmt.Sprintf("%d (was %s)", slot, title), true)
+	h.setInfo(fmt.Sprintf("Slot %d cleared", slot))
+	h.sidebarDirty = true
+}
+
+// jumpToSlot moves the cursor to the session bound at the given slot.
+// A second press of the same slot within 400ms also attaches.
+func (h *Home) jumpToSlot(slot int) (tea.Model, tea.Cmd) {
+	sessID, ok := h.slotBindings[slot]
+	if !ok {
+		h.setInfo(fmt.Sprintf("Slot %d unbound", slot))
+		return h, nil
+	}
+	s, ok := h.sessionByID[sessID]
+	if !ok {
+		delete(h.slotBindings, slot)
+		_ = h.storage.UnbindSlot(slot)
+		h.setError(fmt.Errorf("slot %d was stale, cleared", slot))
+		return h, nil
+	}
+
+	// Expand the repo group if collapsed, so the session is visible and selectable.
+	repo := session.GetRepoRoot(s.ProjectPath)
+	if !h.repoExpanded[repo] {
+		h.repoExpanded[repo] = true
+		h.rebuildFlatItems()
+	}
+
+	idx := -1
+	for i, item := range h.flatItems {
+		if !item.IsRepoHeader && item.Session != nil && item.Session.ID == sessID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		// Likely hidden by an active filter.
+		h.setInfo(fmt.Sprintf("Slot %d hidden by filter", slot))
+		return h, nil
+	}
+
+	isDoubleTap := h.lastSlotTapSlot == slot &&
+		time.Since(h.lastSlotTapAt) < 400*time.Millisecond
+	h.cursor = idx
+	h.syncViewport()
+	if isDoubleTap {
+		h.lastSlotTapSlot = -1
+		h.actionLog.Add("attach via slot", fmt.Sprintf("%d", slot), true)
+		return h, h.attachSelected()
+	}
+	h.lastSlotTapSlot = slot
+	h.lastSlotTapAt = time.Now()
+	return h, h.fetchPreviewForSelected()
+}
+
 func (h *Home) selectedSession() *session.Session {
 	if h.cursor < 0 || h.cursor >= len(h.flatItems) || h.flatItems[h.cursor].IsRepoHeader {
 		return nil
@@ -2147,7 +2588,7 @@ func (h *Home) snapshotGitInfo() map[string]*git.RepoInfo {
 // --- Internal helpers ---
 
 func (h *Home) rebuildFlatItems() {
-	h.flatItems = BuildFlatItems(h.sessions, h.pendingWorkspaces, h.repoExpanded, h.filterText)
+	h.flatItems = BuildFlatItems(h.sessions, h.pendingWorkspaces, h.repoExpanded, h.filterText, h.pinnedRepos)
 	h.sidebarDirty = true
 }
 
@@ -2219,6 +2660,12 @@ func (h *Home) loadSessions() tea.Msg {
 		sessions = filtered
 	}
 
+	slotBindings, err := h.storage.LoadSlotBindings()
+	if err != nil {
+		debuglog.Logger.Error("failed to load slot bindings", "err", err)
+		slotBindings = map[int]string{}
+	}
+
 	// These block but run in the tea.Cmd goroutine, not Update().
 	configDir := hooks.GetClaudeConfigDir()
 	hooks.InjectClaudeHooks(configDir)
@@ -2231,7 +2678,7 @@ func (h *Home) loadSessions() tea.Msg {
 		warning = "claude CLI not found — install Claude Code to create sessions"
 	}
 
-	return loadSessionsMsg{sessions: sessions, ghAvailable: ghAvailable, warning: warning}
+	return loadSessionsMsg{sessions: sessions, slotBindings: slotBindings, ghAvailable: ghAvailable, warning: warning}
 }
 
 func (h *Home) setError(err error) {
@@ -2239,6 +2686,7 @@ func (h *Home) setError(err error) {
 	h.errTime = time.Now()
 	if err != nil {
 		h.errorHistory.Add(err.Error())
+		h.toasts.Add(ToastError, err.Error())
 		analytics.Track(analytics.EventErrorOccurred, map[string]interface{}{
 			"category": strings.SplitN(err.Error(), ":", 2)[0],
 		})
@@ -2248,6 +2696,7 @@ func (h *Home) setError(err error) {
 func (h *Home) setInfo(msg string) {
 	h.infoMsg = msg
 	h.infoTime = time.Now()
+	h.toasts.Add(ToastInfo, msg)
 }
 
 // buildPaletteCommands returns all available commands for the command palette.

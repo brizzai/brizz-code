@@ -109,6 +109,9 @@ var (
 	PRFailStyle    = lipgloss.NewStyle().Foreground(ColorRed)
 	PRPendingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
 	PRMergedStyle  = lipgloss.NewStyle().Foreground(ColorPurple)
+
+	// Slot badge style (RTS-style quick-access hotkey).
+	SlotBadgeStyle = lipgloss.NewStyle().Foreground(ColorOrange).Bold(true)
 )
 
 // ApplyPalette reassigns all color vars and rebuilds all style vars from the given palette.
@@ -171,6 +174,8 @@ func ApplyPalette(p Palette) {
 	PRFailStyle = lipgloss.NewStyle().Foreground(ColorRed)
 	PRPendingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
 	PRMergedStyle = lipgloss.NewStyle().Foreground(ColorPurple)
+
+	SlotBadgeStyle = lipgloss.NewStyle().Foreground(ColorOrange).Bold(true)
 }
 
 // RenderPanelTitle renders a panel title with a divider underline.

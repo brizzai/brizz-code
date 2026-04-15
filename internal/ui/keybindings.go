@@ -29,6 +29,7 @@ var allKeyBindings = []KeyBinding{
 	{Key: "w", BarKey: "w", BarDesc: "Wktree", Desc: "New worktree session", Section: "session"},
 	{Key: "f", Desc: "Fork session", Section: "session"},
 	{Key: "d", BarKey: "d", BarDesc: "Del", Desc: "Delete session", Section: "session"},
+	{Key: "z", Desc: "Undo delete", Section: "session"},
 	{Key: "r", BarKey: "r", BarDesc: "Restart", Desc: "Restart session", Section: "session"},
 	{Key: "R", Desc: "Rename session", Section: "session"},
 	{Key: "e", Desc: "Open in editor", Section: "session"},
@@ -36,6 +37,10 @@ var allKeyBindings = []KeyBinding{
 	{Key: "Y", BarKey: "Y", BarDesc: "Approve", Desc: "Quick approve permission", Section: "session"},
 	{Key: "b", BarKey: "b", BarDesc: "Branch", Desc: "Switch git branch", Section: "session"},
 	{Key: "/", BarKey: "/", BarDesc: "Filter", Desc: "Filter sessions", Section: "session"},
+	{Key: "0-9", Desc: "Jump to slot (double-tap to attach)", Section: "session"},
+	{Key: "Alt+0-9", Desc: "Bind/unbind slot (re-press same slot clears it)", Section: "session"},
+	{Key: "= then digit", Desc: "Bind slot (fallback if Alt unsupported)", Section: "session"},
+	{Key: "= = then digit", Desc: "Unbind slot", Section: "session"},
 
 	// Global.
 	{Key: ": / Ctrl+P", BarKey: ":", BarDesc: "Cmd", Desc: "Command palette", Section: "global"},

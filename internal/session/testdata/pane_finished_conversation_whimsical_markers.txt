@@ -1,0 +1,36 @@
+[38;5;114m⏺[39m [1mWrite[0m(changelog/unreleased/fix-subagent-up-arrow-running.md)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [39mWrote [1m4[0m lines to [1mchangelog/unreleased/fix-subagent-up-arrow-running.md[0m
+     [2m[38;5;231m 1[0m [38;5;231m---[39m
+     [2m[38;5;231m 2[0m [38;5;231mtype:[39m [38;5;231mfixed[39m
+     [2m[38;5;231m 3[0m [38;5;231m---[39m
+     [2m[38;5;231m 4[0m [38;5;231mStatus[39m [38;5;231mdetection:[39m [38;5;231msessions[39m [38;5;231mrunning[39m [38;5;231mExplore[39m [38;5;231msub-agents[39m [38;5;231m(with[39m [38;5;231mthe[39m [38;5;231m`·[39m [38;5;231m↑[39m [38;5;231mtokens`[39m [38;5;231moutput[39m [38;5;231mcounter)[39m [38;5;231mstay[39m [38;5;231mmarked[39m [38;5;231mas[39m [38;5;231m"running"[39m [38;5;231minstead[39m [38;5;231mof[39m [38;5;231mcollapsing[39m [38;5;231mto[39m [38;5;231m"idle"[39m [38;5;231mwhen[39m [38;5;231ma[39m [38;5;231mstal[39m
+     [2m[38;5;231m [0m  [38;5;231me[39m [38;5;231mwaiting[39m [38;5;231mhook[39m [38;5;231mis[39m [38;5;231min[39m [38;5;231mplay.[39m
+
+[38;5;114m⏺[39m [1mBash[0m(git add internal/session/session.go internal/session/golden_test.go internal/session/scenario_test.go internal/session/testdata/pane_running_subagent_spelunking…)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [39mA  changelog/unreleased/fix-subagent-up-arrow-running.md
+     M  internal/session/golden_test.go
+     M  internal/session/scenario_test.go
+     [2m…[0m [2m+2[0m [2mlines[0m [2m(ctrl+o[0m [2mto[0m [2mexpand)[0m
+
+[38;5;114m⏺[39m [1mBash[0m(git commit -m "$(cat <<'EOF'
+      fix(status): detect sub-agent running state via `· ↑ tokens` counter…)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [39mtrim trailing whitespace.................................................Passed
+     fix end of files.........................................................Passed
+     check yaml...........................................(no files to check)Skipped
+     [2m…[0m [2m+7[0m [2mlines[0m [2m(ctrl+o[0m [2mto[0m [2mexpand)[0m
+
+[38;5;114m⏺[39m [1mBash[0m(git push 2>&1 | tail -5)
+[38;5;246m [39m [38;5;246m⎿[39m [38;5;246m [39mTo github.com:brizzai/brizz-code.git
+        fe2272e..42ec384  session-hotkeys -> session-hotkeys
+
+[38;5;231m⏺[39m Shipped [38;5;153m42ec384[39m. Whimsical check now matches [38;5;153m·[39m [38;5;153m↓[39m [38;5;153mOR[39m [38;5;153m·[39m [38;5;153m↑[39m [38;5;153m+[39m [38;5;153mtokens[39m, new golden fixture + scenario test lock in the sub-agent-spelunking case, memory doc has Known Issue #18,
+  pushed to [38;5;153morigin/session-hotkeys[39m.
+
+[38;5;246m✻[39m [38;5;246mBrewed[39m [38;5;246mfor[39m [38;5;246m4m[39m [38;5;246m21s[39m
+
+[38;5;37m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[38;5;16m[48;5;37m fix-permission-menu-cursor-detection [38;5;37m[49m──
+[39m❯ [7m [0m
+[38;5;37m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [36m󰧑[39m [36mOpus[39m [36m4.6[39m [36m(1M[39m [36mcontext)[38;5;246m [90m│[38;5;246m [32m██░░░░░░░░[38;5;246m [90m│[38;5;246m [32m24%[38;5;246m [90m│[38;5;246m [35m󰍛[39m [35m240.0k/1000k[38;5;246m [90m│[38;5;246m [33m[39m [33msession-hotkeys[38;5;246m [90m│[38;5;246m [1m[37m[0m  [1m[37mbrizz-code-session-hotkeys[0m
+  [38;5;147m⏵⏵[39m [38;5;147maccept[39m [38;5;147medits[39m [38;5;147mon[38;5;246m (shift+tab[39m [38;5;246mto[39m [38;5;246mcycle)[39m [38;5;246m·[39m [38;5;246mPR[39m [38;5;220m#52[39m                                                                                      [38;5;246mnew[39m [38;5;246mtask?[39m [38;5;153m/clear[38;5;246m to[39m [38;5;246msave[39m [38;5;153m240.8k[39m [38;5;153mtokens[39m
+

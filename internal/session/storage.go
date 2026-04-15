@@ -152,6 +152,25 @@ func (s *StateDB) migrate() error {
 		}
 	}
 
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS slot_bindings (
+			slot_number INTEGER PRIMARY KEY CHECK (slot_number BETWEEN 0 AND 9),
+			session_id  TEXT NOT NULL UNIQUE,
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		debuglog.Logger.Error("migration failed: create slot_bindings table", "error", err)
+		return err
+	}
+
+	// Pinned repos table for sticky repo headers.
+	_, err = s.db.Exec(`CREATE TABLE IF NOT EXISTS pinned_repos (repo_path TEXT PRIMARY KEY)`)
+	if err != nil {
+		debuglog.Logger.Error("migration failed: create pinned_repos table", "error", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -324,6 +343,99 @@ func (s *StateDB) ResetTitleGenerated(id string) error {
 func (s *StateDB) UpdatePromptCount(id string, count int) error {
 	_, err := s.db.Exec("UPDATE sessions SET prompt_count = ? WHERE id = ?", count, id)
 	return err
+}
+
+// BindSlot assigns a session to a slot. The slot and session are both unique:
+// any existing binding for the slot or the session is removed first, so a
+// session holds at most one slot at a time.
+func (s *StateDB) BindSlot(slot int, sessionID string) error {
+	if slot < 0 || slot > 9 {
+		return fmt.Errorf("slot %d out of range 0-9", slot)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM slot_bindings WHERE slot_number = ? OR session_id = ?`, slot, sessionID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO slot_bindings (slot_number, session_id) VALUES (?, ?)`, slot, sessionID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UnbindSlot removes the binding for a slot, if any.
+func (s *StateDB) UnbindSlot(slot int) error {
+	_, err := s.db.Exec(`DELETE FROM slot_bindings WHERE slot_number = ?`, slot)
+	return err
+}
+
+// LoadSlotBindings returns the slot → session_id map.
+func (s *StateDB) LoadSlotBindings() (map[int]string, error) {
+	rows, err := s.db.Query(`SELECT slot_number, session_id FROM slot_bindings`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int]string)
+	for rows.Next() {
+		var slot int
+		var id string
+		if err := rows.Scan(&slot, &id); err != nil {
+			return nil, err
+		}
+		out[slot] = id
+	}
+	return out, rows.Err()
+}
+
+// DeleteSlotBindingForSession clears any slot pointing at the given session.
+// FK cascade handles this when a session row is deleted, but callers that
+// remove bindings without deleting the session use this directly.
+func (s *StateDB) DeleteSlotBindingForSession(sessionID string) error {
+	_, err := s.db.Exec(`DELETE FROM slot_bindings WHERE session_id = ?`, sessionID)
+	return err
+}
+
+// PinRepo adds a repo to the pinned set (idempotent).
+func (s *StateDB) PinRepo(repoPath string) error {
+	_, err := s.db.Exec("INSERT OR IGNORE INTO pinned_repos (repo_path) VALUES (?)", repoPath)
+	if err != nil {
+		debuglog.Logger.Error("failed to pin repo", "repo", repoPath, "error", err)
+	}
+	return err
+}
+
+// UnpinRepo removes a repo from the pinned set.
+func (s *StateDB) UnpinRepo(repoPath string) error {
+	_, err := s.db.Exec("DELETE FROM pinned_repos WHERE repo_path = ?", repoPath)
+	if err != nil {
+		debuglog.Logger.Error("failed to unpin repo", "repo", repoPath, "error", err)
+	}
+	return err
+}
+
+// LoadPinnedRepos returns all pinned repo paths.
+func (s *StateDB) LoadPinnedRepos() ([]string, error) {
+	rows, err := s.db.Query("SELECT repo_path FROM pinned_repos ORDER BY repo_path")
+	if err != nil {
+		debuglog.Logger.Error("failed to load pinned repos", "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var repos []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			debuglog.Logger.Error("failed to scan pinned repo row", "error", err)
+			return nil, err
+		}
+		repos = append(repos, path)
+	}
+	return repos, rows.Err()
 }
 
 func boolToInt(b bool) int {
