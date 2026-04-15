@@ -799,7 +799,7 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 // indicator. Both standard and extended thinking formats:
 //
 //	"· Clauding… (53s · ↓ 749 tokens)"
-//	"✢ Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)"
+//	"· Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)"
 //
 // Used by detectRunning (status detection) and normalizeForHash (content hashing).
 func isWhimsicalActivity(line string) bool {
