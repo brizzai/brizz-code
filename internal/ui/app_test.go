@@ -3,9 +3,11 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/brizzai/brizz-code/internal/config"
+	"github.com/brizzai/brizz-code/internal/git"
 	"github.com/brizzai/brizz-code/internal/session"
 )
 
@@ -43,4 +45,53 @@ func TestHomeInitializes(t *testing.T) {
 	if output == "" {
 		t.Error("View() returned empty string")
 	}
+}
+
+// TestViewGitInfoCacheRace guards against the "concurrent map read and map write"
+// fatal that happens if View() reads h.gitInfoCache while the status worker writes
+// it. Run with `go test -race` — pre-fix this trips the race detector reliably.
+func TestViewGitInfoCacheRace(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "brizz-race-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+	storage, err := session.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer storage.Close()
+
+	home := NewHome(storage, &config.Config{TickIntervalSec: 2}, "test")
+	home.width = 120
+	home.height = 40
+
+	// Seed a repo-header flatItem so RenderSidebar hits the gitInfo[item.RepoPath]
+	// read path at sidebar.go:183.
+	const repo = "/tmp/brizz-race-repo"
+	home.flatItems = []SidebarItem{{IsRepoHeader: true, RepoPath: repo, Expanded: false, SessionCount: 0}}
+
+	const iterations = 500
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			home.workerMu.Lock()
+			home.gitInfoCache[repo] = &git.RepoInfo{Branch: "main"}
+			home.workerMu.Unlock()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = home.View()
+		}
+	}()
+
+	wg.Wait()
 }
