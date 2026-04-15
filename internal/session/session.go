@@ -342,7 +342,7 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 
 	switch hookStatus {
 	case "running":
-		s.applyHookRunning(oldStatus, paneContent, log)
+		s.applyHookRunning(oldStatus, paneContent, paneStatus, log)
 	case "waiting":
 		s.applyHookWaiting(paneContent, paneStatus, log)
 	case "finished":
@@ -360,7 +360,7 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 
 // applyHookRunning handles hook status "running" with content stability detection.
 // Must be called with s.mu held.
-func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *slog.Logger) {
+func (s *Session) applyHookRunning(oldStatus Status, paneContent string, paneStatus Status, log *slog.Logger) {
 	s.Status = StatusRunning
 	s.Acknowledged = false
 
@@ -388,6 +388,13 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *sl
 					return // activity recent, trust the hook
 				}
 			}
+		}
+		// Don't override if pane detection sees running indicators (spinner,
+		// whimsical activity). During extended thinking, normalizeForHash strips
+		// the whimsical line so the hash stabilizes, but the line is still
+		// visible — trust the pane over the stability heuristic.
+		if paneStatus == StatusRunning {
+			return
 		}
 		// Content stable >10s while hook says running — hook is stale.
 		// Preserve idle if already acknowledged (don't bounce back to finished).
@@ -760,23 +767,36 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 		}
 	}
 
-	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)"
-	// for inbound tokens, or "Spelunking… (3m 14s · ↑ 1.8k tokens)" for sub-agent
-	// output). The `tokens)` suffix anchors this to the parens-enclosed counter —
-	// conversation text that mentions `· ↓` / `· ↑` / `tokens` (e.g. commit messages,
-	// docs, or chat discussing this very detection) won't close with `tokens)`.
+	// Whimsical activity pattern (Claude 2.1.25+). Two known formats:
+	//   "Clauding… (53s · ↓ 749 tokens)"                                — standard
+	//   "Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)" — extended thinking
+	// Both contain `tokens` and `· ↓`/`· ↑` inside a trailing ")".
+	// The `)` suffix + `tokens` + arrow marker combo is specific enough to avoid
+	// false-positives from conversation text (which won't have all three in a
+	// standalone bottom-10 line).
 	// Only check bottom 10 lines — the token counter line is always near the bottom.
 	whimsicalN := min(10, len(recentLines))
 	for _, line := range recentLines[:whimsicalN] {
-		trimmed := strings.TrimRight(line, " \t")
-		lower := strings.ToLower(trimmed)
-		if strings.HasSuffix(lower, "tokens)") &&
-			(strings.Contains(lower, "· ↓") || strings.Contains(lower, "· ↑")) {
-			log.Debug("detectStatus: matched whimsical activity pattern", "line", trimmed)
+		if isWhimsicalActivity(line) {
+			log.Debug("detectStatus: matched whimsical activity pattern", "line", strings.TrimRight(line, " \t"))
 			return StatusRunning
 		}
 	}
 	return ""
+}
+
+// isWhimsicalActivity reports whether a line matches Claude's whimsical activity
+// indicator. Both standard and extended thinking formats:
+//
+//	"· Clauding… (53s · ↓ 749 tokens)"
+//	"✢ Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)"
+//
+// Used by detectRunning (status detection) and normalizeForHash (content hashing).
+func isWhimsicalActivity(line string) bool {
+	lower := strings.ToLower(strings.TrimRight(line, " \t"))
+	return strings.HasSuffix(lower, ")") &&
+		strings.Contains(lower, "tokens") &&
+		(strings.Contains(lower, "· ↓") || strings.Contains(lower, "· ↑"))
 }
 
 // detectWaiting checks for permission prompts using structural layout checks.
@@ -899,11 +919,16 @@ func normalizeForHash(content string) string {
 	content = StripANSI(content)
 	lines := strings.Split(content, "\n")
 
-	// Remove lines containing spinner characters entirely (not just the char).
+	// Remove lines containing spinner characters or whimsical activity indicators.
 	// These are activity indicator lines with ephemeral whimsical words
 	// ("Seasoning…", "Thinking…") that change every few seconds.
+	// The whimsical activity check handles extended thinking lines that use
+	// · (middle dot) instead of spinner chars and contain changing timers/counters.
 	filtered := lines[:0]
 	for _, line := range lines {
+		if isWhimsicalActivity(line) {
+			continue
+		}
 		hasSpinner := false
 		for _, sc := range spinnerChars {
 			if strings.Contains(line, sc) {

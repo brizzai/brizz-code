@@ -445,3 +445,35 @@ func TestScenarioFinishedAutoResumeRunning(t *testing.T) {
 		},
 	})
 }
+
+func TestScenarioExtendedThinkingNoOscillation(t *testing.T) {
+	// Regression: during extended thinking, Claude shows a whimsical activity line
+	// with "· ↓ tokens · thinking with high effort)" format. The timer/token count
+	// updates infrequently (every 10-30s), causing normalizeForHash to see the same
+	// content hash for >10s. The "content stable >10s" heuristic then overrides to
+	// finished, but when the timer updates, the hash changes and it flips back to
+	// running — oscillating 3+ times over a ~3 minute thinking session.
+	//
+	// Fix: isWhimsicalActivity matches the extended thinking format in both
+	// detectRunning (pane says running) and normalizeForHash (strips the line
+	// so timer changes don't affect the hash).
+	// Captured from snapshot 2026-04-15T12-00-04_dashboard-cohort-implementatio.
+	fixture := "pane_running_extended_thinking.txt"
+	if _, err := os.Stat(filepath.Join("testdata", fixture)); err != nil {
+		t.Skipf("fixture %s not available", fixture)
+	}
+
+	runScenario(t, Scenario{
+		Name: "extended thinking: hook=running + whimsical activity → stays running, no oscillation",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "running", Pane: "@fixture:" + fixture},
+		},
+		Checks: []ScenarioCheck{
+			// Pane shows whimsical "· Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)"
+			// which should be detected as running. The content-stable check should NOT
+			// override to finished because normalizeForHash strips the whimsical line.
+			{At: 5 * time.Second, Expected: StatusRunning},
+			{At: 11 * time.Second, Expected: StatusRunning}, // would have oscillated to finished before fix
+		},
+	})
+}
