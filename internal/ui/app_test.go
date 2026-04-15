@@ -34,6 +34,7 @@ func TestHomeInitializes(t *testing.T) {
 	home := NewHome(storage, cfg, "test")
 	if home == nil {
 		t.Fatal("NewHome returned nil")
+		return
 	}
 
 	// Set minimal dimensions for rendering.
