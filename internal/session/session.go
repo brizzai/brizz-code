@@ -469,6 +469,14 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		// Don't set lastContentChangeAt here — it should only be set on actual
 		// content changes, otherwise the cooldown triggers falsely on the next tick.
 		s.lastContentHash = hash
+		// Still trust the pane if it shows an active running indicator — the
+		// user may have approved and Claude started working immediately.
+		// normalizeForHash strips spinner lines so the hash can appear stable
+		// even while Claude is actively working; without this the TUI stays in
+		// waiting for multiple ticks.
+		if paneStatus == StatusRunning {
+			s.Status = StatusRunning
+		}
 	} else if hash != s.lastContentHash {
 		// Content changed — user acted on the prompt.
 		// Transition to running (approval is the most common action).

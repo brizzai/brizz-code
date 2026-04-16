@@ -478,6 +478,27 @@ func TestScenarioExtendedThinkingNoOscillation(t *testing.T) {
 	})
 }
 
+func TestScenarioWaitingFirstTickPaneRunning(t *testing.T) {
+	// Regression: when a waiting hook arrives but the pane already shows an
+	// active spinner (user approved a prior prompt and Claude is working on
+	// the next task), the first-tick baseline branch would only set the hash
+	// and return — leaving status=waiting for at least one tick. With slow
+	// spinners (e.g. "✽ Blanching…"), the hash stays stable across ticks
+	// because normalizeForHash strips spinner lines, so it could persist.
+	//
+	// Fix: first-tick branch also trusts paneStatus=running.
+	// Captured from snapshot 2026-04-16T16-45-03_merge-master.
+	runScenario(t, Scenario{
+		Name: "first tick in waiting + pane shows running → running immediately",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "waiting", Pane: "output\n✽ Blanching…\n  ⎿  Tip: some tip\n\n❯ \n"},
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusRunning},
+		},
+	})
+}
+
 func TestScenarioStaleWaitingWithActiveSpinner(t *testing.T) {
 	// Regression: user approves a PermissionRequest and Claude starts working.
 	// No UserPromptSubmit fires for permission grants, so the hook stays "waiting".
