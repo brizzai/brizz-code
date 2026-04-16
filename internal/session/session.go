@@ -476,6 +476,7 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		// waiting for multiple ticks.
 		if paneStatus == StatusRunning {
 			s.Status = StatusRunning
+			s.lastContentChangeAt = time.Now()
 		}
 	} else if hash != s.lastContentHash {
 		// Content changed — user acted on the prompt.
@@ -496,6 +497,7 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		// (spinner char or whimsical activity). Trust the pane — Claude is working.
 		// Self-correcting: a Stop hook or idle prompt will override when done.
 		s.Status = StatusRunning
+		s.lastContentChangeAt = time.Now()
 	}
 }
 
@@ -804,9 +806,12 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 }
 
 // isWhimsicalActivity reports whether a line matches Claude's whimsical activity
-// indicator. Both standard and extended thinking formats:
+// indicator. The leading glyph can vary (middle dot, spinner char, etc.) —
+// matching is based on the duration/counter and token pattern, not the prefix.
+// Both standard and extended thinking formats are supported, e.g.:
 //
 //	"· Clauding… (53s · ↓ 749 tokens)"
+//	"✳ Newspapering… (5m 21s · ↓ 3.7k tokens)"
 //	"· Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)"
 //
 // Used by detectRunning (status detection) and normalizeForHash (content hashing).
