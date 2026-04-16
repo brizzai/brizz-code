@@ -325,6 +325,68 @@ func SanitizeBranchName(branch string) string {
 	return s
 }
 
+// SanitizeBranchInput normalizes a partial branch-name input for live display:
+// space becomes '-', and chars git forbids anywhere in a ref (~ ^ : ? * [ \ and
+// ASCII control chars) are dropped. '/' is kept so users can type hierarchical
+// names like "feature/login". Positional rules (leading '-', trailing '.lock',
+// etc.) are left to ValidateBranchName so we don't eat characters mid-type.
+func SanitizeBranchInput(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == ' ':
+			b.WriteByte('-')
+		case r < 0x20 || r == 0x7f:
+			// drop ASCII control chars
+		case r == '~' || r == '^' || r == ':' || r == '?' || r == '*' || r == '[' || r == '\\':
+			// drop chars git forbids anywhere in a ref
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// ValidateBranchName returns a user-friendly error message if branch violates
+// git check-ref-format rules that SanitizeBranchInput can't repair live. An
+// empty return value means the branch is acceptable.
+func ValidateBranchName(branch string) string {
+	if branch == "" {
+		return "Branch name cannot be empty"
+	}
+	if branch == "@" {
+		return "Branch name cannot be '@'"
+	}
+	switch branch[0] {
+	case '-':
+		return "Branch name cannot start with '-'"
+	case '/':
+		return "Branch name cannot start with '/'"
+	case '.':
+		return "Branch name cannot start with '.'"
+	}
+	switch branch[len(branch)-1] {
+	case '.':
+		return "Branch name cannot end with '.'"
+	case '/':
+		return "Branch name cannot end with '/'"
+	}
+	if strings.HasSuffix(branch, ".lock") {
+		return "Branch name cannot end with '.lock'"
+	}
+	if strings.Contains(branch, "..") {
+		return "Branch name cannot contain '..'"
+	}
+	if strings.Contains(branch, "@{") {
+		return "Branch name cannot contain '@{'"
+	}
+	if strings.Contains(branch, "//") {
+		return "Branch name cannot contain '//'"
+	}
+	return ""
+}
+
 // deriveWorktreePath computes the sibling worktree path.
 // e.g. repoPath="/code/myrepo", name="feature-login" -> "/code/myrepo-feature-login"
 func deriveWorktreePath(repoPath, name string) string {

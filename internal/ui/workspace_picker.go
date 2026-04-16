@@ -202,8 +202,8 @@ func (d *WorktreeDialog) Update(msg tea.Msg) (*WorktreeDialog, tea.Cmd) {
 		}
 		// Create new worktree from inputs.
 		newBranch := strings.TrimSpace(d.newBranchInput.Value())
-		if newBranch == "" {
-			d.err = "Branch name cannot be empty"
+		if errMsg := workspace.ValidateBranchName(newBranch); errMsg != "" {
+			d.err = errMsg
 			return d, nil
 		}
 		baseBranch := strings.TrimSpace(d.baseBranchInput.Value())
@@ -228,6 +228,10 @@ func (d *WorktreeDialog) Update(msg tea.Msg) (*WorktreeDialog, tea.Cmd) {
 		d.baseBranchInput, cmd = d.baseBranchInput.Update(msg)
 	case focusNewBranch:
 		d.newBranchInput, cmd = d.newBranchInput.Update(msg)
+		if sanitized := workspace.SanitizeBranchInput(d.newBranchInput.Value()); sanitized != d.newBranchInput.Value() {
+			d.newBranchInput.SetValue(sanitized)
+			d.newBranchInput.CursorEnd()
+		}
 	}
 	return d, cmd
 }
