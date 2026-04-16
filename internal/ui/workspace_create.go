@@ -224,9 +224,11 @@ func (d *CreateWorkspaceDialog) Update(msg tea.Msg) (*CreateWorkspaceDialog, tea
 		branchTouched = true
 	}
 	if branchTouched {
-		if sanitized := workspace.SanitizeBranchInput(d.branchInput.Value()); sanitized != d.branchInput.Value() {
+		current := d.branchInput.Value()
+		sanitized, newPos := workspace.SanitizeBranchInputWithCursor(current, d.branchInput.Position())
+		if sanitized != current {
 			d.branchInput.SetValue(sanitized)
-			d.branchInput.CursorEnd()
+			d.branchInput.SetCursor(newPos)
 		}
 	}
 	return d, cmd

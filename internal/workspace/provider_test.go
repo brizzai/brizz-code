@@ -83,6 +83,7 @@ func TestSanitizeBranchInput(t *testing.T) {
 		{"strip star", "feat*bad", "featbad"},
 		{"strip bracket", "feat[bad", "featbad"},
 		{"strip backslash", "feat\\bad", "featbad"},
+		{"strip backtick", "feat`bad", "featbad"},
 		{"strip tab control", "feat\tbad", "featbad"},
 		{"strip del control", "feat\x7fbad", "featbad"},
 		{"keep slash", "feature/login", "feature/login"},
@@ -106,6 +107,37 @@ func TestSanitizeBranchInput(t *testing.T) {
 	}
 }
 
+func TestSanitizeBranchInputWithCursor(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		cursor     int
+		wantOut    string
+		wantCursor int
+	}{
+		{"no change", "feat", 2, "feat", 2},
+		{"space before cursor replaced (cursor unchanged)", "a b", 3, "a-b", 3},
+		{"drop char before cursor", "a~bc", 4, "abc", 3},
+		{"drop char after cursor", "ab~c", 2, "abc", 2},
+		{"drop char at cursor", "ab~c", 3, "abc", 2},
+		{"multiple drops before cursor", "~a~b~c", 6, "abc", 3},
+		{"cursor past end clamps", "abc", 10, "abc", 3},
+		{"negative cursor clamps to 0", "~abc", -1, "abc", 0},
+		{"empty string", "", 0, "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotOut, gotCursor := SanitizeBranchInputWithCursor(tt.input, tt.cursor)
+			if gotOut != tt.wantOut {
+				t.Errorf("out = %q, want %q", gotOut, tt.wantOut)
+			}
+			if gotCursor != tt.wantCursor {
+				t.Errorf("cursor = %d, want %d", gotCursor, tt.wantCursor)
+			}
+		})
+	}
+}
+
 func TestValidateBranchName(t *testing.T) {
 	invalid := []struct {
 		name  string
@@ -116,9 +148,12 @@ func TestValidateBranchName(t *testing.T) {
 		{"leading dash", "-bad"},
 		{"leading slash", "/bad"},
 		{"leading dot", ".bad"},
+		{"component leading dot", "feature/.bad"},
 		{"trailing dot", "bad."},
+		{"component trailing dot", "a./b"},
 		{"trailing slash", "bad/"},
 		{"trailing .lock", "feature.lock"},
+		{"component .lock", "a.lock/b"},
 		{"double dot", "a..b"},
 		{"at brace", "a@{b"},
 		{"double slash", "a//b"},

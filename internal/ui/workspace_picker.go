@@ -228,9 +228,11 @@ func (d *WorktreeDialog) Update(msg tea.Msg) (*WorktreeDialog, tea.Cmd) {
 		d.baseBranchInput, cmd = d.baseBranchInput.Update(msg)
 	case focusNewBranch:
 		d.newBranchInput, cmd = d.newBranchInput.Update(msg)
-		if sanitized := workspace.SanitizeBranchInput(d.newBranchInput.Value()); sanitized != d.newBranchInput.Value() {
+		current := d.newBranchInput.Value()
+		sanitized, newPos := workspace.SanitizeBranchInputWithCursor(current, d.newBranchInput.Position())
+		if sanitized != current {
 			d.newBranchInput.SetValue(sanitized)
-			d.newBranchInput.CursorEnd()
+			d.newBranchInput.SetCursor(newPos)
 		}
 	}
 	return d, cmd
