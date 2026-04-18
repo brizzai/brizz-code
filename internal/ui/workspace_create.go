@@ -184,8 +184,8 @@ func (d *CreateWorkspaceDialog) Update(msg tea.Msg) (*CreateWorkspaceDialog, tea
 		if d.isNative {
 			// Native git mode: branch is the only input.
 			branch := strings.TrimSpace(d.branchInput.Value())
-			if branch == "" {
-				d.err = "Branch cannot be empty"
+			if errMsg := workspace.ValidateBranchName(branch); errMsg != "" {
+				d.err = errMsg
 				return d, nil
 			}
 			d.err = ""
@@ -213,12 +213,23 @@ func (d *CreateWorkspaceDialog) Update(msg tea.Msg) (*CreateWorkspaceDialog, tea
 
 	// Route to focused input.
 	var cmd tea.Cmd
+	branchTouched := false
 	if d.isNative {
 		d.branchInput, cmd = d.branchInput.Update(msg)
+		branchTouched = true
 	} else if d.focusIndex == 0 {
 		d.nameInput, cmd = d.nameInput.Update(msg)
 	} else {
 		d.branchInput, cmd = d.branchInput.Update(msg)
+		branchTouched = true
+	}
+	if branchTouched {
+		current := d.branchInput.Value()
+		sanitized, newPos := workspace.SanitizeBranchInputWithCursor(current, d.branchInput.Position())
+		if sanitized != current {
+			d.branchInput.SetValue(sanitized)
+			d.branchInput.SetCursor(newPos)
+		}
 	}
 	return d, cmd
 }

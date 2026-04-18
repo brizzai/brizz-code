@@ -325,6 +325,98 @@ func SanitizeBranchName(branch string) string {
 	return s
 }
 
+// SanitizeBranchInput normalizes a partial branch-name input for live display:
+// space becomes '-', and chars git forbids anywhere in a ref (~ ^ : ? * [ \ `
+// and ASCII control chars) are dropped. '/' is kept so users can type
+// hierarchical names like "feature/login". Positional rules (leading '-',
+// per-component leading '.', trailing '.lock', etc.) are left to
+// ValidateBranchName so we don't eat characters mid-type.
+func SanitizeBranchInput(s string) string {
+	out, _ := SanitizeBranchInputWithCursor(s, 0)
+	return out
+}
+
+// SanitizeBranchInputWithCursor is SanitizeBranchInput with cursor preservation:
+// it returns the sanitized string and the adjusted rune-position cursor so
+// callers can keep the user's edit point after live sanitation. Cursor units
+// match bubbles/textinput.Position (rune index).
+func SanitizeBranchInputWithCursor(s string, cursor int) (string, int) {
+	runes := []rune(s)
+	newRunes := make([]rune, 0, len(runes))
+	newCursor := cursor
+	for i, r := range runes {
+		keep := true
+		out := r
+		switch {
+		case r == ' ':
+			out = '-'
+		case r < 0x20 || r == 0x7f:
+			keep = false
+		case r == '~' || r == '^' || r == ':' || r == '?' || r == '*' || r == '[' || r == '\\' || r == '`':
+			keep = false
+		}
+		if keep {
+			newRunes = append(newRunes, out)
+		} else if i < cursor {
+			newCursor--
+		}
+	}
+	if newCursor < 0 {
+		newCursor = 0
+	}
+	if newCursor > len(newRunes) {
+		newCursor = len(newRunes)
+	}
+	return string(newRunes), newCursor
+}
+
+// ValidateBranchName returns a user-friendly error message if branch violates
+// git check-ref-format rules that SanitizeBranchInput can't repair live. An
+// empty return value means the branch is acceptable.
+func ValidateBranchName(branch string) string {
+	if branch == "" {
+		return "Branch name cannot be empty"
+	}
+	if branch == "@" {
+		return "Branch name cannot be '@'"
+	}
+	switch branch[0] {
+	case '-':
+		return "Branch name cannot start with '-'"
+	case '/':
+		return "Branch name cannot start with '/'"
+	}
+	if branch[len(branch)-1] == '/' {
+		return "Branch name cannot end with '/'"
+	}
+	if strings.Contains(branch, "..") {
+		return "Branch name cannot contain '..'"
+	}
+	if strings.Contains(branch, "@{") {
+		return "Branch name cannot contain '@{'"
+	}
+	if strings.Contains(branch, "//") {
+		return "Branch name cannot contain '//'"
+	}
+	// Per-component rules (git check-ref-format applies these to each
+	// '/'-separated component, not just the whole string).
+	for _, comp := range strings.Split(branch, "/") {
+		if comp == "" {
+			continue
+		}
+		if comp[0] == '.' {
+			return "Branch name cannot have a component starting with '.'"
+		}
+		if comp[len(comp)-1] == '.' {
+			return "Branch name cannot have a component ending with '.'"
+		}
+		if strings.HasSuffix(comp, ".lock") {
+			return "Branch name cannot have a component ending with '.lock'"
+		}
+	}
+	return ""
+}
+
 // deriveWorktreePath computes the sibling worktree path.
 // e.g. repoPath="/code/myrepo", name="feature-login" -> "/code/myrepo-feature-login"
 func deriveWorktreePath(repoPath, name string) string {
