@@ -342,7 +342,7 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 
 	switch hookStatus {
 	case "running":
-		s.applyHookRunning(oldStatus, paneContent, log)
+		s.applyHookRunning(oldStatus, paneContent, paneStatus, log)
 	case "waiting":
 		s.applyHookWaiting(paneContent, paneStatus, log)
 	case "finished":
@@ -360,7 +360,7 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 
 // applyHookRunning handles hook status "running" with content stability detection.
 // Must be called with s.mu held.
-func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *slog.Logger) {
+func (s *Session) applyHookRunning(oldStatus Status, paneContent string, paneStatus Status, log *slog.Logger) {
 	s.Status = StatusRunning
 	s.Acknowledged = false
 
@@ -388,6 +388,13 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, log *sl
 					return // activity recent, trust the hook
 				}
 			}
+		}
+		// Don't override if pane detection sees running indicators (spinner,
+		// whimsical activity). During extended thinking, normalizeForHash strips
+		// the whimsical line so the hash stabilizes, but the line is still
+		// visible — trust the pane over the stability heuristic.
+		if paneStatus == StatusRunning {
+			return
 		}
 		// Content stable >10s while hook says running — hook is stale.
 		// Preserve idle if already acknowledged (don't bounce back to finished).
@@ -462,6 +469,15 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		// Don't set lastContentChangeAt here — it should only be set on actual
 		// content changes, otherwise the cooldown triggers falsely on the next tick.
 		s.lastContentHash = hash
+		// Still trust the pane if it shows an active running indicator — the
+		// user may have approved and Claude started working immediately.
+		// normalizeForHash strips spinner lines so the hash can appear stable
+		// even while Claude is actively working; without this the TUI stays in
+		// waiting for multiple ticks.
+		if paneStatus == StatusRunning {
+			s.Status = StatusRunning
+			s.lastContentChangeAt = time.Now()
+		}
 	} else if hash != s.lastContentHash {
 		// Content changed — user acted on the prompt.
 		// Transition to running (approval is the most common action).
@@ -475,6 +491,13 @@ func (s *Session) applyHookWaiting(paneContent string, paneStatus Status, log *s
 		// Claude outputs in bursts; between bursts the hash is the same for a tick,
 		// causing oscillation back to waiting. The 15s cooldown covers burst gaps.
 		s.Status = StatusRunning
+	} else if paneStatus == StatusRunning {
+		// Content hash is stable (normalizeForHash strips spinner/whimsical lines)
+		// and cooldown expired, but pane detection sees an active running indicator
+		// (spinner char or whimsical activity). Trust the pane — Claude is working.
+		// Self-correcting: a Stop hook or idle prompt will override when done.
+		s.Status = StatusRunning
+		s.lastContentChangeAt = time.Now()
 	}
 }
 
@@ -745,7 +768,11 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 		}
 	}
 
-	for _, line := range recentLines {
+	// Spinner chars only in bottom 10 lines — active Claude spinners sit right
+	// above the prompt chrome. Checking all 50 lines false-positives on CLI tool
+	// output (e.g. braille spinners from `linear`, `npm`) baked into scrollback.
+	spinnerN := min(10, len(recentLines))
+	for _, line := range recentLines[:spinnerN] {
 		for _, sc := range spinnerChars {
 			if strings.HasPrefix(strings.TrimSpace(line), sc) {
 				// Don't treat spinner chars as running if they're part of a
@@ -760,23 +787,67 @@ func detectRunning(recentLines []string, _ string, log *slog.Logger) Status {
 		}
 	}
 
-	// Whimsical activity pattern (Claude 2.1.25+: "Clauding… (53s · ↓ 749 tokens)"
-	// for inbound tokens, or "Spelunking… (3m 14s · ↑ 1.8k tokens)" for sub-agent
-	// output). The `tokens)` suffix anchors this to the parens-enclosed counter —
-	// conversation text that mentions `· ↓` / `· ↑` / `tokens` (e.g. commit messages,
-	// docs, or chat discussing this very detection) won't close with `tokens)`.
-	// Only check bottom 10 lines — the token counter line is always near the bottom.
-	whimsicalN := min(10, len(recentLines))
-	for _, line := range recentLines[:whimsicalN] {
-		trimmed := strings.TrimRight(line, " \t")
-		lower := strings.ToLower(trimmed)
-		if strings.HasSuffix(lower, "tokens)") &&
-			(strings.Contains(lower, "· ↓") || strings.Contains(lower, "· ↑")) {
-			log.Debug("detectStatus: matched whimsical activity pattern", "line", trimmed)
+	// Whimsical activity pattern (Claude 2.1.25+). Two known formats:
+	//   "· Clauding… (53s · ↓ 749 tokens)"                                    — standard
+	//   "· Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)" — extended thinking
+	// Both contain `tokens` and `· ↓`/`· ↑` inside a trailing ")".
+	// The `)` suffix + `tokens` + arrow marker combo is specific enough to avoid
+	// false-positives from conversation text — safe to scan all 50 recent lines.
+	// (Unlike raw spinner chars, which false-positive on CLI tool output.)
+	// Scanning all lines is important because plan execution pushes the activity
+	// line far from the bottom as checklist items expand below it.
+	for _, line := range recentLines {
+		if isWhimsicalActivity(line) {
+			log.Debug("detectStatus: matched whimsical activity pattern", "line", strings.TrimRight(line, " \t"))
 			return StatusRunning
 		}
 	}
 	return ""
+}
+
+// isWhimsicalActivity reports whether a line matches Claude's whimsical activity
+// indicator. The leading glyph can vary (middle dot, spinner char, etc.) —
+// matching is based on the duration/counter and token pattern, not the prefix.
+// Both standard and extended thinking formats are supported, e.g.:
+//
+//	"· Clauding… (53s · ↓ 749 tokens)"
+//	"✳ Newspapering… (5m 21s · ↓ 3.7k tokens)"
+//	"· Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)"
+//
+// Used by detectRunning (status detection) and normalizeForHash (content hashing).
+func isWhimsicalActivity(line string) bool {
+	lower := strings.ToLower(strings.TrimRight(line, " \t"))
+	return strings.HasSuffix(lower, ")") &&
+		strings.Contains(lower, "tokens") &&
+		(strings.Contains(lower, "· ↓") || strings.Contains(lower, "· ↑")) &&
+		hasWhimsicalDuration(lower)
+}
+
+// hasWhimsicalDuration checks for Claude's duration counter pattern "(Ns", "(Nm Ns",
+// "(Nh Nm" inside the line — e.g. "(53s", "(5m 42s", "(1h 2m". This anchors the
+// whimsical check to actual activity lines and prevents false-positives from
+// conversation text that coincidentally mentions "tokens" + "· ↓"/"· ↑" + ")".
+func hasWhimsicalDuration(lower string) bool {
+	// Look for "(<digits><unit>" where unit is s, m, or h.
+	for i := 0; i < len(lower)-2; i++ {
+		if lower[i] != '(' {
+			continue
+		}
+		// Must have digit after '('.
+		j := i + 1
+		if j >= len(lower) || lower[j] < '0' || lower[j] > '9' {
+			continue
+		}
+		// Scan digits.
+		for j < len(lower) && lower[j] >= '0' && lower[j] <= '9' {
+			j++
+		}
+		// Must end with a time unit.
+		if j < len(lower) && (lower[j] == 's' || lower[j] == 'm' || lower[j] == 'h') {
+			return true
+		}
+	}
+	return false
 }
 
 // detectWaiting checks for permission prompts using structural layout checks.
@@ -899,11 +970,16 @@ func normalizeForHash(content string) string {
 	content = StripANSI(content)
 	lines := strings.Split(content, "\n")
 
-	// Remove lines containing spinner characters entirely (not just the char).
+	// Remove lines containing spinner characters or whimsical activity indicators.
 	// These are activity indicator lines with ephemeral whimsical words
 	// ("Seasoning…", "Thinking…") that change every few seconds.
+	// The whimsical activity check handles extended thinking lines that use
+	// · (middle dot) instead of spinner chars and contain changing timers/counters.
 	filtered := lines[:0]
 	for _, line := range lines {
+		if isWhimsicalActivity(line) {
+			continue
+		}
 		hasSpinner := false
 		for _, sc := range spinnerChars {
 			if strings.Contains(line, sc) {

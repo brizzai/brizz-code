@@ -445,3 +445,85 @@ func TestScenarioFinishedAutoResumeRunning(t *testing.T) {
 		},
 	})
 }
+
+func TestScenarioExtendedThinkingNoOscillation(t *testing.T) {
+	// Regression: during extended thinking, Claude shows a whimsical activity line
+	// with "· ↓ tokens · thinking with high effort)" format. The timer/token count
+	// updates infrequently (every 10-30s), causing normalizeForHash to see the same
+	// content hash for >10s. The "content stable >10s" heuristic then overrides to
+	// finished, but when the timer updates, the hash changes and it flips back to
+	// running — oscillating 3+ times over a ~3 minute thinking session.
+	//
+	// Fix: isWhimsicalActivity matches the extended thinking format in both
+	// detectRunning (pane says running) and normalizeForHash (strips the line
+	// so timer changes don't affect the hash).
+	// Captured from snapshot 2026-04-15T12-00-04_dashboard-cohort-implementatio.
+	fixture := "pane_running_extended_thinking.txt"
+	if _, err := os.Stat(filepath.Join("testdata", fixture)); err != nil {
+		t.Skipf("fixture %s not available", fixture)
+	}
+
+	runScenario(t, Scenario{
+		Name: "extended thinking: hook=running + whimsical activity → stays running, no oscillation",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "running", Pane: "@fixture:" + fixture},
+		},
+		Checks: []ScenarioCheck{
+			// Pane shows whimsical "· Gesticulating… (5m 42s · ↓ 4.2k tokens · thinking with high effort)"
+			// which should be detected as running. The content-stable check should NOT
+			// override to finished because normalizeForHash strips the whimsical line.
+			{At: 5 * time.Second, Expected: StatusRunning},
+			{At: 11 * time.Second, Expected: StatusRunning}, // would have oscillated to finished before fix
+		},
+	})
+}
+
+func TestScenarioWaitingFirstTickPaneRunning(t *testing.T) {
+	// Regression: when a waiting hook arrives but the pane already shows an
+	// active spinner (user approved a prior prompt and Claude is working on
+	// the next task), the first-tick baseline branch would only set the hash
+	// and return — leaving status=waiting for at least one tick. With slow
+	// spinners (e.g. "✽ Blanching…"), the hash stays stable across ticks
+	// because normalizeForHash strips spinner lines, so it could persist.
+	//
+	// Fix: first-tick branch also trusts paneStatus=running.
+	// Captured from snapshot 2026-04-16T16-45-03_merge-master.
+	runScenario(t, Scenario{
+		Name: "first tick in waiting + pane shows running → running immediately",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "waiting", Pane: "output\n✽ Blanching…\n  ⎿  Tip: some tip\n\n❯ \n"},
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusRunning},
+		},
+	})
+}
+
+func TestScenarioStaleWaitingWithActiveSpinner(t *testing.T) {
+	// Regression: user approves a PermissionRequest and Claude starts working.
+	// No UserPromptSubmit fires for permission grants, so the hook stays "waiting".
+	// The pane shows an active spinner (✳ Newspapering…) but normalizeForHash
+	// strips it, making the content hash stable. After the 15s cooldown expired,
+	// status reverted to waiting even though Claude was clearly running.
+	//
+	// Fix: applyHookWaiting checks paneStatus as a fallback — if pane detection
+	// sees running indicators after cooldown, trust the pane and stay running.
+	// Captured from snapshot 2026-04-15T14-07-00_align-button-figma-design-syst.
+	fixture := "pane_running_stale_waiting_spinner.txt"
+	if _, err := os.Stat(filepath.Join("testdata", fixture)); err != nil {
+		t.Skipf("fixture %s not available", fixture)
+	}
+
+	runScenario(t, Scenario{
+		Name: "stale waiting hook + active spinner: stays running after cooldown",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "waiting", Pane: "permission prompt\n❯ 1. Yes\n  2. No\nEsc to cancel\n"},
+			{At: 3 * time.Second, Pane: "@fixture:" + fixture}, // user approved, Claude running
+		},
+		Checks: []ScenarioCheck{
+			{At: 0, Expected: StatusWaiting},
+			{At: 3 * time.Second, Expected: StatusRunning},  // content changed → running
+			{At: 20 * time.Second, Expected: StatusRunning}, // 15s cooldown expired, but pane says running → stays running
+		},
+	})
+}

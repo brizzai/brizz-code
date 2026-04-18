@@ -28,6 +28,10 @@ var goldenTests = []struct {
 	{"pane_finished_idle_prompt.txt", StatusFinished, "idle Claude prompt (❯)"},
 	{"pane_finished_permission_mode.txt", StatusFinished, "permission mode bar (⏵⏵)"},
 	{"pane_finished_conversation_whimsical_markers.txt", StatusFinished, "idle pane with scrollback text mentioning `· ↓`/`· ↑` + `tokens` (meta false-positive guard)"},
+	{"pane_running_extended_thinking.txt", StatusRunning, "extended thinking with `· ↓ tokens · thinking with high effort)` format"},
+	{"pane_running_stale_waiting_spinner.txt", StatusRunning, "active spinner (✳) with idle prompt — Claude running after permission approved"},
+	{"pane_finished_cli_spinners_in_scrollback.txt", StatusFinished, "idle prompt with braille spinner chars from CLI tool output in scrollback"},
+	{"pane_running_plan_checklist_deep.txt", StatusRunning, "plan execution with whimsical activity line pushed deep by expanding checklist"},
 }
 
 func TestGoldenDetection(t *testing.T) {
