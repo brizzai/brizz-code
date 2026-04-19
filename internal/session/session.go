@@ -207,14 +207,17 @@ type HookStatus struct {
 }
 
 // UpdateHookStatus updates the session's hook-based status.
-func (s *Session) UpdateHookStatus(hs *HookStatus) {
+// Returns true if the hook meaningfully changed (new status or new timestamp),
+// so callers can prioritize an immediate status recomputation.
+func (s *Session) UpdateHookStatus(hs *HookStatus) bool {
 	if hs == nil {
-		return
+		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	changed := s.hookStatus != hs.Status || s.hookUpdatedAt != hs.UpdatedAt
 	// Reset tracking when hook genuinely changes (new event or new status).
-	if s.hookStatus != hs.Status || s.hookUpdatedAt != hs.UpdatedAt {
+	if changed {
 		s.lastContentHash = ""
 		s.lastContentChangeAt = time.Time{}
 		s.hookOverriddenAt = time.Time{} // allow fresh evaluation of new hook
@@ -233,6 +236,7 @@ func (s *Session) UpdateHookStatus(hs *HookStatus) {
 	} else if hs.UserPrompt != "" && s.FirstPrompt == "" {
 		s.FirstPrompt = hs.UserPrompt
 	}
+	return changed
 }
 
 // Restart kills and recreates the tmux session with the same config.
@@ -361,6 +365,29 @@ func (s *Session) updateStatusFromHook(oldStatus Status, hookStatus string, hook
 // applyHookRunning handles hook status "running" with content stability detection.
 // Must be called with s.mu held.
 func (s *Session) applyHookRunning(oldStatus Status, paneContent string, paneStatus Status, log *slog.Logger) {
+	// If this stale "running" hook was already overridden to finished/idle,
+	// preserve that decision. A new hook (different timestamp) resets the flag
+	// via UpdateHookStatus, allowing fresh evaluation.
+	//
+	// Without this guard, every pane-content change (survey popups, cursor
+	// blinks, scrollback redraws) resets Status=Running at the top of this
+	// function and clears Acknowledged, causing idle ↔ running ↔ finished
+	// oscillation on stale hooks where no Stop event ever fires (e.g. slash
+	// commands, session survey popup).
+	//
+	// Escape: if pane shows an active running indicator, Claude genuinely
+	// resumed (sub-agent output burst, or user-initiated work before a new
+	// hook landed) — break out and let the normal path resume.
+	if !s.hookOverriddenAt.IsZero() && s.hookOverriddenAt.Equal(s.hookUpdatedAt) {
+		if paneStatus == StatusRunning {
+			s.Status = StatusRunning
+			s.Acknowledged = false
+			log.Info("overridden running hook but pane shows running, resuming")
+			return
+		}
+		return // preserve whatever state the stability override concluded
+	}
+
 	s.Status = StatusRunning
 	s.Acknowledged = false
 
@@ -404,6 +431,9 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, paneSta
 		} else {
 			s.Status = StatusFinished
 		}
+		// Memoize the override so subsequent ticks don't re-run this logic and
+		// reset Status=Running at the top on every pane-content change.
+		s.hookOverriddenAt = s.hookUpdatedAt
 		log.Info("content stable >10s, hook says running, assuming finished",
 			"stableSince", s.lastContentChangeAt.Format(time.TimeOnly))
 	}

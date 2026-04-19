@@ -182,11 +182,12 @@ type Home struct {
 	bugReport    *BugReportDialog
 
 	// Background worker for async status/git/PR updates.
-	statusTrigger chan struct{} // buffered(1), triggers worker
-	workerMu      sync.Mutex    // protects sessions/gitInfoCache from concurrent worker access
-	ctx           context.Context
-	cancel        context.CancelFunc
-	workerStarted bool
+	statusTrigger         chan struct{} // buffered(1), triggers worker
+	priorityStatusUpdates chan string   // buffered, session IDs with fresh hook changes — drained before round-robin
+	workerMu              sync.Mutex    // protects sessions/gitInfoCache from concurrent worker access
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	workerStarted         bool
 
 	startTime time.Time // app start time for uptime tracking
 
@@ -235,6 +236,7 @@ func NewHome(storage *session.StateDB, cfg *config.Config, version string) *Home
 		errorHistory:          NewErrorHistory(50),
 		actionLog:             NewActionLog(100),
 		statusTrigger:         make(chan struct{}, 1),
+		priorityStatusUpdates: make(chan string, 256),
 		ctx:                   ctx,
 		cancel:                cancel,
 		startTime:             time.Now(),
@@ -286,11 +288,14 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return h.handleTick()
 
 	case hookChangedMsg:
-		// HookWatcher detected a status file change. Do immediate hook-only sync.
+		// HookWatcher detected a status file change. Do immediate hook-only sync,
+		// then hand sessions whose hook changed to the worker via the priority queue
+		// so they get a full UpdateStatus() within ~100ms instead of waiting for round-robin.
 		h.workerMu.Lock()
-		h.syncHookStatuses(h.sessions)
+		changed := h.syncHookStatuses(h.sessions)
 		h.rebuildFlatItems()
 		h.workerMu.Unlock()
+		h.enqueuePriorityUpdates(changed)
 		return h, h.listenForHookChanges
 
 	case statusUpdateMsg:
@@ -298,9 +303,10 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.isAttaching.Store(false)
 		// Immediate hook sync (data already in HookWatcher from hooks that fired during attach).
 		h.workerMu.Lock()
-		h.syncHookStatuses(h.sessions)
+		changed := h.syncHookStatuses(h.sessions)
 		h.rebuildFlatItems()
 		h.workerMu.Unlock()
+		h.enqueuePriorityUpdates(changed)
 		// Also trigger full background refresh for pane captures, git, etc.
 		select {
 		case h.statusTrigger <- struct{}{}:
@@ -2129,23 +2135,28 @@ func (h *Home) statusWorker() {
 
 // syncHookStatuses reads the latest hook statuses from the HookWatcher and applies
 // them to the given sessions. Caller must ensure thread-safe access to sessions.
-func (h *Home) syncHookStatuses(sessions []*session.Session) {
+// Returns the IDs of sessions whose hook meaningfully changed (new status or timestamp);
+// callers can forward these to priorityStatusUpdates for immediate UpdateStatus().
+func (h *Home) syncHookStatuses(sessions []*session.Session) []string {
 	if h.hookWatcher == nil {
-		return
+		return nil
 	}
+	var changed []string
 	for _, s := range sessions {
 		hs := h.hookWatcher.GetStatus(s.ID)
 		if hs != nil {
 			oldClaudeSessionID := s.ClaudeSessionID
 			oldFirstPrompt := s.FirstPrompt
 			oldPromptCount := s.PromptCount
-			s.UpdateHookStatus(&session.HookStatus{
+			if s.UpdateHookStatus(&session.HookStatus{
 				Status:      hs.Status,
 				SessionID:   hs.SessionID,
 				UpdatedAt:   hs.UpdatedAt,
 				UserPrompt:  hs.UserPrompt,
 				PromptCount: hs.PromptCount,
-			})
+			}) {
+				changed = append(changed, s.ID)
+			}
 			// Persist new Claude session ID if it changed.
 			if s.ClaudeSessionID != oldClaudeSessionID && s.ClaudeSessionID != "" {
 				if err := h.storage.UpdateClaudeSessionID(s.ID, s.ClaudeSessionID); err != nil {
@@ -2172,6 +2183,39 @@ func (h *Home) syncHookStatuses(sessions []*session.Session) {
 				}
 			}
 		}
+	}
+	return changed
+}
+
+// updateAndPersistStatus runs a full UpdateStatus() on the session and persists
+// the result to storage if the status changed. Called from the worker goroutine.
+func (h *Home) updateAndPersistStatus(s *session.Session) {
+	oldStatus := s.GetStatus()
+	s.UpdateStatus()
+	newStatus := s.GetStatus()
+	if oldStatus != newStatus {
+		if err := h.storage.UpdateStatus(s.ID, string(newStatus)); err != nil {
+			debuglog.Logger.Error("storage: UpdateStatus", "id", s.ID, "status", newStatus, "err", err)
+		}
+	}
+}
+
+// enqueuePriorityUpdates pushes session IDs into the worker's priority queue
+// and kicks the worker to drain them immediately. Safe to call from any goroutine.
+func (h *Home) enqueuePriorityUpdates(ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	for _, id := range ids {
+		select {
+		case h.priorityStatusUpdates <- id:
+		default:
+			// Queue full — next worker cycle's round-robin will still catch it.
+		}
+	}
+	select {
+	case h.statusTrigger <- struct{}{}:
+	default:
 	}
 }
 
@@ -2245,7 +2289,29 @@ func (h *Home) statusWorkerCycle() {
 		}
 	}
 
-	// 4. Round-robin status updates (pane capture — blocking).
+	// 4. Priority updates first — sessions whose hook file just changed.
+	// These bypass round-robin so the UI reflects fresh hook status within
+	// ~100ms of the hook firing (vs. up to (N/statusRoundRobin)*tickInterval seconds).
+	priorityIDs := make(map[string]bool)
+drainPriority:
+	for {
+		select {
+		case id := <-h.priorityStatusUpdates:
+			priorityIDs[id] = true
+		default:
+			break drainPriority
+		}
+	}
+	processed := make(map[string]bool, len(priorityIDs))
+	for _, s := range sessions {
+		if !priorityIDs[s.ID] {
+			continue
+		}
+		h.updateAndPersistStatus(s)
+		processed[s.ID] = true
+	}
+
+	// 5. Round-robin status updates (pane capture — blocking), skipping already-processed.
 	count := statusRoundRobin
 	if count > len(sessions) {
 		count = len(sessions)
@@ -2253,14 +2319,10 @@ func (h *Home) statusWorkerCycle() {
 	for i := 0; i < count; i++ {
 		idx := (h.statusRRIndex + i) % len(sessions)
 		s := sessions[idx]
-		oldStatus := s.GetStatus()
-		s.UpdateStatus()
-		newStatus := s.GetStatus()
-		if oldStatus != newStatus {
-			if err := h.storage.UpdateStatus(s.ID, string(newStatus)); err != nil {
-				debuglog.Logger.Error("storage: UpdateStatus", "id", s.ID, "status", newStatus, "err", err)
-			}
+		if processed[s.ID] {
+			continue
 		}
+		h.updateAndPersistStatus(s)
 	}
 	h.statusRRIndex = (h.statusRRIndex + count) % len(sessions)
 

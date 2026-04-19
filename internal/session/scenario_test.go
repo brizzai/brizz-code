@@ -232,6 +232,32 @@ func TestScenarioSubAgentPermission(t *testing.T) {
 	})
 }
 
+// TestScenarioStaleRunningHookMemoizesOverride reproduces the "merge-master"
+// oscillation bug: a running hook that's hours stale (no Stop ever fired
+// because the user only ran slash commands), combined with periodic pane
+// content changes (survey popup, cursor blink, scrollback redraws) would
+// flip Status back to Running every time the hash changed, then 10s+ later
+// flip back to Finished. The fix memoizes the stability override via
+// hookOverriddenAt, so subsequent pane changes don't re-oscillate until a
+// fresh hook lands.
+func TestScenarioStaleRunningHookMemoizesOverride(t *testing.T) {
+	runScenario(t, Scenario{
+		Name: "stale running hook: hash change after override does not flip back to running",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "running", Pane: "line1\n❯ \n"},
+			// Simulate pane content change after the override has fired
+			// (e.g. session-rating popup appears, or scrollback redraws).
+			// The hook is still the stale "running" from t=0.
+			{At: 13 * time.Second, Pane: "line1\nDifferent content appeared\n❯ \n"},
+		},
+		Checks: []ScenarioCheck{
+			{At: 2 * time.Second, Expected: StatusRunning},   // baseline: first tick sets lastContentHash
+			{At: 11 * time.Second, Expected: StatusFinished}, // stability override fires, memoizes via hookOverriddenAt
+			{At: 13 * time.Second, Expected: StatusFinished}, // without fix: oscillates back to Running on hash change
+		},
+	})
+}
+
 func TestScenarioAcknowledgedPreventsOscillation(t *testing.T) {
 	runScenario(t, Scenario{
 		Name: "acknowledged idle stays idle when hook says waiting + pane idle",
