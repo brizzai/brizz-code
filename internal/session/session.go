@@ -377,15 +377,19 @@ func (s *Session) applyHookRunning(oldStatus Status, paneContent string, paneSta
 	//
 	// Escape: if pane shows an active running indicator, Claude genuinely
 	// resumed (sub-agent output burst, or user-initiated work before a new
-	// hook landed) — break out and let the normal path resume.
+	// hook landed). Clear the override and fall through to the normal path so
+	// the stability heuristic can re-engage if Claude stops again — otherwise
+	// the session would be stuck at Running forever until the next hook.
 	if !s.hookOverriddenAt.IsZero() && s.hookOverriddenAt.Equal(s.hookUpdatedAt) {
 		if paneStatus == StatusRunning {
-			s.Status = StatusRunning
-			s.Acknowledged = false
+			s.hookOverriddenAt = time.Time{}
+			s.lastContentHash = ""
+			s.lastContentChangeAt = time.Time{}
 			log.Info("overridden running hook but pane shows running, resuming")
-			return
+			// fall through to normal running path
+		} else {
+			return // preserve whatever state the stability override concluded
 		}
-		return // preserve whatever state the stability override concluded
 	}
 
 	s.Status = StatusRunning

@@ -258,6 +258,34 @@ func TestScenarioStaleRunningHookMemoizesOverride(t *testing.T) {
 	})
 }
 
+// TestScenarioStaleRunningResumesThenReIdles covers the escape path in
+// applyHookRunning's override guard: after an override has memoized
+// Status=Finished on a stale running hook, if the pane shows running (genuine
+// resume — e.g. sub-agent burst without a new hook), the guard must clear the
+// override so subsequent ticks can re-engage the stability heuristic when
+// Claude stops again. Otherwise the session is stuck at Running forever.
+func TestScenarioStaleRunningResumesThenReIdles(t *testing.T) {
+	runScenario(t, Scenario{
+		Name: "stale running hook: override → resume (pane running) → re-idle must re-override",
+		Events: []ScenarioEvent{
+			{At: 0, Hook: "running", Pane: "line1\n❯ \n"},
+			// Pane flips to active running (sub-agent burst before any new hook lands).
+			{At: 12 * time.Second, Pane: "⠋ Working on your request...\nctrl+c to interrupt\n"},
+			// Pane flips back to idle — Claude stopped again, still no new hook.
+			{At: 14 * time.Second, Pane: "line1\n❯ \n"},
+		},
+		Checks: []ScenarioCheck{
+			{At: 2 * time.Second, Expected: StatusRunning},   // baseline
+			{At: 11 * time.Second, Expected: StatusFinished}, // override memoizes
+			{At: 12 * time.Second, Expected: StatusRunning},  // escape path: resume detected, override cleared
+			// At t=14 pane flipped back to idle. Run an UpdateStatus at t=15 to lock
+			// in the new hash baseline, then verify stability re-engages by t=26.
+			{At: 15 * time.Second, Expected: StatusRunning},  // new idle pane, hash baseline being set
+			{At: 26 * time.Second, Expected: StatusFinished}, // >10s stable on new idle pane → re-override
+		},
+	})
+}
+
 func TestScenarioAcknowledgedPreventsOscillation(t *testing.T) {
 	runScenario(t, Scenario{
 		Name: "acknowledged idle stays idle when hook says waiting + pane idle",
