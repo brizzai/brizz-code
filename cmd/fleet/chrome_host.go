@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/brizzai/brizz-code/internal/chrome"
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/chrome"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
 // handleChromeHost runs the native messaging host for the Chrome extension.

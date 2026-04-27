@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/brizzai/brizz-code/internal/session"
+	"github.com/brizzai/fleet/internal/session"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -21,7 +21,7 @@ var (
 	ColorRed     = lipgloss.Color("#f7768e")
 	ColorGray    = lipgloss.Color("#565f89")
 	ColorWhite   = lipgloss.Color("#c0caf5")
-	ColorBrand   = lipgloss.Color("#F48FB1") // brizz pink — theme-independent
+	ColorBrand   = lipgloss.Color("#F48FB1") // fleet pink — theme-independent
 	ColorOrange  = lipgloss.Color("#ff9e64")
 	ColorPurple  = lipgloss.Color("#bb9af7")
 )

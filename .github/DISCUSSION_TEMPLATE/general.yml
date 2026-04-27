@@ -4,7 +4,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        General discussion about brizz-code, agentic workflows, or anything that doesn't fit the other categories.
+        General discussion about fleet, agentic workflows, or anything that doesn't fit the other categories.
 
   - type: textarea
     id: content

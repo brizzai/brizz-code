@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
 // Golden file tests: real ANSI pane captures from tmux, tested through the

@@ -34,5 +34,5 @@ type Response struct {
 // SocketPath returns the Unix socket path for the chrome bridge.
 func SocketPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "brizz-code", "chrome.sock")
+	return filepath.Join(home, ".config", "fleet", "chrome.sock")
 }

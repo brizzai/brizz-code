@@ -21,7 +21,7 @@ Claude Code hooks → hook-handler CLI → status file → fsnotify → HookWatc
 
 ## Hook Event → Status Mapping
 
-Defined in `cmd/brizz-code/hook_handler.go` `mapEventToStatus()`.
+Defined in `cmd/fleet/hook_handler.go` `mapEventToStatus()`.
 
 | Event             | Matcher                                | → Status  |
 |-------------------|----------------------------------------|-----------|
@@ -83,19 +83,19 @@ Sub-agents (Claude agent team feature) don't fire hooks. The parent fires `Stop`
 | File | What to look for |
 |------|------------------|
 | `internal/session/session.go` | UpdateStatus(), detectStatus(), Status type |
-| `cmd/brizz-code/hook_handler.go` | mapEventToStatus(), hook payload parsing |
+| `cmd/fleet/hook_handler.go` | mapEventToStatus(), hook payload parsing |
 | `internal/hooks/claude_hooks.go` | Hook installation, event configs |
 | `internal/hooks/hook_watcher.go` | fsnotify watcher |
 | `internal/hooks/status_file.go` | Status file format |
 
 ## Key Logs
 
-All in `~/.config/brizz-code/debug.log`:
+All in `~/.config/fleet/debug.log`:
 
 | Log message | Meaning |
 |-------------|---------|
 | `hook-handler: writing status` | Hook handler received event, writing file |
-| `hook-handler: no BRIZZCODE_INSTANCE_ID` | Env var missing, can't route hook |
+| `hook-handler: no FLEET_INSTANCE_ID` | Env var missing, can't route hook |
 | `hook-handler: unmapped event` | Event type not in mapEventToStatus |
 | `status changed (hook)` | UpdateStatus changed status based on hook data |
 | `status changed (pane)` | UpdateStatus changed status based on pane capture |
@@ -110,7 +110,7 @@ All in `~/.config/brizz-code/debug.log`:
 
 Secret `D` hotkey captures a point-in-time diagnostic snapshot of the selected session.
 
-Location: `~/.config/brizz-code/snapshots/<timestamp>_<title>/`
+Location: `~/.config/fleet/snapshots/<timestamp>_<title>/`
 
 | File | Contents |
 |------|----------|
@@ -125,10 +125,10 @@ Implementation: `internal/ui/snapshot.go` (capture logic), `internal/session/ses
 
 ## Hook Status Files
 
-Location: `~/.config/brizz-code/hooks/<instance_id>.json`
+Location: `~/.config/fleet/hooks/<instance_id>.json`
 
 ```json
 {"status":"running","session_id":"<claude-uuid>","event":"UserPromptSubmit","ts":1773090529}
 ```
 
-One file per brizz-code session. Last-write-wins. Cleaned up after 24h.
+One file per fleet session. Last-write-wins. Cleaned up after 24h.

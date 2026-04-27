@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fake gh CLI for demo — returns canned PR data for demo repos.
-# Usage: PATH=<demo-dir>:$PATH brizz-code
+# Usage: PATH=<demo-dir>:$PATH fleet
 
 case "$1" in
   --version)

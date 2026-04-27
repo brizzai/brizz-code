@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/amplitude/analytics-go/amplitude"
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
 const amplitudeAPIKey = "399db841c10e7de722315b1d16c6b609"
@@ -124,7 +124,7 @@ func Shutdown() {
 
 // isOptedOut checks environment variables for telemetry opt-out.
 func isOptedOut() bool {
-	if isTruthyEnv(os.Getenv("BRIZZ_TELEMETRY_DISABLED")) {
+	if isTruthyEnv(os.Getenv("FLEET_TELEMETRY_DISABLED")) {
 		return true
 	}
 	if isTruthyEnv(os.Getenv("DO_NOT_TRACK")) {
@@ -144,10 +144,10 @@ func isTruthyEnv(v string) bool {
 }
 
 // getOrCreateDeviceID returns a stable anonymous device ID.
-// Cached in ~/.config/brizz-code/device_id after first generation.
+// Cached in ~/.config/fleet/device_id after first generation.
 func getOrCreateDeviceID() string {
 	home, _ := os.UserHomeDir()
-	idPath := filepath.Join(home, ".config", "brizz-code", "device_id")
+	idPath := filepath.Join(home, ".config", "fleet", "device_id")
 
 	// Try reading cached ID (must be at least 8 chars to be valid).
 	if data, err := os.ReadFile(idPath); err == nil {

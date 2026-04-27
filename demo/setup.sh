@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-DEMO_DIR="/tmp/brizz-demo"
-BRIZZ="./build/brizz-code"
+DEMO_DIR="/tmp/fleet-demo"
+FLEET="./build/fleet"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$ROOT_DIR"
 
-echo "=== brizz-code demo setup ==="
+echo "=== fleet demo setup ==="
 
 # Clean previous demo if exists.
 bash "$SCRIPT_DIR/cleanup.sh" 2>/dev/null || true
@@ -242,15 +242,15 @@ LABELS=(
     "ml-pipeline: implement training"
 )
 
-BEFORE=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^brizzcode_' | sort || true)
+BEFORE=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^fleet_' | sort || true)
 
 for i in "${!REPOS[@]}"; do
     echo "  [$((i+1))/5] Creating ${LABELS[$i]}..."
-    $BRIZZ add "${REPOS[$i]}"
+    $FLEET add "${REPOS[$i]}"
     sleep 1
-    NEW_SESS=$(comm -13 <(echo "$BEFORE") <(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^brizzcode_' | sort) | head -1)
+    NEW_SESS=$(comm -13 <(echo "$BEFORE") <(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^fleet_' | sort) | head -1)
     SESSIONS+=("$NEW_SESS")
-    BEFORE=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^brizzcode_' | sort || true)
+    BEFORE=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^fleet_' | sort || true)
 done
 
 # Step 2: Wait for all sessions in parallel, then send prompts
@@ -280,6 +280,6 @@ echo "=== Demo setup complete ==="
 echo ""
 echo "Sessions are starting. Wait ~30s for them to reach various states, then run:"
 echo ""
-echo "  BRIZZ_DEMO_PREFIX=/tmp/brizz-demo ./build/brizz-code"
+echo "  FLEET_DEMO_PREFIX=/tmp/fleet-demo ./build/fleet"
 echo ""
 echo "To clean up later: bash demo/cleanup.sh"

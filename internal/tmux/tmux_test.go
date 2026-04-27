@@ -58,10 +58,10 @@ func TestNewSessionNameFormat(t *testing.T) {
 }
 
 func TestReconnectSession(t *testing.T) {
-	s := ReconnectSession("brizzcode_test_abc123", "My Session", "/home/user/project")
+	s := ReconnectSession("fleet_test_abc123", "My Session", "/home/user/project")
 
-	if s.Name != "brizzcode_test_abc123" {
-		t.Errorf("Name: got %q, want %q", s.Name, "brizzcode_test_abc123")
+	if s.Name != "fleet_test_abc123" {
+		t.Errorf("Name: got %q, want %q", s.Name, "fleet_test_abc123")
 	}
 	if s.DisplayName != "My Session" {
 		t.Errorf("DisplayName: got %q, want %q", s.DisplayName, "My Session")

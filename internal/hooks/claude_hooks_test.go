@@ -45,8 +45,8 @@ func TestMergeHookEvent(t *testing.T) {
 		}
 	})
 
-	t.Run("updates existing brizz-code hook", func(t *testing.T) {
-		existing := json.RawMessage(`[{"hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`)
+	t.Run("updates existing fleet hook", func(t *testing.T) {
+		existing := json.RawMessage(`[{"hooks":[{"type":"command","command":"fleet hook-handler"}]}]`)
 		result := mergeHookEvent(existing, "", true)
 
 		var matchers []claudeHookMatcher
@@ -73,10 +73,10 @@ func TestMergeHookEvent(t *testing.T) {
 	})
 }
 
-func TestRemoveBrizzCodeFromEvent(t *testing.T) {
-	t.Run("only brizz-code hooks", func(t *testing.T) {
-		raw := json.RawMessage(`[{"hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`)
-		result, removed := removeBrizzCodeFromEvent(raw)
+func TestRemoveFleetFromEvent(t *testing.T) {
+	t.Run("only fleet hooks", func(t *testing.T) {
+		raw := json.RawMessage(`[{"hooks":[{"type":"command","command":"fleet hook-handler"}]}]`)
+		result, removed := removeFleetFromEvent(raw)
 		if !removed {
 			t.Error("expected removed=true")
 		}
@@ -86,8 +86,8 @@ func TestRemoveBrizzCodeFromEvent(t *testing.T) {
 	})
 
 	t.Run("mixed hooks", func(t *testing.T) {
-		raw := json.RawMessage(`[{"hooks":[{"type":"command","command":"other-tool"},{"type":"command","command":"brizz-code hook-handler"}]}]`)
-		result, removed := removeBrizzCodeFromEvent(raw)
+		raw := json.RawMessage(`[{"hooks":[{"type":"command","command":"other-tool"},{"type":"command","command":"fleet hook-handler"}]}]`)
+		result, removed := removeFleetFromEvent(raw)
 		if !removed {
 			t.Error("expected removed=true")
 		}
@@ -107,9 +107,9 @@ func TestRemoveBrizzCodeFromEvent(t *testing.T) {
 		}
 	})
 
-	t.Run("no brizz-code hooks", func(t *testing.T) {
+	t.Run("no fleet hooks", func(t *testing.T) {
 		raw := json.RawMessage(`[{"hooks":[{"type":"command","command":"other-tool"}]}]`)
-		_, removed := removeBrizzCodeFromEvent(raw)
+		_, removed := removeFleetFromEvent(raw)
 		if removed {
 			t.Error("expected removed=false")
 		}
@@ -219,24 +219,24 @@ func TestWriteAndReadStatusFile(t *testing.T) {
 	})
 }
 
-func TestEventHasBrizzCodeHook(t *testing.T) {
+func TestEventHasFleetHook(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
 		want bool
 	}{
 		{
-			"has brizz-code hook",
-			`[{"hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`,
+			"has fleet hook",
+			`[{"hooks":[{"type":"command","command":"fleet hook-handler"}]}]`,
 			true,
 		},
 		{
-			"has brizz-code hook with path",
-			`[{"hooks":[{"type":"command","command":"/usr/local/bin/brizz-code hook-handler"}]}]`,
+			"has fleet hook with path",
+			`[{"hooks":[{"type":"command","command":"/usr/local/bin/fleet hook-handler"}]}]`,
 			true,
 		},
 		{
-			"no brizz-code hook",
+			"no fleet hook",
 			`[{"hooks":[{"type":"command","command":"other-tool"}]}]`,
 			false,
 		},
@@ -254,15 +254,15 @@ func TestEventHasBrizzCodeHook(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := eventHasBrizzCodeHook(json.RawMessage(tt.raw))
+			got := eventHasFleetHook(json.RawMessage(tt.raw))
 			if got != tt.want {
-				t.Errorf("eventHasBrizzCodeHook = %v, want %v", got, tt.want)
+				t.Errorf("eventHasFleetHook = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestEventHasBrizzCodeHookWithMatcher(t *testing.T) {
+func TestEventHasFleetHookWithMatcher(t *testing.T) {
 	tests := []struct {
 		name    string
 		raw     string
@@ -270,19 +270,19 @@ func TestEventHasBrizzCodeHookWithMatcher(t *testing.T) {
 		want    bool
 	}{
 		{
-			"matching matcher with brizz-code",
-			`[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`,
+			"matching matcher with fleet",
+			`[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"fleet hook-handler"}]}]`,
 			"permission_prompt",
 			true,
 		},
 		{
 			"wrong matcher",
-			`[{"matcher":"other","hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`,
+			`[{"matcher":"other","hooks":[{"type":"command","command":"fleet hook-handler"}]}]`,
 			"permission_prompt",
 			false,
 		},
 		{
-			"correct matcher but no brizz-code hook",
+			"correct matcher but no fleet hook",
 			`[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"other-tool"}]}]`,
 			"permission_prompt",
 			false,
@@ -291,27 +291,27 @@ func TestEventHasBrizzCodeHookWithMatcher(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := eventHasBrizzCodeHookWithMatcher(json.RawMessage(tt.raw), tt.matcher)
+			got := eventHasFleetHookWithMatcher(json.RawMessage(tt.raw), tt.matcher)
 			if got != tt.want {
-				t.Errorf("eventHasBrizzCodeHookWithMatcher = %v, want %v", got, tt.want)
+				t.Errorf("eventHasFleetHookWithMatcher = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-// buildHooksMapWithMarker builds a hooks map using literal JSON with the brizz-code marker.
+// buildHooksMapWithMarker builds a hooks map using literal JSON with the fleet marker.
 // This is needed because mergeHookEvent uses GetHookCommand() which resolves to the test binary path.
 func buildHooksMapWithMarker() map[string]json.RawMessage {
-	brizzHook := `[{"hooks":[{"type":"command","command":"brizz-code hook-handler","async":true}]}]`
-	notificationHook := `[{"matcher":"permission_prompt|elicitation_dialog","hooks":[{"type":"command","command":"brizz-code hook-handler","async":true}]},{"matcher":"idle_prompt","hooks":[{"type":"command","command":"brizz-code hook-handler","async":true}]}]`
+	fleetHookJSON := `[{"hooks":[{"type":"command","command":"fleet hook-handler","async":true}]}]`
+	notificationHook := `[{"matcher":"permission_prompt|elicitation_dialog","hooks":[{"type":"command","command":"fleet hook-handler","async":true}]},{"matcher":"idle_prompt","hooks":[{"type":"command","command":"fleet hook-handler","async":true}]}]`
 
 	hooks := map[string]json.RawMessage{
-		"UserPromptSubmit":  json.RawMessage(brizzHook),
-		"Stop":              json.RawMessage(brizzHook),
-		"PermissionRequest": json.RawMessage(brizzHook),
+		"UserPromptSubmit":  json.RawMessage(fleetHookJSON),
+		"Stop":              json.RawMessage(fleetHookJSON),
+		"PermissionRequest": json.RawMessage(fleetHookJSON),
 		"Notification":      json.RawMessage(notificationHook),
-		"SessionStart":      json.RawMessage(brizzHook),
-		"SessionEnd":        json.RawMessage(brizzHook),
+		"SessionStart":      json.RawMessage(fleetHookJSON),
+		"SessionEnd":        json.RawMessage(fleetHookJSON),
 	}
 	return hooks
 }
@@ -351,25 +351,25 @@ func TestHasStaleHookEvents(t *testing.T) {
 	t.Run("stale event detected", func(t *testing.T) {
 		hooks := make(map[string]json.RawMessage)
 		// Add a hook for an event we don't subscribe to anymore.
-		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`)
+		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"fleet hook-handler"}]}]`)
 		if !hasStaleHookEvents(hooks) {
 			t.Error("expected true when stale event exists")
 		}
 	})
 
-	t.Run("non-brizz event in unknown key is not stale", func(t *testing.T) {
+	t.Run("non-fleet event in unknown key is not stale", func(t *testing.T) {
 		hooks := make(map[string]json.RawMessage)
 		hooks["SomeOtherEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"other-tool"}]}]`)
 		if hasStaleHookEvents(hooks) {
-			t.Error("expected false when unknown event has no brizz-code hooks")
+			t.Error("expected false when unknown event has no fleet hooks")
 		}
 	})
 }
 
 func TestCleanStaleHookEvents(t *testing.T) {
-	t.Run("removes stale brizz-code hooks", func(t *testing.T) {
+	t.Run("removes stale fleet hooks", func(t *testing.T) {
 		hooks := make(map[string]json.RawMessage)
-		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"brizz-code hook-handler"}]}]`)
+		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"fleet hook-handler"}]}]`)
 
 		cleanStaleHookEvents(hooks)
 
@@ -378,15 +378,15 @@ func TestCleanStaleHookEvents(t *testing.T) {
 		}
 	})
 
-	t.Run("preserves non-brizz hooks in stale events", func(t *testing.T) {
+	t.Run("preserves non-fleet hooks in stale events", func(t *testing.T) {
 		hooks := make(map[string]json.RawMessage)
-		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"other-tool"},{"type":"command","command":"brizz-code hook-handler"}]}]`)
+		hooks["ObsoleteEvent"] = json.RawMessage(`[{"hooks":[{"type":"command","command":"other-tool"},{"type":"command","command":"fleet hook-handler"}]}]`)
 
 		cleanStaleHookEvents(hooks)
 
 		raw, ok := hooks["ObsoleteEvent"]
 		if !ok {
-			t.Fatal("expected ObsoleteEvent to remain (has non-brizz hooks)")
+			t.Fatal("expected ObsoleteEvent to remain (has non-fleet hooks)")
 		}
 
 		var matchers []claudeHookMatcher

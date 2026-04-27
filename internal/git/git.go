@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
 // GetBranchName returns the current branch name for the given repo path.

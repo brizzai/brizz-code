@@ -4,7 +4,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Share your brizz-code setup, workflows, tips, or integrations.
+        Share your fleet setup, workflows, tips, or integrations.
         Screenshots, GIFs, and config snippets welcome!
 
   - type: textarea

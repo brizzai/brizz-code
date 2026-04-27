@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
-	"github.com/brizzai/brizz-code/internal/diagnostics"
+	"github.com/brizzai/fleet/internal/debuglog"
+	"github.com/brizzai/fleet/internal/diagnostics"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -125,7 +125,7 @@ func (d *BugReportDialog) openGitHubIssue(description string) tea.Cmd {
 		debuglog.Logger.Info("bug report: creating GitHub issue via API")
 
 		// Write body to temp file.
-		tmpFile, err := os.CreateTemp("", "brizz-bug-*.md")
+		tmpFile, err := os.CreateTemp("", "fleet-bug-*.md")
 		if err != nil {
 			debuglog.Logger.Error("bug report: failed to create temp file", "err", err)
 			return bugReportOpenErrMsg{err: err}
@@ -139,7 +139,7 @@ func (d *BugReportDialog) openGitHubIssue(description string) tea.Cmd {
 
 		// Create issue via API (no URL length limit), then open in browser.
 		cmd := exec.Command("gh", "issue", "create",
-			"--repo", "brizzai/brizz-code",
+			"--repo", "brizzai/fleet",
 			"--title", title,
 			"--label", "bug",
 			"--body-file", tmpFile.Name(),

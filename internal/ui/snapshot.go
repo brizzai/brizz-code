@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
-	"github.com/brizzai/brizz-code/internal/hooks"
-	"github.com/brizzai/brizz-code/internal/session"
+	"github.com/brizzai/fleet/internal/debuglog"
+	"github.com/brizzai/fleet/internal/hooks"
+	"github.com/brizzai/fleet/internal/session"
 )
 
 type statusSnapshotMsg struct {
@@ -48,7 +48,7 @@ func captureStatusSnapshot(s *session.Session, sessionID string) statusSnapshotM
 	safeTitle := sanitizeForPath(snap.Title)
 	dirName := fmt.Sprintf("%s_%s", now.Format("2006-01-02T15-04-05"), safeTitle)
 	home, _ := os.UserHomeDir()
-	snapshotDir := filepath.Join(home, ".config", "brizz-code", "snapshots", dirName)
+	snapshotDir := filepath.Join(home, ".config", "fleet", "snapshots", dirName)
 	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
 		return statusSnapshotMsg{err: fmt.Errorf("mkdir: %w", err)}
 	}
@@ -131,7 +131,7 @@ func readFilteredDebugLog(sessionID string, maxLines int) string {
 	if err != nil {
 		return ""
 	}
-	logPath := filepath.Join(home, ".config", "brizz-code", "debug.log")
+	logPath := filepath.Join(home, ".config", "fleet", "debug.log")
 	f, err := os.Open(logPath)
 	if err != nil {
 		return ""

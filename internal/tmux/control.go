@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 	"github.com/creack/pty"
 )
 
@@ -25,7 +25,7 @@ type ControlClient struct {
 }
 
 // NewControlClient starts a persistent tmux control mode connection.
-// It creates a hidden tmux session (without the brizzcode_ prefix) and
+// It creates a hidden tmux session (without the fleet_ prefix) and
 // attaches a control mode client to it via a PTY.
 func NewControlClient() (*ControlClient, error) {
 	name := "_bc_ctrl_" + generateShortID()

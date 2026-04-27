@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// RepoWorkspaceConfig is the structure of .bc.json files.
+// RepoWorkspaceConfig is the structure of .fleet.json files.
 type RepoWorkspaceConfig struct {
 	Workspace ShellConfig `json:"workspace"`
 }
@@ -18,12 +18,19 @@ type ShellConfig struct {
 	Destroy string `json:"destroy,omitempty"`
 }
 
-// ResolveProvider loads .bc.json + .bc.local.json from repoPath,
-// merges (local overrides base field-by-field), returns ShellProvider
-// if any command is set, otherwise returns GitWorktreeProvider.
+// ResolveProvider loads workspace config from repoPath. Prefers .fleet.json /
+// .fleet.local.json; falls back to legacy .bc.json / .bc.local.json so existing
+// repos keep working. Local overrides base field-by-field. Returns ShellProvider
+// if any command is set, otherwise GitWorktreeProvider.
 func ResolveProvider(repoPath string) Provider {
-	base := loadRepoConfig(filepath.Join(repoPath, ".bc.json"))
-	local := loadRepoConfig(filepath.Join(repoPath, ".bc.local.json"))
+	base := firstNonEmpty(
+		loadRepoConfig(filepath.Join(repoPath, ".fleet.json")),
+		loadRepoConfig(filepath.Join(repoPath, ".bc.json")),
+	)
+	local := firstNonEmpty(
+		loadRepoConfig(filepath.Join(repoPath, ".fleet.local.json")),
+		loadRepoConfig(filepath.Join(repoPath, ".bc.local.json")),
+	)
 
 	// Merge: local overrides base field-by-field.
 	merged := base
@@ -58,4 +65,14 @@ func loadRepoConfig(path string) ShellConfig {
 	var cfg RepoWorkspaceConfig
 	_ = json.Unmarshal(data, &cfg)
 	return cfg.Workspace
+}
+
+// firstNonEmpty returns the first ShellConfig that has any field set.
+func firstNonEmpty(configs ...ShellConfig) ShellConfig {
+	for _, c := range configs {
+		if c.List != "" || c.Create != "" || c.Destroy != "" {
+			return c
+		}
+	}
+	return ShellConfig{}
 }

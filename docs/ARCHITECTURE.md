@@ -1,10 +1,10 @@
 # Architecture
 
-This document explains how brizz-code works internally, for contributors.
+This document explains how fleet works internally, for contributors.
 
 ## Overview
 
-brizz-code is a Go TUI that orchestrates multiple Claude Code sessions running in tmux. The core challenge is **status detection** — knowing what each Claude session is doing without interfering with it.
+fleet is a Go TUI that orchestrates multiple Claude Code sessions running in tmux. The core challenge is **status detection** — knowing what each Claude session is doing without interfering with it.
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -30,8 +30,8 @@ brizz-code is a Go TUI that orchestrates multiple Claude Code sessions running i
                               │
                     ┌─────────┴─────────┐
                     │  Status Files     │
-                    │  ~/.config/brizz- │
-                    │  code/hooks/*.json│
+                    │  ~/.config/fleet/ │
+                    │  hooks/*.json     │
                     └─────────┬─────────┘
                               │
                     ┌─────────┴─────────┐
@@ -50,7 +50,7 @@ brizz-code is a Go TUI that orchestrates multiple Claude Code sessions running i
 ## Package Structure
 
 ```
-cmd/brizz-code/
+cmd/fleet/
   main.go              CLI entry point, command routing
   hook_handler.go      Subprocess invoked by Claude Code hooks
 
@@ -74,7 +74,7 @@ internal/
   git/                 Branch, dirty, worktree operations
   github/              PR info via gh CLI + GraphQL
   workspace/           Provider interface (git worktree / custom shell)
-  config/              JSON config (~/.config/brizz-code/config.json)
+  config/              JSON config (~/.config/fleet/config.json)
   naming/              Auto-title from user prompt (heuristic, no LLM)
   chrome/              Chrome extension bridge (native messaging host)
 ```
@@ -85,13 +85,13 @@ This is the most complex part of the codebase. Three layers, in priority order:
 
 ### Layer 1: Hooks (primary, authoritative)
 
-Claude Code has a hooks API. On TUI launch, `hooks.InjectClaudeHooks()` adds entries to `~/.claude/settings.json` that call `brizz-code hook-handler` on events like `UserPromptSubmit`, `PermissionRequest`, `Stop`.
+Claude Code has a hooks API. On TUI launch, `hooks.InjectClaudeHooks()` adds entries to `~/.claude/settings.json` that call `fleet hook-handler` on events like `UserPromptSubmit`, `PermissionRequest`, `Stop`.
 
 ```
 Claude fires event
-  → forks `brizz-code hook-handler` with JSON on stdin
-  → handler reads BRIZZCODE_INSTANCE_ID env var
-  → writes status file: ~/.config/brizz-code/hooks/{session_id}.json
+  → forks `fleet hook-handler` with JSON on stdin
+  → handler reads FLEET_INSTANCE_ID env var
+  → writes status file: ~/.config/fleet/hooks/{session_id}.json
 ```
 
 ### Layer 2: Hook Watcher (in-memory cache)
@@ -132,7 +132,7 @@ Round-robin spreading prevents capture timeouts when managing many sessions.
 ## Session Lifecycle
 
 ```
-CREATE:  User presses 'a'/'n' → dialog → tmux.NewSession() → set BRIZZCODE_INSTANCE_ID
+CREATE:  User presses 'a'/'n' → dialog → tmux.NewSession() → set FLEET_INSTANCE_ID
          → send claude command → storage.SaveSession()
 
 RUNNING: Hook events → status files → HookWatcher → worker syncs → UI renders
@@ -151,7 +151,7 @@ DELETE:  d → storage.Delete() → tmux kill → optionally workspace.Destroy()
 Two providers behind the `workspace.Provider` interface:
 
 - **GitWorktreeProvider** (default) — `git worktree add/remove`, zero config
-- **ShellProvider** — custom commands from `.bc.json` in repo root
+- **ShellProvider** — custom commands from `.fleet.json` (or legacy `.bc.json`) in repo root
 
 Workspace creation is **non-blocking**: dialog closes immediately, a phantom "Creating..." entry appears in the sidebar with a spinner, replaced by the real session on completion.
 

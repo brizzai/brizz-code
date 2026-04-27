@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/git"
-	"github.com/brizzai/brizz-code/internal/session"
+	"github.com/brizzai/fleet/internal/git"
+	"github.com/brizzai/fleet/internal/session"
 	"github.com/charmbracelet/x/ansi"
 )
 

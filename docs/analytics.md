@@ -1,6 +1,6 @@
 # Analytics
 
-brizz-code collects anonymous usage analytics via [Amplitude](https://amplitude.com) to understand how the tool is used and prioritize development.
+fleet collects anonymous usage analytics via [Amplitude](https://amplitude.com) to understand how the tool is used and prioritize development.
 
 ## What We Collect
 
@@ -62,7 +62,7 @@ From the above events, Amplitude automatically provides:
 
 Each installation generates a **one-way SHA256 hash** of the macOS hardware UUID. This hash:
 - Cannot be reversed to identify you or your machine
-- Is stable across app updates (cached at `~/.config/brizz-code/device_id`)
+- Is stable across app updates (cached at `~/.config/fleet/device_id`)
 - Is the only identifier sent to Amplitude
 
 ### No Network Impact
@@ -76,7 +76,7 @@ Any of these methods will completely disable analytics:
 ### 1. Environment Variable
 
 ```bash
-export BRIZZ_TELEMETRY_DISABLED=1
+export FLEET_TELEMETRY_DISABLED=1
 ```
 
 Or use the standard [Do Not Track](https://consoledonottrack.com/) convention:
@@ -87,7 +87,7 @@ export DO_NOT_TRACK=1
 
 ### 2. Config File
 
-Edit `~/.config/brizz-code/config.json`:
+Edit `~/.config/fleet/config.json`:
 
 ```json
 {

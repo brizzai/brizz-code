@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# brizz-code installer (requires gh CLI)
-# Usage: curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash
-#    or: gh repo clone brizzai/brizz-code /tmp/bc && bash /tmp/bc/install.sh
+# fleet installer (requires gh CLI)
+# Usage: curl -fsSL https://raw.githubusercontent.com/brizzai/fleet/master/install.sh | bash
+#    or: gh repo clone brizzai/fleet /tmp/fleet && bash /tmp/fleet/install.sh
 
 set -euo pipefail
 
-REPO="brizzai/brizz-code"
+REPO="brizzai/fleet"
 INSTALL_DIR="${HOME}/.local/bin"
 VERSION=""
 
@@ -32,7 +32,7 @@ fi
 # macOS only
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 if [[ "$OS" != "darwin" ]]; then
-    echo "Error: brizz-code only supports macOS"
+    echo "Error: fleet only supports macOS"
     exit 1
 fi
 
@@ -44,7 +44,7 @@ case "$ARCH" in
     *) echo "Error: Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-echo "brizz-code installer"
+echo "fleet installer"
 echo "Platform: ${OS}/${ARCH}"
 
 # Resolve version
@@ -60,7 +60,7 @@ VERSION_NUM="${VERSION#v}"
 echo "Version: ${VERSION}"
 
 # Download
-ARCHIVE_NAME="brizz-code_${VERSION_NUM}_${OS}_${ARCH}.tar.gz"
+ARCHIVE_NAME="fleet_${VERSION_NUM}_${OS}_${ARCH}.tar.gz"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -70,8 +70,8 @@ gh release download "$VERSION" --repo "$REPO" --pattern "$ARCHIVE_NAME" --dir "$
 # Extract and install
 tar -xzf "$TMP_DIR/$ARCHIVE_NAME" -C "$TMP_DIR"
 mkdir -p "$INSTALL_DIR"
-mv "$TMP_DIR/brizz-code" "$INSTALL_DIR/brizz-code"
-chmod +x "$INSTALL_DIR/brizz-code"
+mv "$TMP_DIR/fleet" "$INSTALL_DIR/fleet"
+chmod +x "$INSTALL_DIR/fleet"
 
 # Check PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -97,8 +97,8 @@ else
 fi
 
 echo ""
-echo "Installed brizz-code ${VERSION} to ${INSTALL_DIR}/brizz-code"
+echo "Installed fleet ${VERSION} to ${INSTALL_DIR}/fleet"
 echo ""
 echo "Get started:"
-echo "  brizz-code           # Launch TUI"
-echo "  brizz-code --version # Check version"
+echo "  fleet           # Launch TUI"
+echo "  fleet --version # Check version"

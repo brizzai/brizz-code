@@ -1,13 +1,13 @@
-# brizz-code — Vision & Direction
+# fleet — Vision & Direction
 
-## What is brizz-code?
+## What is fleet?
 
-A TUI for managing multiple Claude Code sessions in parallel. It started because running several AI coding agents simultaneously means you lose track of which ones need your attention. brizz-code solves that — and is evolving into something bigger.
+A TUI for managing multiple Claude Code sessions in parallel. It started because running several AI coding agents simultaneously means you lose track of which ones need your attention. fleet solves that — and is evolving into something bigger.
 
 ## The Reverse IDE
 
 Traditional IDE: the human writes code, the tool assists.
-brizz-code: **agents write code, the human orchestrates, reviews, and directs.**
+fleet: **agents write code, the human orchestrates, reviews, and directs.**
 
 When AI agents handle editing, navigating files, running commands, committing, and creating PRs — the developer's job shifts. You don't need an editor or file tree. You need:
 
@@ -17,7 +17,7 @@ When AI agents handle editing, navigating files, running commands, committing, a
 - **Direction** — decide what should happen next
 - **Project health** — see the state of branches, PRs, CI, features
 
-brizz-code is the workspace for this new workflow.
+fleet is the workspace for this new workflow.
 
 ## The Core Problem: Comprehension at Scale
 
@@ -31,7 +31,7 @@ The unsolved problem is **comprehension**:
 - You need to *understand* what happened, not just *see data*
 - You need to know what's done AND what's left
 
-Raw data doesn't equal understanding. This is the gap brizz-code needs to close.
+Raw data doesn't equal understanding. This is the gap fleet needs to close.
 
 ## Typical Workflow
 
@@ -54,7 +54,7 @@ This directly solves the comprehension problem — understand any session in sec
 
 ### 2. Event-Driven Agent Spawning
 
-Make brizz-code reactive to external events:
+Make fleet reactive to external events:
 
 - CI fails on a branch → automatically start a fix session
 - PR gets review comments → start a session to address them
@@ -64,7 +64,7 @@ Agents spawn automatically. You wake up to work already in progress.
 
 ### 3. The Human Context Window
 
-Humans have limited working memory, just like AI has a context window. brizz-code should manage yours:
+Humans have limited working memory, just like AI has a context window. fleet should manage yours:
 
 - When you switch to a session: *"Last time you were here, you asked Claude to refactor the auth module. It finished 2 hours ago. 3 commits, PR #42 open, CI passing, 1 review comment."*
 - Surface what changed since you last looked
@@ -74,10 +74,10 @@ Humans have limited working memory, just like AI has a context window. brizz-cod
 
 **The problem:** When working on a feature across multiple sessions (or restarting a session), context is trapped inside individual conversations. A bug investigation session discovers the root cause — but starting a new fix session means re-explaining everything. Two sessions on the same feature don't share knowledge about fields, APIs, pages that were added.
 
-**The insight:** Claude Code already reads project files (CLAUDE.md, memory files) on every prompt. brizz-code can manage **ephemeral feature context** that sessions pick up automatically — without committing anything to the repo.
+**The insight:** Claude Code already reads project files (CLAUDE.md, memory files) on every prompt. fleet can manage **ephemeral feature context** that sessions pick up automatically — without committing anything to the repo.
 
 **How it could work:**
-- brizz-code maintains a feature context file per branch, stored outside the repo (e.g., `~/.claude/projects/{project}/memory/feature_{branch}.md` — Claude's native memory directory)
+- fleet maintains a feature context file per branch, stored outside the repo (e.g., `~/.claude/projects/{project}/memory/feature_{branch}.md` — Claude's native memory directory)
 - First prompt is captured as the feature description automatically
 - Key discoveries/decisions can be added manually (hotkey) or via AI summarization when sessions finish
 - Any session on that branch reads this context naturally — no injection needed
@@ -86,7 +86,7 @@ Humans have limited working memory, just like AI has a context window. brizz-cod
 **Why this location:**
 - `~/.claude/projects/{project}/memory/` is where Claude already looks for project context
 - Outside the repo — nothing to gitignore, nothing to commit
-- brizz-code already knows the project path and branch per session
+- fleet already knows the project path and branch per session
 - Multiple sessions on the same branch share the same context file
 
 **Open questions:**
@@ -96,7 +96,7 @@ Humans have limited working memory, just like AI has a context window. brizz-cod
 
 ## Long-Term Identity
 
-brizz-code is evolving toward being a **one-stop-shop for AI-assisted development** — the place where all your agent-driven coding work converges. Not a code editor, but a work orchestrator.
+fleet is evolving toward being a **one-stop-shop for AI-assisted development** — the place where all your agent-driven coding work converges. Not a code editor, but a work orchestrator.
 
 Two possible directions (not mutually exclusive):
 

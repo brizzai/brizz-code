@@ -240,7 +240,7 @@ func firstLine(s string) string {
 
 func readConfig() string {
 	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".config", "brizz-code", "config.json")
+	path := filepath.Join(home, ".config", "fleet", "config.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
@@ -250,7 +250,7 @@ func readConfig() string {
 
 func readRecentLogs(n int) string {
 	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".config", "brizz-code", "debug.log")
+	path := filepath.Join(home, ".config", "fleet", "debug.log")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""

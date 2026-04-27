@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest a feature for brizz-code
+description: Suggest a feature for fleet
 labels: ["enhancement"]
 body:
   - type: textarea

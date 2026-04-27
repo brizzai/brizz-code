@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/brizzai/brizz-code/internal/git"
-	"github.com/brizzai/brizz-code/internal/github"
-	"github.com/brizzai/brizz-code/internal/session"
+	"github.com/brizzai/fleet/internal/git"
+	"github.com/brizzai/fleet/internal/github"
+	"github.com/brizzai/fleet/internal/session"
 	"github.com/charmbracelet/lipgloss"
 )
 

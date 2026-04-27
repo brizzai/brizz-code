@@ -13,17 +13,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/analytics"
-	"github.com/brizzai/brizz-code/internal/chrome"
-	"github.com/brizzai/brizz-code/internal/config"
-	"github.com/brizzai/brizz-code/internal/debuglog"
-	"github.com/brizzai/brizz-code/internal/git"
-	"github.com/brizzai/brizz-code/internal/github"
-	"github.com/brizzai/brizz-code/internal/hooks"
-	"github.com/brizzai/brizz-code/internal/naming"
-	"github.com/brizzai/brizz-code/internal/session"
-	"github.com/brizzai/brizz-code/internal/tmux"
-	"github.com/brizzai/brizz-code/internal/workspace"
+	"github.com/brizzai/fleet/internal/analytics"
+	"github.com/brizzai/fleet/internal/chrome"
+	"github.com/brizzai/fleet/internal/config"
+	"github.com/brizzai/fleet/internal/debuglog"
+	"github.com/brizzai/fleet/internal/git"
+	"github.com/brizzai/fleet/internal/github"
+	"github.com/brizzai/fleet/internal/hooks"
+	"github.com/brizzai/fleet/internal/naming"
+	"github.com/brizzai/fleet/internal/session"
+	"github.com/brizzai/fleet/internal/tmux"
+	"github.com/brizzai/fleet/internal/workspace"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -641,7 +641,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.sessions = msg.sessions
 		h.rebuildSessionMap()
 		// Keep only bindings whose session is present in the loaded view. Do
-		// NOT delete absent bindings from storage here: BRIZZ_DEMO_PREFIX and
+		// NOT delete absent bindings from storage here: FLEET_DEMO_PREFIX and
 		// similar filters shrink the session set transiently, and writing back
 		// would permanently destroy real bindings. The FK cascade on session
 		// delete handles the only case where a binding should actually vanish.
@@ -724,7 +724,7 @@ func (h *Home) View() string {
 		return ""
 	}
 	if h.width == 0 {
-		return lipgloss.NewStyle().Bold(true).Foreground(ColorAccent).Render("   brizz-code")
+		return lipgloss.NewStyle().Bold(true).Foreground(ColorAccent).Render("   fleet")
 	}
 	base := h.renderBody()
 	toast := h.toasts.View(h.width)
@@ -2446,7 +2446,7 @@ func (h *Home) renderHeader() string {
 
 	bg := ColorSurface
 	logo := lipgloss.NewStyle().Foreground(ColorBrand).Background(bg).Bold(true).Render(">_")
-	title := logo + lipgloss.NewStyle().Background(bg).Render(" ") + TitleStyle.Background(bg).Render("brizz-code")
+	title := logo + lipgloss.NewStyle().Background(bg).Render(" ") + TitleStyle.Background(bg).Render("fleet")
 
 	// Build status indicators — only show non-zero.
 	var indicators []string
@@ -2707,7 +2707,7 @@ func (h *Home) loadSessions() tea.Msg {
 	}
 
 	// Demo mode: only show sessions under the specified path prefix.
-	if prefix := os.Getenv("BRIZZ_DEMO_PREFIX"); prefix != "" {
+	if prefix := os.Getenv("FLEET_DEMO_PREFIX"); prefix != "" {
 		filtered := make([]*session.Session, 0, len(sessions))
 		for _, s := range sessions {
 			if strings.HasPrefix(s.ProjectPath, prefix) {

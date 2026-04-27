@@ -42,7 +42,7 @@ func TestSaveAndLoadSessionsRoundTrip(t *testing.T) {
 		Title:           "Test Session",
 		ProjectPath:     "/home/user/project",
 		Status:          "running",
-		TmuxSession:     "brizzcode_test-session_abcd1234",
+		TmuxSession:     "fleet_test-session_abcd1234",
 		CreatedAt:       now,
 		LastAccessed:    now.Add(5 * time.Minute),
 		Acknowledged:    true,

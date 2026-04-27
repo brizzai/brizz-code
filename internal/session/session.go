@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
-	"github.com/brizzai/brizz-code/internal/tmux"
+	"github.com/brizzai/fleet/internal/debuglog"
+	"github.com/brizzai/fleet/internal/tmux"
 )
 
 // PaneCapturer abstracts pane capture for testing.
@@ -92,10 +92,10 @@ func (s *Session) buildClaudeCmd() string {
 	return cmd
 }
 
-// sessionEnv returns the env vars to set on the tmux session for this brizz-code session.
+// sessionEnv returns the env vars to set on the tmux session for this fleet session.
 func (s *Session) sessionEnv() []string {
 	return []string{
-		fmt.Sprintf("BRIZZCODE_INSTANCE_ID=%s", s.ID),
+		fmt.Sprintf("FLEET_INSTANCE_ID=%s", s.ID),
 		"ZSH_DOTENV_PROMPT=false", // Auto-source .env without prompting (oh-my-zsh dotenv plugin).
 	}
 }

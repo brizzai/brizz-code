@@ -8,17 +8,25 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"github.com/brizzai/brizz-code/internal/config"
-	"github.com/brizzai/brizz-code/internal/debuglog"
-	"github.com/brizzai/brizz-code/internal/session"
-	"github.com/brizzai/brizz-code/internal/tmux"
-	"github.com/brizzai/brizz-code/internal/ui"
-	"github.com/brizzai/brizz-code/internal/update"
+	"github.com/brizzai/fleet/internal/config"
+	"github.com/brizzai/fleet/internal/debuglog"
+	"github.com/brizzai/fleet/internal/migration"
+	"github.com/brizzai/fleet/internal/session"
+	"github.com/brizzai/fleet/internal/tmux"
+	"github.com/brizzai/fleet/internal/ui"
+	"github.com/brizzai/fleet/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // version is set via -ldflags at build time. GoReleaser populates this automatically.
 var version = "dev"
+
+func init() {
+	// Aliasing must happen before any subcommand runs: hook-handler subprocesses
+	// inherited BRIZZCODE_INSTANCE_ID from the legacy TUI and need it visible
+	// under FLEET_INSTANCE_ID. Cheap, env-only.
+	migration.AliasLegacyEnv()
+}
 
 func main() {
 	args := os.Args[1:]
@@ -38,7 +46,7 @@ func main() {
 	switch args[0] {
 	case "add":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: brizz-code add <path>")
+			fmt.Fprintln(os.Stderr, "Usage: fleet add <path>")
 			os.Exit(1)
 		}
 		runAdd(args[1])
@@ -46,7 +54,7 @@ func main() {
 		runList()
 	case "remove", "rm":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: brizz-code remove <id>")
+			fmt.Fprintln(os.Stderr, "Usage: fleet remove <id>")
 			os.Exit(1)
 		}
 		runRemove(args[1])
@@ -59,7 +67,7 @@ func main() {
 	case "update":
 		runUpdate()
 	case "version", "--version", "-v":
-		fmt.Printf("brizz-code %s\n", version)
+		fmt.Printf("fleet %s\n", version)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -70,9 +78,13 @@ func main() {
 }
 
 func runTUI() {
+	// Run filesystem/tmux/hook migration before debuglog.Init creates ~/.config/fleet/.
+	// migration.Run is a no-op after the first successful invocation.
+	migration.Run()
+
 	debuglog.Init()
 	defer debuglog.Close()
-	debuglog.Logger.Info("brizz-code TUI starting", "version", version)
+	debuglog.Logger.Info("fleet TUI starting", "version", version)
 
 	if err := tmux.IsTmuxAvailable(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -89,7 +101,7 @@ func runTUI() {
 			debuglog.Logger.Error("auto-update failed", "err", err)
 		} else if newVer != "" {
 			debuglog.Logger.Info("auto-updated", "from", version, "to", newVer)
-			fmt.Printf("Updated brizz-code to %s, restarting...\n", newVer)
+			fmt.Printf("Updated fleet to %s, restarting...\n", newVer)
 			exe, _ := os.Executable()
 			syscall.Exec(exe, os.Args, os.Environ())
 		} else {
@@ -232,7 +244,7 @@ func runRemove(idPrefix string) {
 }
 
 func runUpdate() {
-	fmt.Printf("brizz-code %s\n", version)
+	fmt.Printf("fleet %s\n", version)
 	fmt.Println("Checking for updates...")
 	newVer, err := update.Update(version)
 	if err != nil {
@@ -247,17 +259,17 @@ func runUpdate() {
 }
 
 func printUsage() {
-	fmt.Printf("brizz-code %s - manage Claude Code sessions\n", version)
+	fmt.Printf("fleet %s - manage Claude Code sessions\n", version)
 	fmt.Println(`
 Usage:
-  brizz-code              Launch TUI
-  brizz-code add <path>   Add a new session
-  brizz-code list         List all sessions
-  brizz-code remove <id>  Remove a session
-  brizz-code hooks <install|uninstall|status>  Manage Claude Code hooks
-  brizz-code update       Update to latest version
-  brizz-code version      Show version
-  brizz-code help         Show this help`)
+  fleet              Launch TUI
+  fleet add <path>   Add a new session
+  fleet list         List all sessions
+  fleet remove <id>  Remove a session
+  fleet hooks <install|uninstall|status>  Manage Claude Code hooks
+  fleet update       Update to latest version
+  fleet version      Show version
+  fleet help         Show this help`)
 }
 
 func expandPath(path string) string {
