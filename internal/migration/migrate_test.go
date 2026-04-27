@@ -49,8 +49,12 @@ func TestMigrateConfigDir(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if !migrateConfigDir(legacy, newDir) {
-			t.Fatal("expected migrateConfigDir to return true")
+		moved, err := migrateConfigDir(legacy, newDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !moved {
+			t.Fatal("expected migrateConfigDir to return moved=true")
 		}
 		if _, err := os.Stat(legacy); !os.IsNotExist(err) {
 			t.Error("legacy dir should be gone after migration")
@@ -67,8 +71,12 @@ func TestMigrateConfigDir(t *testing.T) {
 		base := t.TempDir()
 		legacy := filepath.Join(base, "brizz-code")
 		newDir := filepath.Join(base, "fleet")
-		if migrateConfigDir(legacy, newDir) {
-			t.Error("expected false when legacy is absent")
+		moved, err := migrateConfigDir(legacy, newDir)
+		if err != nil {
+			t.Errorf("expected nil err when legacy absent, got %v", err)
+		}
+		if moved {
+			t.Error("expected moved=false when legacy is absent")
 		}
 	})
 
@@ -82,8 +90,12 @@ func TestMigrateConfigDir(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(legacy, "debug.log"), []byte("logs"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if migrateConfigDir(legacy, newDir) {
-			t.Error("expected false when legacy lacks state.db")
+		moved, err := migrateConfigDir(legacy, newDir)
+		if err != nil {
+			t.Errorf("expected nil err when legacy lacks state.db, got %v", err)
+		}
+		if moved {
+			t.Error("expected moved=false when legacy lacks state.db")
 		}
 	})
 
@@ -111,8 +123,12 @@ func TestMigrateConfigDir(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if !migrateConfigDir(legacy, newDir) {
-			t.Fatal("expected migrateConfigDir to return true (stub merge)")
+		moved, err := migrateConfigDir(legacy, newDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !moved {
+			t.Fatal("expected migrateConfigDir to return moved=true (stub merge)")
 		}
 		// state.db moved across.
 		got, err := os.ReadFile(filepath.Join(newDir, "state.db"))
@@ -149,14 +165,80 @@ func TestMigrateConfigDir(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(newDir, "state.db"), []byte("new"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if migrateConfigDir(legacy, newDir) {
-			t.Error("expected false when both have state.db")
+		moved, err := migrateConfigDir(legacy, newDir)
+		if err != nil {
+			t.Errorf("expected nil err when both have state.db, got %v", err)
+		}
+		if moved {
+			t.Error("expected moved=false when both have state.db")
 		}
 		got, _ := os.ReadFile(filepath.Join(newDir, "state.db"))
 		if string(got) != "new" {
 			t.Errorf("new state.db should not be clobbered, got %q", got)
 		}
 	})
+
+	t.Run("returns error when rename target's parent is unwritable", func(t *testing.T) {
+		base := t.TempDir()
+		legacy := filepath.Join(base, "brizz-code")
+		// Put the new dir under a path whose parent we make read-only so MkdirAll fails.
+		readOnlyParent := filepath.Join(base, "readonly")
+		if err := os.MkdirAll(readOnlyParent, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(legacy, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(legacy, "state.db"), []byte("dbdata"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(readOnlyParent, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(readOnlyParent, 0o755) })
+
+		newDir := filepath.Join(readOnlyParent, "deeper", "fleet")
+		moved, err := migrateConfigDir(legacy, newDir)
+		if err == nil {
+			t.Fatal("expected error when MkdirAll on parent fails")
+		}
+		if moved {
+			t.Error("expected moved=false on failure")
+		}
+		if _, statErr := os.Stat(filepath.Join(legacy, "state.db")); statErr != nil {
+			t.Errorf("legacy state.db should still be intact after failed migration: %v", statErr)
+		}
+	})
+}
+
+func TestRunDoesNotWriteMarkerOnFailure(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(tmp, "claude"))
+
+	prev := tmuxRunner
+	tmuxRunner = &fakeTmux{sessions: []string{}}
+	t.Cleanup(func() { tmuxRunner = prev })
+
+	// Force migrateConfigDir to fail by making ~/.config a read-only file
+	// (so MkdirAll for the new dir's parent fails). Setting up a real-world
+	// failure mode without mocking the os package.
+	configParent := filepath.Join(tmp, ".config")
+	if err := os.WriteFile(configParent, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Even with config wedged, Run should swallow the failure and not write the marker.
+	r := Run()
+	if r.ConfigMigrated {
+		t.Error("expected ConfigMigrated=false on failure")
+	}
+
+	// Marker must not exist — that's the whole point of this test.
+	markerPath := filepath.Join(tmp, ".config", "fleet", ".migrated-from-brizz-code")
+	if _, err := os.Stat(markerPath); err == nil {
+		t.Error("marker file should not be written when config migration is blocked")
+	}
 }
 
 func TestStripLegacyHooks(t *testing.T) {

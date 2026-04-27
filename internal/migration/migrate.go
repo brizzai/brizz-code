@@ -7,6 +7,7 @@ package migration
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,7 +58,9 @@ type Report struct {
 }
 
 // Run performs first-run migration. Drops a marker file inside the new
-// config dir on success so subsequent invocations short-circuit.
+// config dir so subsequent invocations short-circuit — but only when the
+// critical config-dir step did not encounter an actionable failure. tmux
+// rename and hook strip are best-effort and don't gate the marker.
 func Run() Report {
 	var r Report
 	home, err := os.UserHomeDir()
@@ -72,11 +75,15 @@ func Run() Report {
 		return r
 	}
 
-	r.ConfigMigrated = migrateConfigDir(legacyConfigDir, newConfigDir)
+	migrated, configErr := migrateConfigDir(legacyConfigDir, newConfigDir)
+	r.ConfigMigrated = migrated
 	r.TmuxRenamed = renameTmuxSessions()
 	r.HooksStripped = stripLegacyHooks(hooks.GetClaudeConfigDir())
 
-	if err := os.MkdirAll(newConfigDir, 0o755); err == nil {
+	if configErr != nil {
+		debuglog.Logger.Warn("migration: config-dir step failed; not writing marker so we can retry next launch",
+			"err", configErr)
+	} else if err := os.MkdirAll(newConfigDir, 0o755); err == nil {
 		_ = os.WriteFile(markerPath, []byte("migrated from brizz-code\n"), 0o644)
 	}
 
@@ -89,27 +96,29 @@ func Run() Report {
 	return r
 }
 
-func migrateConfigDir(legacyDir, newDir string) bool {
+// migrateConfigDir reports whether anything was moved and returns a non-nil
+// error only on actionable failures the user should be able to retry (e.g.
+// rename failed mid-migration). Returning (false, nil) means there was simply
+// nothing to do — caller should treat that as success.
+func migrateConfigDir(legacyDir, newDir string) (bool, error) {
 	info, err := os.Stat(legacyDir)
 	if err != nil || !info.IsDir() {
-		return false
+		return false, nil
 	}
 	// Nothing meaningful in legacy if there's no state.db.
 	if !fileExists(filepath.Join(legacyDir, "state.db")) {
-		return false
+		return false, nil
 	}
 
 	// Fast path: new dir doesn't exist — atomic rename.
 	if _, err := os.Stat(newDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(newDir), 0o755); err != nil {
-			debuglog.Logger.Warn("migration: failed to create config parent", "err", err)
-			return false
+			return false, fmt.Errorf("create config parent: %w", err)
 		}
 		if err := os.Rename(legacyDir, newDir); err != nil {
-			debuglog.Logger.Warn("migration: rename failed", "from", legacyDir, "to", newDir, "err", err)
-			return false
+			return false, fmt.Errorf("rename %s -> %s: %w", legacyDir, newDir, err)
 		}
-		return true
+		return true, nil
 	}
 
 	// New dir exists but has no state.db — usually because chrome-host or another
@@ -120,19 +129,22 @@ func migrateConfigDir(legacyDir, newDir string) bool {
 	}
 
 	// Both have state.db — user likely created the new dir manually or ran fleet
-	// before this migration shipped. Don't clobber their data.
+	// before this migration shipped. Don't clobber their data and don't error,
+	// but do log so they notice. The marker still gets written so we don't
+	// re-warn forever.
 	debuglog.Logger.Warn("migration: both legacy and new config dirs have state.db; skipping move",
 		"legacy", legacyDir, "new", newDir)
-	return false
+	return false, nil
 }
 
 // mergeLegacyDir moves entries from legacyDir into newDir, skipping any that
-// already exist in newDir. Returns true if anything was moved.
-func mergeLegacyDir(legacyDir, newDir string) bool {
+// already exist in newDir. Returns whether anything moved and an error if the
+// legacy dir couldn't be read at all. Per-file move failures are logged but do
+// not fail the overall step — partial progress is preferable to no progress.
+func mergeLegacyDir(legacyDir, newDir string) (bool, error) {
 	entries, err := os.ReadDir(legacyDir)
 	if err != nil {
-		debuglog.Logger.Warn("migration: failed to read legacy dir", "err", err)
-		return false
+		return false, fmt.Errorf("read legacy dir %s: %w", legacyDir, err)
 	}
 	moved := 0
 	for _, e := range entries {
@@ -153,7 +165,7 @@ func mergeLegacyDir(legacyDir, newDir string) bool {
 		// or files we couldn't move keep it alive.
 		_ = os.Remove(legacyDir)
 	}
-	return moved > 0
+	return moved > 0, nil
 }
 
 func fileExists(p string) bool {

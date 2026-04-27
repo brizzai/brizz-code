@@ -28,7 +28,7 @@ type ControlClient struct {
 // It creates a hidden tmux session (without the fleet_ prefix) and
 // attaches a control mode client to it via a PTY.
 func NewControlClient() (*ControlClient, error) {
-	name := "_bc_ctrl_" + generateShortID()
+	name := "_fleet_ctrl_" + generateShortID()
 
 	cmd := exec.Command("tmux", "-C", "new-session", "-s", name)
 	ptmx, err := pty.Start(cmd)
