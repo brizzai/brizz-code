@@ -57,10 +57,14 @@ type Report struct {
 	HooksStripped  int
 }
 
-// Run performs first-run migration. Drops a marker file inside the new
-// config dir so subsequent invocations short-circuit — but only when the
-// critical config-dir step did not encounter an actionable failure. tmux
-// rename and hook strip are best-effort and don't gate the marker.
+// Run performs first-run migration. Drops a marker file inside the new config
+// dir so subsequent invocations short-circuit — but only when every step
+// completed without an actionable error. Each step (config-dir move, tmux
+// rename, hook strip) reports a catastrophic failure separately; per-item
+// failures inside a step (one orphaned tmux session, one weird hook entry)
+// stay logged-only so transient noise doesn't permanently block the marker.
+// Marker write failures are logged but do not propagate — there is no caller
+// that could meaningfully recover.
 func Run() Report {
 	var r Report
 	home, err := os.UserHomeDir()
@@ -97,8 +101,12 @@ func Run() Report {
 		debuglog.Logger.Warn("migration: hooks step failed; not writing marker", "err", hooksErr)
 	}
 	if configErr == nil && tmuxErr == nil && hooksErr == nil {
-		if err := os.MkdirAll(newConfigDir, 0o755); err == nil {
-			_ = os.WriteFile(markerPath, []byte("migrated from brizz-code\n"), 0o644)
+		if err := os.MkdirAll(newConfigDir, 0o755); err != nil {
+			debuglog.Logger.Warn("migration: failed to create config dir for marker",
+				"dir", newConfigDir, "err", err)
+		} else if err := os.WriteFile(markerPath, []byte("migrated from brizz-code\n"), 0o644); err != nil {
+			debuglog.Logger.Warn("migration: failed to write migration marker",
+				"path", markerPath, "err", err)
 		}
 	}
 
@@ -200,11 +208,18 @@ type tmuxExec interface {
 type realTmuxExec struct{}
 
 func (realTmuxExec) List() ([]string, error) {
-	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+	// CombinedOutput so stderr (where tmux writes "no server running" / "error
+	// connecting to ...") flows back through the err. With Output() the err
+	// would just be "exit status 1" and isTmuxNoServer couldn't classify it.
+	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").CombinedOutput()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
-	return strings.Split(strings.TrimSpace(string(out)), "\n"), nil
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return []string{}, nil
+	}
+	return strings.Split(trimmed, "\n"), nil
 }
 
 func (realTmuxExec) Rename(old, newName string) error {
@@ -306,7 +321,14 @@ func stripLegacyHooks(claudeConfigDir string) (int, error) {
 	if err != nil {
 		return removed, fmt.Errorf("marshal settings: %w", err)
 	}
-	if err := os.WriteFile(settingsPath, out, 0o644); err != nil {
+	// Preserve the existing file mode so we don't broaden access on rewrite —
+	// some users harden settings.json to 0600 because it can contain secrets in
+	// hook env blocks. Default to 0600 if the stat somehow fails.
+	mode := os.FileMode(0o600)
+	if fi, statErr := os.Stat(settingsPath); statErr == nil {
+		mode = fi.Mode().Perm()
+	}
+	if err := os.WriteFile(settingsPath, out, mode); err != nil {
 		// Catastrophic — we'd lose the cleanup work. Surface so Run skips the marker.
 		return removed, fmt.Errorf("write %s: %w", settingsPath, err)
 	}

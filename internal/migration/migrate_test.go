@@ -2,6 +2,7 @@ package migration
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -428,6 +429,42 @@ func TestRenameTmuxSessions(t *testing.T) {
 		}
 		if _, ok := fake.renames["fleet_beta_bbbb2222"]; ok {
 			t.Error("should not rename sessions already on new prefix")
+		}
+	})
+
+	t.Run("no tmux server is treated as no-op success", func(t *testing.T) {
+		// Realistic shape of error after CombinedOutput wrapping: exit status + stderr.
+		cases := []error{
+			errors.New("exit status 1: error connecting to /tmp/tmux-501/default (No such file or directory)"),
+			errors.New("exit status 1: no server running on /tmp/tmux-501/default"),
+		}
+		for _, listErr := range cases {
+			fake := &fakeTmux{listErr: listErr}
+			prev := tmuxRunner
+			tmuxRunner = fake
+			got, err := renameTmuxSessions()
+			tmuxRunner = prev
+			if err != nil {
+				t.Errorf("listErr %q: expected nil err, got %v", listErr, err)
+			}
+			if got != 0 {
+				t.Errorf("listErr %q: expected 0 renamed, got %d", listErr, got)
+			}
+		}
+	})
+
+	t.Run("real tmux failure surfaces as error", func(t *testing.T) {
+		fake := &fakeTmux{listErr: errors.New("exit status 127: tmux: command not found")}
+		prev := tmuxRunner
+		tmuxRunner = fake
+		t.Cleanup(func() { tmuxRunner = prev })
+
+		got, err := renameTmuxSessions()
+		if err == nil {
+			t.Error("expected error for real tmux failure")
+		}
+		if got != 0 {
+			t.Errorf("expected 0 renamed, got %d", got)
 		}
 	})
 }

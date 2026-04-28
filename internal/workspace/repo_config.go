@@ -20,19 +20,15 @@ type ShellConfig struct {
 	Destroy string `json:"destroy,omitempty"`
 }
 
-// ResolveProvider loads workspace config from repoPath. Prefers .fleet.json /
-// .fleet.local.json; falls back to legacy .bc.json / .bc.local.json so existing
-// repos keep working. Local overrides base field-by-field. Returns ShellProvider
-// if any command is set, otherwise GitWorktreeProvider.
+// ResolveProvider loads workspace config from repoPath. Preference is by file
+// presence, not contents: if .fleet.json exists it wins (even when empty —
+// that's how a user disables a stale legacy .bc.json without deleting it);
+// otherwise .bc.json is used. Same rule for .fleet.local.json over
+// .bc.local.json. Local overrides base field-by-field. Returns ShellProvider
+// if any command ends up set, otherwise GitWorktreeProvider.
 func ResolveProvider(repoPath string) Provider {
-	base := firstNonEmpty(
-		loadRepoConfig(filepath.Join(repoPath, ".fleet.json")),
-		loadRepoConfig(filepath.Join(repoPath, ".bc.json")),
-	)
-	local := firstNonEmpty(
-		loadRepoConfig(filepath.Join(repoPath, ".fleet.local.json")),
-		loadRepoConfig(filepath.Join(repoPath, ".bc.local.json")),
-	)
+	base := preferredConfig(repoPath, ".fleet.json", ".bc.json")
+	local := preferredConfig(repoPath, ".fleet.local.json", ".bc.local.json")
 
 	// Merge: local overrides base field-by-field.
 	merged := base
@@ -59,29 +55,34 @@ func ResolveProvider(repoPath string) Provider {
 	return &GitWorktreeProvider{}
 }
 
-func loadRepoConfig(path string) ShellConfig {
+// preferredConfig returns the config from preferredName if that file exists at
+// repoPath, otherwise the config from legacyName. File presence is the signal —
+// an empty preferred file still suppresses the legacy one (intended way to
+// "disable" a stale legacy config without deleting it).
+func preferredConfig(repoPath, preferredName, legacyName string) ShellConfig {
+	if cfg, ok := loadRepoConfig(filepath.Join(repoPath, preferredName)); ok {
+		return cfg
+	}
+	cfg, _ := loadRepoConfig(filepath.Join(repoPath, legacyName))
+	return cfg
+}
+
+// loadRepoConfig reads and parses a repo workspace config file. Returns the
+// parsed config and true when the file exists and parses; returns the zero
+// config and false when the file is missing. A file that exists but fails to
+// parse is logged and treated as "exists with empty config" (true) — the user's
+// intent to override is honored even if their JSON is wrong, and the warning
+// surfaces the parse failure in debug.log.
+func loadRepoConfig(path string) (ShellConfig, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ShellConfig{}
+		return ShellConfig{}, false
 	}
 	var cfg RepoWorkspaceConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		// File exists but is malformed — surface so the user notices, otherwise
-		// they'll silently fall back to legacy .bc.json (or default provider)
-		// and assume their fix didn't apply.
-		debuglog.Logger.Warn("workspace: failed to parse repo config; ignoring",
+		debuglog.Logger.Warn("workspace: failed to parse repo config; treating as empty override",
 			"path", path, "err", err)
-		return ShellConfig{}
+		return ShellConfig{}, true
 	}
-	return cfg.Workspace
-}
-
-// firstNonEmpty returns the first ShellConfig that has any field set.
-func firstNonEmpty(configs ...ShellConfig) ShellConfig {
-	for _, c := range configs {
-		if c.List != "" || c.Create != "" || c.Destroy != "" {
-			return c
-		}
-	}
-	return ShellConfig{}
+	return cfg.Workspace, true
 }

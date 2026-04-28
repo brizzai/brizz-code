@@ -22,7 +22,7 @@ Status flows through a pipeline. Your job is to trace the pipeline and find wher
 Claude Code → hook event → hook-handler binary → status file → fsnotify → UpdateStatus() → TUI
                                                                               ↓
                                                                     pane capture (fallback/supplement)
-```text
+```
 
 At each stage, ask: **what does this stage think the status is, and is it correct?**
 
