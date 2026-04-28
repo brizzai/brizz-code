@@ -179,6 +179,52 @@ func TestMigrateConfigDir(t *testing.T) {
 		}
 	})
 
+	t.Run("migrates when legacy has only config.json (no state.db)", func(t *testing.T) {
+		base := t.TempDir()
+		legacy := filepath.Join(base, "brizz-code")
+		newDir := filepath.Join(base, "fleet")
+		if err := os.MkdirAll(legacy, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Only config.json — user tweaked settings before any session existed.
+		if err := os.WriteFile(filepath.Join(legacy, "config.json"), []byte(`{"theme":"nord"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		moved, err := migrateConfigDir(legacy, newDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !moved {
+			t.Fatal("expected migration to run for legacy config.json without state.db")
+		}
+		if _, err := os.Stat(filepath.Join(newDir, "config.json")); err != nil {
+			t.Errorf("config.json should be in new dir: %v", err)
+		}
+	})
+
+	t.Run("propagates non-ENOENT stat errors from legacy state.db", func(t *testing.T) {
+		base := t.TempDir()
+		legacy := filepath.Join(base, "brizz-code")
+		newDir := filepath.Join(base, "fleet")
+		if err := os.MkdirAll(legacy, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(legacy, "state.db"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// Make legacy dir non-traversable (no execute) so Stat on its children fails with EACCES.
+		if err := os.Chmod(legacy, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(legacy, 0o755) })
+
+		_, err := migrateConfigDir(legacy, newDir)
+		if err == nil {
+			t.Error("expected error when legacy children can't be stat'd")
+		}
+	})
+
 	t.Run("returns error when rename target's parent is unwritable", func(t *testing.T) {
 		base := t.TempDir()
 		legacy := filepath.Join(base, "brizz-code")
@@ -334,6 +380,24 @@ func TestStripLegacyHooks(t *testing.T) {
 		raw, _ := os.ReadFile(path)
 		if !strings.Contains(string(raw), `"theme"`) {
 			t.Errorf("settings should be untouched")
+		}
+	})
+
+	t.Run("unreadable settings.json surfaces as error", func(t *testing.T) {
+		dir := t.TempDir()
+		settingsPath := filepath.Join(dir, "settings.json")
+		if err := os.WriteFile(settingsPath, []byte(`{}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// Strip read permission so os.ReadFile fails with EACCES, not ENOENT.
+		if err := os.Chmod(settingsPath, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(settingsPath, 0o644) })
+
+		_, err := stripLegacyHooks(dir)
+		if err == nil {
+			t.Error("expected error when settings.json is unreadable")
 		}
 	})
 

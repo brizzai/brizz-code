@@ -76,7 +76,15 @@ func preferredConfig(repoPath, preferredName, legacyName string) ShellConfig {
 func loadRepoConfig(path string) (ShellConfig, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ShellConfig{}, false
+		if os.IsNotExist(err) {
+			return ShellConfig{}, false
+		}
+		// File exists but is unreadable (e.g. permission denied). Treat as
+		// "exists with empty config" so the documented presence-wins behavior
+		// holds — falling through to .bc.json would silently break it.
+		debuglog.Logger.Warn("workspace: failed to read repo config; treating as empty override",
+			"path", path, "err", err)
+		return ShellConfig{}, true
 	}
 	var cfg RepoWorkspaceConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {

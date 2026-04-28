@@ -59,6 +59,23 @@ func TestResolveProvider(t *testing.T) {
 		}
 	})
 
+	t.Run("unreadable .fleet.json still suppresses .bc.json (presence-wins)", func(t *testing.T) {
+		repo := t.TempDir()
+		writeFile(t, repo, ".fleet.json", `{"workspace":{"create":"new-fleet"}}`)
+		writeFile(t, repo, ".bc.json", `{"workspace":{"create":"new-bc"}}`)
+		// Strip read perms so loadRepoConfig sees a non-ENOENT error.
+		fleetPath := filepath.Join(repo, ".fleet.json")
+		if err := os.Chmod(fleetPath, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(fleetPath, 0o644) })
+
+		got := ResolveProvider(repo)
+		if _, ok := got.(*GitWorktreeProvider); !ok {
+			t.Errorf("got %T, want *GitWorktreeProvider — unreadable .fleet.json should still suppress .bc.json", got)
+		}
+	})
+
 	t.Run("local override is field-by-field", func(t *testing.T) {
 		repo := t.TempDir()
 		writeFile(t, repo, ".fleet.json", `{"workspace":{"create":"base-create","destroy":"base-destroy"}}`)

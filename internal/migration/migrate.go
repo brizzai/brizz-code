@@ -125,16 +125,36 @@ func Run() Report {
 // nothing to do — caller should treat that as success.
 func migrateConfigDir(legacyDir, newDir string) (bool, error) {
 	info, err := os.Stat(legacyDir)
-	if err != nil || !info.IsDir() {
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat %s: %w", legacyDir, err)
+	}
+	if !info.IsDir() {
 		return false, nil
 	}
-	// Nothing meaningful in legacy if there's no state.db.
-	if !fileExists(filepath.Join(legacyDir, "state.db")) {
+	// "Legacy has data" means either a session DB or a persisted user config.
+	// A user who tweaked settings before any session existed only has config.json,
+	// and we don't want to silently leave their settings stranded in the legacy dir.
+	hasState, err := fileExists(filepath.Join(legacyDir, "state.db"))
+	if err != nil {
+		return false, err
+	}
+	hasConfig, err := fileExists(filepath.Join(legacyDir, "config.json"))
+	if err != nil {
+		return false, err
+	}
+	if !hasState && !hasConfig {
 		return false, nil
 	}
 
 	// Fast path: new dir doesn't exist — atomic rename.
-	if _, err := os.Stat(newDir); os.IsNotExist(err) {
+	newDirExists, err := fileExists(newDir)
+	if err != nil {
+		return false, err
+	}
+	if !newDirExists {
 		if err := os.MkdirAll(filepath.Dir(newDir), 0o755); err != nil {
 			return false, fmt.Errorf("create config parent: %w", err)
 		}
@@ -147,7 +167,11 @@ func migrateConfigDir(legacyDir, newDir string) (bool, error) {
 	// New dir exists but has no state.db — usually because chrome-host or another
 	// subprocess called debuglog.Init() first and created an empty dir + debug.log.
 	// Merge legacy contents in without clobbering anything that's already there.
-	if !fileExists(filepath.Join(newDir, "state.db")) {
+	newHasState, err := fileExists(filepath.Join(newDir, "state.db"))
+	if err != nil {
+		return false, err
+	}
+	if !newHasState {
 		return mergeLegacyDir(legacyDir, newDir)
 	}
 
@@ -191,9 +215,19 @@ func mergeLegacyDir(legacyDir, newDir string) (bool, error) {
 	return moved > 0, nil
 }
 
-func fileExists(p string) bool {
+// fileExists distinguishes "doesn't exist" from "exists but unreadable". The
+// latter is an actionable error the caller should propagate so migration can
+// retry on the next launch instead of silently treating a permission failure
+// as nothing-to-do.
+func fileExists(p string) (bool, error) {
 	_, err := os.Stat(p)
-	return err == nil
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("stat %s: %w", p, err)
 }
 
 // tmuxRunner is the seam tests stub to avoid touching the live tmux server.
@@ -276,7 +310,12 @@ func stripLegacyHooks(claudeConfigDir string) (int, error) {
 	settingsPath := filepath.Join(claudeConfigDir, "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
-		return 0, nil
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		// Permission/I/O failures must surface — otherwise we'd mark migration
+		// done with legacy hook entries still in place.
+		return 0, fmt.Errorf("read %s: %w", settingsPath, err)
 	}
 
 	var rawSettings map[string]json.RawMessage
