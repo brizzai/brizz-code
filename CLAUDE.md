@@ -8,7 +8,7 @@ TUI tool for managing multiple Claude Code sessions in parallel using tmux.
 - Go 1.26+, Bubble Tea + Lipgloss, tmux, SQLite (WAL mode)
 
 ## Build
-```
+```bash
 make build    # build to build/fleet
 make run      # go run
 make test     # go test -race
@@ -38,7 +38,7 @@ Use [conventional commits](https://www.conventionalcommits.org/). Version is aut
 - Install: `brew install brizzai/tap/fleet` or run `bash install.sh` (requires `gh` CLI)
 
 ## Package Structure
-```
+```text
 cmd/fleet/main.go      # CLI entry point
 internal/tmux/tmux.go        # Tmux abstraction (create, kill, capture)
 internal/tmux/pty.go         # PTY-based attach with Ctrl+Q detach

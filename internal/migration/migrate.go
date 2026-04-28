@@ -77,14 +77,29 @@ func Run() Report {
 
 	migrated, configErr := migrateConfigDir(legacyConfigDir, newConfigDir)
 	r.ConfigMigrated = migrated
-	r.TmuxRenamed = renameTmuxSessions()
-	r.HooksStripped = stripLegacyHooks(hooks.GetClaudeConfigDir())
+	tmuxRenamed, tmuxErr := renameTmuxSessions()
+	r.TmuxRenamed = tmuxRenamed
+	hooksStripped, hooksErr := stripLegacyHooks(hooks.GetClaudeConfigDir())
+	r.HooksStripped = hooksStripped
 
+	// Marker is gated on every step that returned an actionable error. If any
+	// step couldn't even attempt its work (or failed to commit its result), we
+	// skip the marker so the next launch retries. Per-item failures inside a
+	// step (one tmux rename, one stale hook entry) stay logged-only — they
+	// shouldn't force migration to retry every launch forever.
 	if configErr != nil {
-		debuglog.Logger.Warn("migration: config-dir step failed; not writing marker so we can retry next launch",
-			"err", configErr)
-	} else if err := os.MkdirAll(newConfigDir, 0o755); err == nil {
-		_ = os.WriteFile(markerPath, []byte("migrated from brizz-code\n"), 0o644)
+		debuglog.Logger.Warn("migration: config-dir step failed; not writing marker", "err", configErr)
+	}
+	if tmuxErr != nil {
+		debuglog.Logger.Warn("migration: tmux step failed; not writing marker", "err", tmuxErr)
+	}
+	if hooksErr != nil {
+		debuglog.Logger.Warn("migration: hooks step failed; not writing marker", "err", hooksErr)
+	}
+	if configErr == nil && tmuxErr == nil && hooksErr == nil {
+		if err := os.MkdirAll(newConfigDir, 0o755); err == nil {
+			_ = os.WriteFile(markerPath, []byte("migrated from brizz-code\n"), 0o644)
+		}
 	}
 
 	if r.ConfigMigrated || r.TmuxRenamed > 0 || r.HooksStripped > 0 {
@@ -196,10 +211,20 @@ func (realTmuxExec) Rename(old, newName string) error {
 	return exec.Command("tmux", "rename-session", "-t", old, newName).Run()
 }
 
-func renameTmuxSessions() int {
+// renameTmuxSessions returns the count of sessions renamed and an error only
+// when the underlying List call failed for a reason other than "no tmux server
+// running" (List returns an empty slice, no error). Per-session rename
+// failures are logged but don't surface — one orphaned session shouldn't force
+// migration to retry forever.
+func renameTmuxSessions() (int, error) {
 	names, err := tmuxRunner.List()
 	if err != nil {
-		return 0
+		// "no server running" is a normal idle state — treat as no-op success.
+		// Other errors (broken tmux, perms) are real and should block the marker.
+		if isTmuxNoServer(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("tmux list-sessions: %w", err)
 	}
 	var renamed int
 	for _, name := range names {
@@ -214,27 +239,44 @@ func renameTmuxSessions() int {
 		}
 		renamed++
 	}
-	return renamed
+	return renamed, nil
 }
 
-func stripLegacyHooks(claudeConfigDir string) int {
+// isTmuxNoServer detects the "no server running" error tmux emits when no
+// session has ever been created. We treat that as a no-op success because the
+// user simply isn't using tmux yet — there's nothing to migrate.
+func isTmuxNoServer(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no server running") || strings.Contains(msg, "no such file")
+}
+
+// stripLegacyHooks returns the number of legacy hook entries removed and an
+// error only when we had cleaned settings but couldn't commit them to disk.
+// Missing settings.json, parse failures, and "no legacy hooks present" are all
+// no-op successes — they don't block the marker.
+func stripLegacyHooks(claudeConfigDir string) (int, error) {
 	settingsPath := filepath.Join(claudeConfigDir, "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
-		return 0
+		return 0, nil
 	}
 
 	var rawSettings map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawSettings); err != nil {
-		return 0
+		debuglog.Logger.Warn("migration: settings.json parse failed; leaving alone", "err", err)
+		return 0, nil
 	}
 	rawHooks, ok := rawSettings["hooks"]
 	if !ok {
-		return 0
+		return 0, nil
 	}
 	var events map[string]json.RawMessage
 	if err := json.Unmarshal(rawHooks, &events); err != nil {
-		return 0
+		debuglog.Logger.Warn("migration: settings.json hooks block parse failed; leaving alone", "err", err)
+		return 0, nil
 	}
 
 	removed := 0
@@ -248,7 +290,7 @@ func stripLegacyHooks(claudeConfigDir string) int {
 		}
 	}
 	if removed == 0 {
-		return 0
+		return 0, nil
 	}
 
 	if len(events) == 0 {
@@ -256,18 +298,19 @@ func stripLegacyHooks(claudeConfigDir string) int {
 	} else {
 		b, err := json.MarshalIndent(events, "", "  ")
 		if err != nil {
-			return removed
+			return removed, fmt.Errorf("marshal hooks: %w", err)
 		}
 		rawSettings["hooks"] = b
 	}
 	out, err := json.MarshalIndent(rawSettings, "", "  ")
 	if err != nil {
-		return removed
+		return removed, fmt.Errorf("marshal settings: %w", err)
 	}
 	if err := os.WriteFile(settingsPath, out, 0o644); err != nil {
-		debuglog.Logger.Warn("migration: failed to write cleaned settings.json", "err", err)
+		// Catastrophic — we'd lose the cleanup work. Surface so Run skips the marker.
+		return removed, fmt.Errorf("write %s: %w", settingsPath, err)
 	}
-	return removed
+	return removed, nil
 }
 
 func stripLegacyFromEvent(raw json.RawMessage) (json.RawMessage, int) {

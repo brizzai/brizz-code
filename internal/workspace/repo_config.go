@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
 // RepoWorkspaceConfig is the structure of .fleet.json files.
@@ -63,7 +65,14 @@ func loadRepoConfig(path string) ShellConfig {
 		return ShellConfig{}
 	}
 	var cfg RepoWorkspaceConfig
-	_ = json.Unmarshal(data, &cfg)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		// File exists but is malformed — surface so the user notices, otherwise
+		// they'll silently fall back to legacy .bc.json (or default provider)
+		// and assume their fix didn't apply.
+		debuglog.Logger.Warn("workspace: failed to parse repo config; ignoring",
+			"path", path, "err", err)
+		return ShellConfig{}
+	}
 	return cfg.Workspace
 }
 

@@ -6,7 +6,7 @@ This document explains how fleet works internally, for contributors.
 
 fleet is a Go TUI that orchestrates multiple Claude Code sessions running in tmux. The core challenge is **status detection** — knowing what each Claude session is doing without interfering with it.
 
-```
+```text
 ┌──────────────────────────────────────────────────┐
 │  Bubble Tea TUI (ui/app.go)                      │
 │  ┌────────────┐  ┌─────────────┐                 │
@@ -49,7 +49,7 @@ fleet is a Go TUI that orchestrates multiple Claude Code sessions running in tmu
 
 ## Package Structure
 
-```
+```text
 cmd/fleet/
   main.go              CLI entry point, command routing
   hook_handler.go      Subprocess invoked by Claude Code hooks
@@ -87,7 +87,7 @@ This is the most complex part of the codebase. Three layers, in priority order:
 
 Claude Code has a hooks API. On TUI launch, `hooks.InjectClaudeHooks()` adds entries to `~/.claude/settings.json` that call `fleet hook-handler` on events like `UserPromptSubmit`, `PermissionRequest`, `Stop`.
 
-```
+```text
 Claude fires event
   → forks `fleet hook-handler` with JSON on stdin
   → handler reads FLEET_INSTANCE_ID env var
@@ -131,7 +131,7 @@ Round-robin spreading prevents capture timeouts when managing many sessions.
 
 ## Session Lifecycle
 
-```
+```text
 CREATE:  User presses 'a'/'n' → dialog → tmux.NewSession() → set FLEET_INSTANCE_ID
          → send claude command → storage.SaveSession()
 
@@ -159,7 +159,7 @@ Workspace creation is **non-blocking**: dialog closes immediately, a phantom "Cr
 
 Optional. For `p` key to reuse Chrome tabs instead of opening new ones.
 
-```
+```text
 TUI → unix socket → native messaging host (chrome-host) → stdio → Chrome service worker
 ```
 

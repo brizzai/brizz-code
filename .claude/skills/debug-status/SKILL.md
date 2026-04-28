@@ -18,11 +18,11 @@ For architecture details, see [reference.md](reference.md).
 
 Status flows through a pipeline. Your job is to trace the pipeline and find where it breaks:
 
-```
+```text
 Claude Code → hook event → hook-handler binary → status file → fsnotify → UpdateStatus() → TUI
                                                                               ↓
                                                                     pane capture (fallback/supplement)
-```
+```text
 
 At each stage, ask: **what does this stage think the status is, and is it correct?**
 
@@ -50,17 +50,17 @@ The `snapshot.json` `detection.mismatch` field tells you immediately if pane det
 Ask the user: which session, what status they see, what they expect.
 
 Find the instance ID and tmux session name:
-```
+```bash
 grep "title=<session_title>" ~/.config/fleet/debug.log | head -1
 ```
 Extract `session=XXXX` — this is the instance ID and hook filename.
 
 Find the tmux session name (needed for pane capture):
-```
+```bash
 tmux list-sessions -F "#{session_name}" | grep fleet_ | grep <partial_title>
 ```
 Or query the DB:
-```
+```bash
 sqlite3 ~/.config/fleet/state.db "SELECT tmux_session_name, title FROM sessions WHERE title LIKE '%<title>%'"
 ```
 
@@ -69,22 +69,22 @@ sqlite3 ~/.config/fleet/state.db "SELECT tmux_session_name, title FROM sessions 
 Check all three layers and compare:
 
 **Hook file** (what hooks last reported):
-```
+```bash
 cat ~/.config/fleet/hooks/<instance_id>.json
 ```
 Note the `status`, `event`, and `ts` (unix timestamp). How old is it?
 
 **Debug log** (what UpdateStatus decided):
-```
+```bash
 grep "<instance_id>" ~/.config/fleet/debug.log | grep "status changed" | tail -10
 ```
 
 **Pane** (what's actually on screen):
-```
+```bash
 tmux capture-pane -t <tmux_session_name> -p | tail -20
 ```
 Also check what detectStatus sees:
-```
+```bash
 grep "<instance_id>" ~/.config/fleet/debug.log | grep "detectStatus" | tail -10
 ```
 
@@ -102,7 +102,7 @@ Compare the three layers. The bug is where they disagree:
 
 ## Step 4: Check the timeline
 
-```
+```bash
 grep "<instance_id>" ~/.config/fleet/debug.log | grep -E "hook-handler|status changed" | tail -30
 ```
 
@@ -134,24 +134,24 @@ If the session uses Claude's agent team feature (sub-agents, `Explore(...)`, `@a
 ## Step 6: Go deeper if needed
 
 **Claude conversation log** (verify user actions):
-```
+```bash
 # Find the log file
 jq -r .session_id ~/.config/fleet/hooks/<instance_id>.json
 # Then check ~/.claude/projects/*/<session_id>.jsonl
 ```
 
 **Hook installation** (verify hooks are registered):
-```
+```bash
 cat ~/.claude/settings.json | python3 -m json.tool | grep -A5 "fleet"
 ```
 
 **Hook handler execution** (verify binary runs):
-```
+```bash
 grep "<instance_id>" ~/.config/fleet/debug.log | grep "hook-handler"
 ```
 
 **Environment variable** (verify hook routing is wired up):
-```
+```bash
 tmux show-environment -t <tmux_session_name> FLEET_INSTANCE_ID
 ```
 If missing or wrong, hooks fire but the handler can't route them to the right session — they silently drop.

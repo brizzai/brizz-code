@@ -15,7 +15,7 @@ body:
       placeholder: |
         I run 8 Claude agents across 3 repos using this workflow...
 
-        Here's my .bc.json config:
+        Here's my .fleet.json config:
         ```json
         { ... }
         ```

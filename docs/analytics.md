@@ -101,7 +101,7 @@ Press `S` in the TUI and toggle **Telemetry** to **off**.
 
 ## Architecture
 
-```
+```text
 internal/analytics/
 ├── analytics.go   # Client, init, track, shutdown, device ID, opt-out
 └── events.go      # Event name constants

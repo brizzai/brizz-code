@@ -220,15 +220,22 @@ func TestRunDoesNotWriteMarkerOnFailure(t *testing.T) {
 	tmuxRunner = &fakeTmux{sessions: []string{}}
 	t.Cleanup(func() { tmuxRunner = prev })
 
-	// Force migrateConfigDir to fail by making ~/.config a read-only file
-	// (so MkdirAll for the new dir's parent fails). Setting up a real-world
-	// failure mode without mocking the os package.
+	// Force migrateConfigDir to actually hit its error path: create the legacy
+	// dir + state.db, then chmod the parent (~/.config) to read+execute only so
+	// os.Rename fails (rename needs write on the target's parent dir entry).
 	configParent := filepath.Join(tmp, ".config")
-	if err := os.WriteFile(configParent, []byte(""), 0o644); err != nil {
+	legacyDir := filepath.Join(configParent, "brizz-code")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "state.db"), []byte("realdata"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(configParent, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(configParent, 0o755) })
 
-	// Even with config wedged, Run should swallow the failure and not write the marker.
 	r := Run()
 	if r.ConfigMigrated {
 		t.Error("expected ConfigMigrated=false on failure")
@@ -238,6 +245,11 @@ func TestRunDoesNotWriteMarkerOnFailure(t *testing.T) {
 	markerPath := filepath.Join(tmp, ".config", "fleet", ".migrated-from-brizz-code")
 	if _, err := os.Stat(markerPath); err == nil {
 		t.Error("marker file should not be written when config migration is blocked")
+	}
+
+	// Defense in depth: the rename failure must not have eaten the legacy data.
+	if _, err := os.Stat(filepath.Join(legacyDir, "state.db")); err != nil {
+		t.Errorf("legacy state.db should still be intact after failed migration: %v", err)
 	}
 }
 
@@ -270,7 +282,10 @@ func TestStripLegacyHooks(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		removed := stripLegacyHooks(dir)
+		removed, err := stripLegacyHooks(dir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if removed != 2 {
 			t.Errorf("removed: got %d, want 2", removed)
 		}
@@ -293,7 +308,11 @@ func TestStripLegacyHooks(t *testing.T) {
 
 	t.Run("no settings.json is a no-op", func(t *testing.T) {
 		dir := t.TempDir()
-		if got := stripLegacyHooks(dir); got != 0 {
+		got, err := stripLegacyHooks(dir)
+		if err != nil {
+			t.Errorf("expected nil err, got %v", err)
+		}
+		if got != 0 {
 			t.Errorf("expected 0, got %d", got)
 		}
 	})
@@ -304,12 +323,55 @@ func TestStripLegacyHooks(t *testing.T) {
 		if err := os.WriteFile(path, []byte(`{"theme":"dark"}`), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got := stripLegacyHooks(dir); got != 0 {
+		got, err := stripLegacyHooks(dir)
+		if err != nil {
+			t.Errorf("expected nil err, got %v", err)
+		}
+		if got != 0 {
 			t.Errorf("expected 0, got %d", got)
 		}
 		raw, _ := os.ReadFile(path)
 		if !strings.Contains(string(raw), `"theme"`) {
 			t.Errorf("settings should be untouched")
+		}
+	})
+
+	t.Run("WriteFile failure surfaces as error", func(t *testing.T) {
+		dir := t.TempDir()
+		settingsPath := filepath.Join(dir, "settings.json")
+		settings := map[string]any{
+			"hooks": map[string]any{
+				"Stop": []map[string]any{
+					{"hooks": []map[string]any{
+						{"type": "command", "command": "brizz-code hook-handler"},
+					}},
+				},
+			},
+		}
+		data, _ := json.Marshal(settings)
+		if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// Make the file read-only AND the parent dir non-writable so the rewrite
+		// of settings.json fails. On macOS, making just one or the other isn't
+		// always sufficient — both blocks open(O_WRONLY|O_TRUNC) reliably.
+		if err := os.Chmod(settingsPath, 0o400); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(dir, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = os.Chmod(dir, 0o755)
+			_ = os.Chmod(settingsPath, 0o644)
+		})
+
+		removed, err := stripLegacyHooks(dir)
+		if err == nil {
+			t.Error("expected error when settings.json is unwritable")
+		}
+		if removed != 1 {
+			t.Errorf("expected removed=1 (work was done before write failed), got %d", removed)
 		}
 	})
 }
@@ -348,7 +410,10 @@ func TestRenameTmuxSessions(t *testing.T) {
 		tmuxRunner = fake
 		t.Cleanup(func() { tmuxRunner = prev })
 
-		got := renameTmuxSessions()
+		got, err := renameTmuxSessions()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if got != 2 {
 			t.Errorf("renamed: got %d, want 2", got)
 		}
