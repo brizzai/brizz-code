@@ -1,4 +1,4 @@
-module github.com/brizzai/brizz-code
+module github.com/brizzai/fleet
 
 go 1.26.0
 
@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/creack/pty v1.1.24
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/rmhubbert/bubbletea-overlay v0.6.6
 	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.42.0
 	modernc.org/sqlite v1.48.0
@@ -36,7 +37,6 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/rmhubbert/bubbletea-overlay v0.6.6 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/sys v0.43.0 // indirect

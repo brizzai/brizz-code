@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/brizzai/brizz-code/internal/analytics"
-	"github.com/brizzai/brizz-code/internal/config"
+	"github.com/brizzai/fleet/internal/analytics"
+	"github.com/brizzai/fleet/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -18,7 +18,7 @@ var (
 	tickPresets   = []int{1, 2, 3, 5, 10}
 )
 
-// SettingsDialog provides a UI for configuring brizz-code settings.
+// SettingsDialog provides a UI for configuring fleet settings.
 type SettingsDialog struct {
 	visible   bool
 	width     int

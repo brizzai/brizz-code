@@ -1,7 +1,7 @@
 ---
 name: debug-status
 description: >
-  Debug brizz-code session status issues. Traces through the full status pipeline
+  Debug fleet session status issues. Traces through the full status pipeline
   (hooks → watcher → UpdateStatus → pane capture) to find where expected and actual
   status diverge. Use when a session shows the wrong status.
 allowed-tools: Read, Grep, Glob, Bash, Agent
@@ -10,7 +10,7 @@ user-invocable: true
 
 # Debug Session Status
 
-Diagnose why a brizz-code session shows the wrong status. Read-only — report findings and recommend fixes, never edit code.
+Diagnose why a fleet session shows the wrong status. Read-only — report findings and recommend fixes, never edit code.
 
 For architecture details, see [reference.md](reference.md).
 
@@ -18,7 +18,7 @@ For architecture details, see [reference.md](reference.md).
 
 Status flows through a pipeline. Your job is to trace the pipeline and find where it breaks:
 
-```
+```text
 Claude Code → hook event → hook-handler binary → status file → fsnotify → UpdateStatus() → TUI
                                                                               ↓
                                                                     pane capture (fallback/supplement)
@@ -31,15 +31,15 @@ At each stage, ask: **what does this stage think the status is, and is it correc
 If the user says they captured a snapshot with the `D` hotkey, check it first. Pick the most recent one matching the timeframe they describe:
 
 ```bash
-ls -lt ~/.config/brizz-code/snapshots/ | head -10
+ls -lt ~/.config/fleet/snapshots/ | head -10
 ```
 
 Then read the snapshot — it contains everything you need:
 
 ```bash
-cat ~/.config/brizz-code/snapshots/<dir>/snapshot.json   # Session state, hook, detection, mismatch flag
-cat ~/.config/brizz-code/snapshots/<dir>/pane_clean.txt   # Human-readable pane content
-cat ~/.config/brizz-code/snapshots/<dir>/debug_tail.txt   # Last 100 debug log lines for this session
+cat ~/.config/fleet/snapshots/<dir>/snapshot.json   # Session state, hook, detection, mismatch flag
+cat ~/.config/fleet/snapshots/<dir>/pane_clean.txt   # Human-readable pane content
+cat ~/.config/fleet/snapshots/<dir>/debug_tail.txt   # Last 100 debug log lines for this session
 # pane_raw.txt = ANSI-preserved capture, ready to copy to testdata/ for golden tests
 ```
 
@@ -50,18 +50,18 @@ The `snapshot.json` `detection.mismatch` field tells you immediately if pane det
 Ask the user: which session, what status they see, what they expect.
 
 Find the instance ID and tmux session name:
-```
-grep "title=<session_title>" ~/.config/brizz-code/debug.log | head -1
+```bash
+grep "title=<session_title>" ~/.config/fleet/debug.log | head -1
 ```
 Extract `session=XXXX` — this is the instance ID and hook filename.
 
 Find the tmux session name (needed for pane capture):
-```
-tmux list-sessions -F "#{session_name}" | grep brizzcode_ | grep <partial_title>
+```bash
+tmux list-sessions -F "#{session_name}" | grep fleet_ | grep <partial_title>
 ```
 Or query the DB:
-```
-sqlite3 ~/.config/brizz-code/state.db "SELECT tmux_session_name, title FROM sessions WHERE title LIKE '%<title>%'"
+```bash
+sqlite3 ~/.config/fleet/state.db "SELECT tmux_session_name, title FROM sessions WHERE title LIKE '%<title>%'"
 ```
 
 ## Step 2: What does each layer say?
@@ -69,23 +69,23 @@ sqlite3 ~/.config/brizz-code/state.db "SELECT tmux_session_name, title FROM sess
 Check all three layers and compare:
 
 **Hook file** (what hooks last reported):
-```
-cat ~/.config/brizz-code/hooks/<instance_id>.json
+```bash
+cat ~/.config/fleet/hooks/<instance_id>.json
 ```
 Note the `status`, `event`, and `ts` (unix timestamp). How old is it?
 
 **Debug log** (what UpdateStatus decided):
-```
-grep "<instance_id>" ~/.config/brizz-code/debug.log | grep "status changed" | tail -10
+```bash
+grep "<instance_id>" ~/.config/fleet/debug.log | grep "status changed" | tail -10
 ```
 
 **Pane** (what's actually on screen):
-```
+```bash
 tmux capture-pane -t <tmux_session_name> -p | tail -20
 ```
 Also check what detectStatus sees:
-```
-grep "<instance_id>" ~/.config/brizz-code/debug.log | grep "detectStatus" | tail -10
+```bash
+grep "<instance_id>" ~/.config/fleet/debug.log | grep "detectStatus" | tail -10
 ```
 
 ## Step 3: Find the divergence
@@ -102,8 +102,8 @@ Compare the three layers. The bug is where they disagree:
 
 ## Step 4: Check the timeline
 
-```
-grep "<instance_id>" ~/.config/brizz-code/debug.log | grep -E "hook-handler|status changed" | tail -30
+```bash
+grep "<instance_id>" ~/.config/fleet/debug.log | grep -E "hook-handler|status changed" | tail -30
 ```
 
 Build a timeline of events. Look for:
@@ -134,25 +134,25 @@ If the session uses Claude's agent team feature (sub-agents, `Explore(...)`, `@a
 ## Step 6: Go deeper if needed
 
 **Claude conversation log** (verify user actions):
-```
+```bash
 # Find the log file
-jq -r .session_id ~/.config/brizz-code/hooks/<instance_id>.json
+jq -r .session_id ~/.config/fleet/hooks/<instance_id>.json
 # Then check ~/.claude/projects/*/<session_id>.jsonl
 ```
 
 **Hook installation** (verify hooks are registered):
-```
-cat ~/.claude/settings.json | python3 -m json.tool | grep -A5 "brizz-code"
+```bash
+cat ~/.claude/settings.json | python3 -m json.tool | grep -A5 "fleet"
 ```
 
 **Hook handler execution** (verify binary runs):
-```
-grep "<instance_id>" ~/.config/brizz-code/debug.log | grep "hook-handler"
+```bash
+grep "<instance_id>" ~/.config/fleet/debug.log | grep "hook-handler"
 ```
 
 **Environment variable** (verify hook routing is wired up):
-```
-tmux show-environment -t <tmux_session_name> BRIZZCODE_INSTANCE_ID
+```bash
+tmux show-environment -t <tmux_session_name> FLEET_INSTANCE_ID
 ```
 If missing or wrong, hooks fire but the handler can't route them to the right session — they silently drop.
 

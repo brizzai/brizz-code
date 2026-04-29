@@ -5,10 +5,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
-const nmhName = "com.brizzcode.tabcontrol"
+const (
+	nmhName       = "com.brizzai.fleet.tabcontrol"
+	legacyNMHName = "com.brizzcode.tabcontrol"
+)
 
 // nmhManifest is the Native Messaging Host manifest format.
 type nmhManifest struct {
@@ -46,6 +49,16 @@ func InstallNativeMessagingHost() bool {
 
 	manifestPath := NMHManifestPath()
 
+	// Remove legacy NMH manifest if present so Chrome doesn't keep two competing entries.
+	legacyPath := filepath.Join(filepath.Dir(manifestPath), legacyNMHName+".json")
+	if _, err := os.Stat(legacyPath); err == nil {
+		if err := os.Remove(legacyPath); err != nil {
+			log.Warn("chrome: cannot remove legacy NMH manifest", "path", legacyPath, "err", err)
+		} else {
+			log.Info("chrome: removed legacy NMH manifest", "path", legacyPath)
+		}
+	}
+
 	// Check if manifest already exists with the correct path.
 	if existing, err := os.ReadFile(manifestPath); err == nil {
 		var m nmhManifest
@@ -56,7 +69,7 @@ func InstallNativeMessagingHost() bool {
 
 	manifest := nmhManifest{
 		Name:        nmhName,
-		Description: "brizz-code Chrome tab control",
+		Description: "fleet Chrome tab control",
 		Path:        hostPath,
 		Type:        "stdio",
 		AllowedOrigins: []string{

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
-// brizzCodeHookMarker is the substring used to identify brizz-code hooks in settings.json.
-const brizzCodeHookMarker = "brizz-code hook-handler"
+// fleetHookMarker is the substring used to identify fleet hooks in settings.json.
+const fleetHookMarker = "fleet hook-handler"
 
 // claudeHookEntry represents a single hook entry in Claude Code settings.
 type claudeHookEntry struct {
@@ -57,7 +57,7 @@ func GetClaudeConfigDir() string {
 func GetHookCommand() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "brizz-code hook-handler"
+		return "fleet hook-handler"
 	}
 	// Resolve symlinks for stable path.
 	resolved, err := filepath.EvalSymlinks(exe)
@@ -67,8 +67,8 @@ func GetHookCommand() string {
 	return resolved + " hook-handler"
 }
 
-// brizzCodeHook returns a hook entry with the current binary path.
-func brizzCodeHook(async bool) claudeHookEntry {
+// fleetHook returns a hook entry with the current binary path.
+func fleetHook(async bool) claudeHookEntry {
 	return claudeHookEntry{
 		Type:    "command",
 		Command: GetHookCommand(),
@@ -76,7 +76,7 @@ func brizzCodeHook(async bool) claudeHookEntry {
 	}
 }
 
-// InjectClaudeHooks injects brizz-code hook entries into Claude Code's settings.json.
+// InjectClaudeHooks injects fleet hook entries into Claude Code's settings.json.
 // Returns true if hooks were newly installed, false if already present.
 func InjectClaudeHooks(configDir string) (bool, error) {
 	settingsPath := filepath.Join(configDir, "settings.json")
@@ -115,7 +115,7 @@ func InjectClaudeHooks(configDir string) (bool, error) {
 		existingHooks[cfg.Event] = mergeHookEvent(existingHooks[cfg.Event], cfg.Matcher, cfg.Async)
 	}
 
-	// Clean up stale brizz-code hooks from events we no longer subscribe to.
+	// Clean up stale fleet hooks from events we no longer subscribe to.
 	cleanStaleHookEvents(existingHooks)
 
 	hooksRaw, err := json.Marshal(existingHooks)
@@ -147,7 +147,7 @@ func InjectClaudeHooks(configDir string) (bool, error) {
 	return true, nil
 }
 
-// RemoveClaudeHooks removes brizz-code hook entries from Claude Code's settings.json.
+// RemoveClaudeHooks removes fleet hook entries from Claude Code's settings.json.
 func RemoveClaudeHooks(configDir string) (bool, error) {
 	debuglog.Logger.Debug("claude hooks: removing hooks", "configDir", configDir)
 	settingsPath := filepath.Join(configDir, "settings.json")
@@ -183,7 +183,7 @@ func RemoveClaudeHooks(configDir string) (bool, error) {
 	removed := false
 	for _, cfg := range hookEventConfigs {
 		if raw, ok := existingHooks[cfg.Event]; ok {
-			cleaned, didRemove := removeBrizzCodeFromEvent(raw)
+			cleaned, didRemove := removeFleetFromEvent(raw)
 			if didRemove {
 				removed = true
 				if cleaned == nil {
@@ -196,7 +196,7 @@ func RemoveClaudeHooks(configDir string) (bool, error) {
 	}
 
 	if !removed {
-		debuglog.Logger.Debug("claude hooks remove: no brizz-code hooks found to remove")
+		debuglog.Logger.Debug("claude hooks remove: no fleet hooks found to remove")
 		return false, nil
 	}
 
@@ -227,7 +227,7 @@ func RemoveClaudeHooks(configDir string) (bool, error) {
 	return true, nil
 }
 
-// AreHooksInstalled checks if brizz-code hooks are present in settings.json.
+// AreHooksInstalled checks if fleet hooks are present in settings.json.
 func AreHooksInstalled(configDir string) bool {
 	settingsPath := filepath.Join(configDir, "settings.json")
 	data, err := os.ReadFile(settingsPath)
@@ -253,7 +253,7 @@ func AreHooksInstalled(configDir string) bool {
 	return hooksAlreadyInstalled(existingHooks)
 }
 
-// hasStaleHookEvents checks if there are brizz-code hooks in events we no longer subscribe to.
+// hasStaleHookEvents checks if there are fleet hooks in events we no longer subscribe to.
 func hasStaleHookEvents(hooks map[string]json.RawMessage) bool {
 	activeEvents := make(map[string]bool)
 	for _, cfg := range hookEventConfigs {
@@ -263,14 +263,14 @@ func hasStaleHookEvents(hooks map[string]json.RawMessage) bool {
 		if activeEvents[event] {
 			continue
 		}
-		if eventHasBrizzCodeHook(raw) {
+		if eventHasFleetHook(raw) {
 			return true
 		}
 	}
 	return false
 }
 
-// cleanStaleHookEvents removes brizz-code hooks from events we no longer subscribe to.
+// cleanStaleHookEvents removes fleet hooks from events we no longer subscribe to.
 func cleanStaleHookEvents(hooks map[string]json.RawMessage) {
 	activeEvents := make(map[string]bool)
 	for _, cfg := range hookEventConfigs {
@@ -281,10 +281,10 @@ func cleanStaleHookEvents(hooks map[string]json.RawMessage) {
 		if activeEvents[event] {
 			continue
 		}
-		if !eventHasBrizzCodeHook(raw) {
+		if !eventHasFleetHook(raw) {
 			continue
 		}
-		cleaned, didRemove := removeBrizzCodeFromEvent(raw)
+		cleaned, didRemove := removeFleetFromEvent(raw)
 		if didRemove {
 			if cleaned == nil {
 				delete(hooks, event)
@@ -295,7 +295,7 @@ func cleanStaleHookEvents(hooks map[string]json.RawMessage) {
 	}
 }
 
-// hooksAlreadyInstalled checks if all required brizz-code hooks are present.
+// hooksAlreadyInstalled checks if all required fleet hooks are present.
 func hooksAlreadyInstalled(hooks map[string]json.RawMessage) bool {
 	for _, cfg := range hookEventConfigs {
 		raw, ok := hooks[cfg.Event]
@@ -303,11 +303,11 @@ func hooksAlreadyInstalled(hooks map[string]json.RawMessage) bool {
 			return false
 		}
 		if cfg.Matcher != "" {
-			if !eventHasBrizzCodeHookWithMatcher(raw, cfg.Matcher) {
+			if !eventHasFleetHookWithMatcher(raw, cfg.Matcher) {
 				return false
 			}
 		} else {
-			if !eventHasBrizzCodeHook(raw) {
+			if !eventHasFleetHook(raw) {
 				return false
 			}
 		}
@@ -333,7 +333,7 @@ func hooksNeedUpdate(hooks map[string]json.RawMessage) bool {
 				continue
 			}
 			for _, h := range m.Hooks {
-				if strings.Contains(h.Command, brizzCodeHookMarker) && h.Command != currentCmd {
+				if strings.Contains(h.Command, fleetHookMarker) && h.Command != currentCmd {
 					return true
 				}
 			}
@@ -342,8 +342,8 @@ func hooksNeedUpdate(hooks map[string]json.RawMessage) bool {
 	return false
 }
 
-// eventHasBrizzCodeHookWithMatcher checks if a hook event contains our hook under a specific matcher.
-func eventHasBrizzCodeHookWithMatcher(raw json.RawMessage, matcher string) bool {
+// eventHasFleetHookWithMatcher checks if a hook event contains our hook under a specific matcher.
+func eventHasFleetHookWithMatcher(raw json.RawMessage, matcher string) bool {
 	var matchers []claudeHookMatcher
 	if err := json.Unmarshal(raw, &matchers); err != nil {
 		return false
@@ -353,7 +353,7 @@ func eventHasBrizzCodeHookWithMatcher(raw json.RawMessage, matcher string) bool 
 			continue
 		}
 		for _, h := range m.Hooks {
-			if strings.Contains(h.Command, brizzCodeHookMarker) {
+			if strings.Contains(h.Command, fleetHookMarker) {
 				return true
 			}
 		}
@@ -361,15 +361,15 @@ func eventHasBrizzCodeHookWithMatcher(raw json.RawMessage, matcher string) bool 
 	return false
 }
 
-// eventHasBrizzCodeHook checks if a hook event contains our hook.
-func eventHasBrizzCodeHook(raw json.RawMessage) bool {
+// eventHasFleetHook checks if a hook event contains our hook.
+func eventHasFleetHook(raw json.RawMessage) bool {
 	var matchers []claudeHookMatcher
 	if err := json.Unmarshal(raw, &matchers); err != nil {
 		return false
 	}
 	for _, m := range matchers {
 		for _, h := range m.Hooks {
-			if strings.Contains(h.Command, brizzCodeHookMarker) {
+			if strings.Contains(h.Command, fleetHookMarker) {
 				return true
 			}
 		}
@@ -377,7 +377,7 @@ func eventHasBrizzCodeHook(raw json.RawMessage) bool {
 	return false
 }
 
-// mergeHookEvent adds brizz-code's hook to an event's matcher array, preserving existing hooks.
+// mergeHookEvent adds fleet's hook to an event's matcher array, preserving existing hooks.
 func mergeHookEvent(existing json.RawMessage, matcher string, async bool) json.RawMessage {
 	var matchers []claudeHookMatcher
 
@@ -393,7 +393,7 @@ func mergeHookEvent(existing json.RawMessage, matcher string, async bool) json.R
 	for i, m := range matchers {
 		if m.Matcher == matcher {
 			for j, h := range m.Hooks {
-				if strings.Contains(h.Command, brizzCodeHookMarker) {
+				if strings.Contains(h.Command, fleetHookMarker) {
 					// Update command path if changed.
 					if h.Command != currentCmd {
 						matchers[i].Hooks[j].Command = currentCmd
@@ -403,7 +403,7 @@ func mergeHookEvent(existing json.RawMessage, matcher string, async bool) json.R
 				}
 			}
 			// Append our hook to existing matcher.
-			matchers[i].Hooks = append(matchers[i].Hooks, brizzCodeHook(async))
+			matchers[i].Hooks = append(matchers[i].Hooks, fleetHook(async))
 			result, _ := json.Marshal(matchers)
 			return result
 		}
@@ -412,15 +412,15 @@ func mergeHookEvent(existing json.RawMessage, matcher string, async bool) json.R
 	// No matching matcher found; add a new one.
 	newMatcher := claudeHookMatcher{
 		Matcher: matcher,
-		Hooks:   []claudeHookEntry{brizzCodeHook(async)},
+		Hooks:   []claudeHookEntry{fleetHook(async)},
 	}
 	matchers = append(matchers, newMatcher)
 	result, _ := json.Marshal(matchers)
 	return result
 }
 
-// removeBrizzCodeFromEvent removes brizz-code hook entries from an event's matcher array.
-func removeBrizzCodeFromEvent(raw json.RawMessage) (json.RawMessage, bool) {
+// removeFleetFromEvent removes fleet hook entries from an event's matcher array.
+func removeFleetFromEvent(raw json.RawMessage) (json.RawMessage, bool) {
 	var matchers []claudeHookMatcher
 	if err := json.Unmarshal(raw, &matchers); err != nil {
 		return raw, false
@@ -432,7 +432,7 @@ func removeBrizzCodeFromEvent(raw json.RawMessage) (json.RawMessage, bool) {
 	for _, m := range matchers {
 		var kept []claudeHookEntry
 		for _, h := range m.Hooks {
-			if strings.Contains(h.Command, brizzCodeHookMarker) {
+			if strings.Contains(h.Command, fleetHookMarker) {
 				removed = true
 				continue
 			}

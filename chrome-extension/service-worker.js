@@ -1,14 +1,14 @@
-// brizz-code Chrome Extension Service Worker
+// fleet Chrome Extension Service Worker
 // Connects to native messaging host and manages tabs/groups on command.
 
-const NATIVE_HOST = "com.brizzcode.tabcontrol";
+const NATIVE_HOST = "com.brizzai.fleet.tabcontrol";
 let port = null;
 
 function connect() {
   try {
     port = chrome.runtime.connectNative(NATIVE_HOST);
   } catch (e) {
-    console.error("brizz-code: failed to connect to native host:", e);
+    console.error("fleet: failed to connect to native host:", e);
     scheduleReconnect();
     return;
   }
@@ -19,15 +19,12 @@ function connect() {
 
   port.onDisconnect.addListener(() => {
     const err = chrome.runtime.lastError;
-    console.log(
-      "brizz-code: native host disconnected",
-      err ? err.message : ""
-    );
+    console.log("fleet: native host disconnected", err ? err.message : "");
     port = null;
     scheduleReconnect();
   });
 
-  console.log("brizz-code: connected to native host");
+  console.log("fleet: connected to native host");
 }
 
 function scheduleReconnect() {
@@ -43,7 +40,7 @@ function sendResponse(resp) {
     try {
       port.postMessage(resp);
     } catch (e) {
-      console.error("brizz-code: failed to send response:", e);
+      console.error("fleet: failed to send response:", e);
     }
   }
 }

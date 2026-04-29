@@ -5,9 +5,9 @@ before:
     - go mod tidy
 
 builds:
-  - id: brizz-code
-    main: ./cmd/brizz-code
-    binary: brizz-code
+  - id: fleet
+    main: ./cmd/fleet
+    binary: fleet
     env:
       - CGO_ENABLED=0
     goos:
@@ -29,14 +29,14 @@ archives:
       {{- .Arch }}
 
 homebrew_casks:
-  - name: brizz-code
+  - name: fleet
     binaries:
-      - brizz-code
+      - fleet
     repository:
       owner: brizzai
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: https://github.com/brizzai/brizz-code
+    homepage: https://github.com/brizzai/fleet
     description: "TUI for managing multiple Claude Code sessions in parallel"
     dependencies:
       - formula: tmux
@@ -50,7 +50,7 @@ snapshot:
 release:
   github:
     owner: brizzai
-    name: brizz-code
+    name: fleet
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"

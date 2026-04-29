@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -24,14 +24,14 @@ type HookStatus struct {
 	PromptCount int
 }
 
-// HookWatcher watches ~/.config/brizz-code/hooks/ for status file changes
+// HookWatcher watches ~/.config/fleet/hooks/ for status file changes
 // and maintains a thread-safe in-memory status map.
 type HookWatcher struct {
 	hooksDir string
 	watcher  *fsnotify.Watcher
 
 	mu       sync.RWMutex
-	statuses map[string]*HookStatus // brizz session ID -> latest status
+	statuses map[string]*HookStatus // fleet session ID -> latest status
 
 	onChange chan struct{} // buffered(1), notifies when any status changes
 
@@ -43,9 +43,9 @@ type HookWatcher struct {
 func GetHooksDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(os.TempDir(), ".config", "brizz-code", "hooks")
+		return filepath.Join(os.TempDir(), ".config", "fleet", "hooks")
 	}
-	return filepath.Join(home, ".config", "brizz-code", "hooks")
+	return filepath.Join(home, ".config", "fleet", "hooks")
 }
 
 // NewHookWatcher creates a new watcher for the hooks directory.

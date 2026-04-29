@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "brizz-code",
+  "name": "fleet",
   "version": "1.0.0",
-  "description": "Chrome tab control for brizz-code",
+  "description": "Chrome tab control for fleet",
   "permissions": ["tabs", "tabGroups", "nativeMessaging"],
   "background": { "service_worker": "service-worker.js" },
   "icons": {

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// StatusFile is the JSON format written to ~/.config/brizz-code/hooks/{session_id}.json.
+// StatusFile is the JSON format written to ~/.config/fleet/hooks/{session_id}.json.
 type StatusFile struct {
 	Status      string `json:"status"`
 	SessionID   string `json:"session_id,omitempty"`

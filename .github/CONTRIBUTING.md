@@ -1,4 +1,4 @@
-# Contributing to brizz-code
+# Contributing to fleet
 
 Thanks for your interest in contributing! This guide will help you get started.
 
@@ -12,7 +12,7 @@ Bug fixes and small improvements can go straight to a PR.
 
 ### Requirements
 
-- **macOS** (brizz-code is macOS-only)
+- **macOS** (fleet is macOS-only)
 - **Go 1.26+**
 - **tmux** (`brew install tmux`)
 - **Claude Code** (for end-to-end testing)
@@ -21,9 +21,9 @@ Bug fixes and small improvements can go straight to a PR.
 ### Getting Started
 
 ```bash
-git clone https://github.com/brizzai/brizz-code.git
-cd brizz-code
-make build    # Build to build/brizz-code
+git clone https://github.com/brizzai/fleet.git
+cd fleet
+make build    # Build to build/fleet
 make test     # Run tests with race detector
 make lint     # Run linter (requires golangci-lint)
 ```
@@ -32,7 +32,7 @@ make lint     # Run linter (requires golangci-lint)
 
 | Target | Description |
 |--------|-------------|
-| `make build` | Build binary to `build/brizz-code` |
+| `make build` | Build binary to `build/fleet` |
 | `make test` | Run tests with `-race` |
 | `make lint` | Run golangci-lint |
 | `make coverage` | Run tests with coverage report |

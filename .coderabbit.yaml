@@ -27,7 +27,7 @@ reviews:
         calls tmux/git/exec directly inside a message handler.
     - path: "internal/hooks/**"
       instructions: |
-        Status files live under ~/.config/brizz-code/hooks/<session_id>.json.
+        Status files live under ~/.config/fleet/hooks/<session_id>.json.
         Hooks are authoritative: never override hook=running with pane=waiting.
     - path: ".github/workflows/**"
       instructions: |

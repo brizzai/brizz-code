@@ -4,8 +4,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Ask questions about brizz-code — setup, usage, workflows, troubleshooting.
-        For confirmed bugs, [open an issue](https://github.com/brizzai/brizz-code/issues/new?template=bug.yml) instead.
+        Ask questions about fleet — setup, usage, workflows, troubleshooting.
+        For confirmed bugs, [open an issue](https://github.com/brizzai/fleet/issues/new?template=bug.yml) instead.
 
   - type: textarea
     id: question
@@ -20,9 +20,9 @@ body:
     id: context
     attributes:
       label: Context
-      description: What have you tried? What's your setup? Include version (`brizz-code --version`).
+      description: What have you tried? What's your setup? Include version (`fleet --version`).
       placeholder: |
-        brizz-code v0.9.0
+        fleet v0.9.0
         macOS 15.3, tmux 3.5
 
         I tried X but got Y...

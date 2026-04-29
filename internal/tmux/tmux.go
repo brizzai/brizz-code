@@ -10,18 +10,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 	"golang.org/x/sync/singleflight"
 )
 
 const (
-	SessionPrefix   = "brizzcode_"
+	SessionPrefix   = "fleet_"
 	captureCacheTTL = 400 * time.Millisecond
 	captureTimeout  = 3 * time.Second
 	sessionCacheTTL = 2 * time.Second
 )
 
-// Session represents a tmux session managed by brizz-code.
+// Session represents a tmux session managed by fleet.
 type Session struct {
 	Name        string
 	DisplayName string
@@ -304,7 +304,7 @@ func RefreshSessionCache() {
 	sessionCacheMu.Unlock()
 }
 
-// ListSessions returns all brizz-code managed tmux session names.
+// ListSessions returns all fleet managed tmux session names.
 func ListSessions() []string {
 	sessionCacheMu.RLock()
 	defer sessionCacheMu.RUnlock()

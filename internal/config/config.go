@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
 // Config holds user-configurable settings.
@@ -40,7 +40,7 @@ func (c *Config) IsAutoUpdateEnabled() bool {
 // DefaultConfigPath returns the default config file path.
 func DefaultConfigPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "brizz-code", "config.json")
+	return filepath.Join(home, ".config", "fleet", "config.json")
 }
 
 // Load reads config from disk, returning defaults if missing.

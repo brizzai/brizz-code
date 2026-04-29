@@ -5,7 +5,7 @@ body:
     attributes:
       value: |
         Share ideas for new features, workflow improvements, or integrations.
-        Before posting, check [existing ideas](https://github.com/brizzai/brizz-code/discussions/categories/ideas) to avoid duplicates.
+        Before posting, check [existing ideas](https://github.com/brizzai/fleet/discussions/categories/ideas) to avoid duplicates.
 
   - type: textarea
     id: problem

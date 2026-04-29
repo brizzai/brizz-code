@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 	_ "modernc.org/sqlite"
 )
 
@@ -37,7 +37,7 @@ type SessionRow struct {
 // DefaultDBPath returns the default database path.
 func DefaultDBPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "brizz-code", "state.db")
+	return filepath.Join(home, ".config", "fleet", "state.db")
 }
 
 // Open opens or creates the SQLite database with WAL mode.

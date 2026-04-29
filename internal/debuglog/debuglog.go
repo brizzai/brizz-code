@@ -20,9 +20,9 @@ var (
 func LogPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(os.TempDir(), "brizz-code-debug.log")
+		return filepath.Join(os.TempDir(), "fleet-debug.log")
 	}
-	return filepath.Join(home, ".config", "brizz-code", "debug.log")
+	return filepath.Join(home, ".config", "fleet", "debug.log")
 }
 
 // Init opens the debug log file and configures the global Logger.
@@ -38,7 +38,7 @@ func Init() {
 	mu.Lock()
 	logFile = f
 	level := slog.LevelInfo
-	if os.Getenv("BRIZZ_DEBUG") != "" {
+	if os.Getenv("FLEET_DEBUG") != "" {
 		level = slog.LevelDebug
 	}
 	Logger = slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: level}))

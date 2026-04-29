@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	repo             = "brizzai/brizz-code"
+	repo             = "brizzai/fleet"
 	apiURL           = "https://api.github.com/repos/" + repo + "/releases/latest"
 	checkCacheFile   = "last_update_check"
 	checkIntervalSec = 3600 // 1 hour
@@ -33,10 +33,10 @@ type releaseAsset struct {
 	URL  string `json:"url"` // API URL for downloading
 }
 
-// configDir returns ~/.config/brizz-code/.
+// configDir returns ~/.config/fleet/.
 func configDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "brizz-code")
+	return filepath.Join(home, ".config", "fleet")
 }
 
 // ShouldCheck returns true if enough time has passed since the last check.
@@ -138,7 +138,7 @@ func Update(currentVersion string) (string, error) {
 		return "", nil
 	}
 
-	archiveName := fmt.Sprintf("brizz-code_%s_darwin_%s.tar.gz", latest, runtime.GOARCH)
+	archiveName := fmt.Sprintf("fleet_%s_darwin_%s.tar.gz", latest, runtime.GOARCH)
 	assetURL := findAssetURL(release.Assets, archiveName)
 	if assetURL == "" {
 		return "", fmt.Errorf("asset %s not found in release", archiveName)
@@ -208,7 +208,7 @@ func replaceBinary(binaryData []byte) error {
 	}
 
 	dir := filepath.Dir(exePath)
-	tmp, err := os.CreateTemp(dir, "brizz-code-update-*")
+	tmp, err := os.CreateTemp(dir, "fleet-update-*")
 	if err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func replaceBinary(binaryData []byte) error {
 	return nil
 }
 
-// extractBinary reads a tar.gz stream and returns the brizz-code binary contents.
+// extractBinary reads a tar.gz stream and returns the fleet binary contents.
 func extractBinary(r io.Reader) ([]byte, error) {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -250,9 +250,9 @@ func extractBinary(r io.Reader) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if filepath.Base(hdr.Name) == "brizz-code" && hdr.Typeflag == tar.TypeReg {
+		if filepath.Base(hdr.Name) == "fleet" && hdr.Typeflag == tar.TypeReg {
 			return io.ReadAll(tr)
 		}
 	}
-	return nil, fmt.Errorf("brizz-code binary not found in archive")
+	return nil, fmt.Errorf("fleet binary not found in archive")
 }

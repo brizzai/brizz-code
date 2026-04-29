@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
 // WorkspaceInfo represents a workspace from the provider.
@@ -135,7 +135,7 @@ func (g *GitWorktreeProvider) Destroy(repoPath, name string) error {
 
 	// Find the worktree to remove. Try multiple matching strategies:
 	// 1. Exact name match (ws.Name == name)
-	// 2. Derived path match (worktree created by brizz-code: mainRepo-name)
+	// 2. Derived path match (worktree created by fleet: mainRepo-name)
 	// 3. repoPath itself is the worktree (caller resolved GetRepoRoot to worktree path)
 	var wtPath string
 	for _, ws := range all {

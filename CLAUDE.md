@@ -1,4 +1,4 @@
-# brizz-code
+# fleet
 
 > This file provides context for AI-assisted development with Claude Code.
 
@@ -8,8 +8,8 @@ TUI tool for managing multiple Claude Code sessions in parallel using tmux.
 - Go 1.26+, Bubble Tea + Lipgloss, tmux, SQLite (WAL mode)
 
 ## Build
-```
-make build    # build to build/brizz-code
+```bash
+make build    # build to build/fleet
 make run      # go run
 make test     # go test -race
 make fmt      # go fmt
@@ -35,11 +35,11 @@ Use [conventional commits](https://www.conventionalcommits.org/). Version is aut
 - `/ship 2.0.0` to override the version
 - CI opens a release PR with changelog rolled — review and merge to release
 - Merging the release PR triggers GoReleaser (binaries, GitHub Release, Homebrew)
-- Install: `brew install brizzai/tap/brizz-code` or run `bash install.sh` (requires `gh` CLI)
+- Install: `brew install brizzai/tap/fleet` or run `bash install.sh` (requires `gh` CLI)
 
 ## Package Structure
-```
-cmd/brizz-code/main.go      # CLI entry point
+```text
+cmd/fleet/main.go      # CLI entry point
 internal/tmux/tmux.go        # Tmux abstraction (create, kill, capture)
 internal/tmux/pty.go         # PTY-based attach with Ctrl+Q detach
 internal/session/session.go  # Session model, status detection, claude --resume
@@ -49,10 +49,10 @@ internal/git/repo_info.go    # RepoInfo cache + refresh logic
 internal/github/pr.go        # GitHub PR info via gh CLI
 internal/hooks/              # Hook-based status detection (claude_hooks, hook_watcher, status_file)
 internal/workspace/provider.go     # Provider interface + GitWorktreeProvider + ShellProvider
-internal/workspace/repo_config.go  # Per-repo .bc.json loading + ResolveProvider
-internal/config/config.go    # JSON config (~/.config/brizz-code/config.json)
+internal/workspace/repo_config.go  # Per-repo .fleet.json loading (legacy .bc.json supported) + ResolveProvider
+internal/config/config.go    # JSON config (~/.config/fleet/config.json)
 internal/naming/naming.go    # Auto-name sessions via smart heuristic (filler stripping, title-case)
-internal/debuglog/           # slog-based debug logging to ~/.config/brizz-code/debug.log
+internal/debuglog/           # slog-based debug logging to ~/.config/fleet/debug.log
 internal/diagnostics/diagnostics.go  # System diagnostics collector for bug reports
 internal/ui/                 # Bubble Tea TUI (app, sidebar, preview, dialogs, styles)
 internal/ui/palette.go       # Theme palette definitions (5 built-in themes)
@@ -72,9 +72,9 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 ```
 
 ## Conventions
-- Tmux session prefix: `brizzcode_`
+- Tmux session prefix: `fleet_`
 - Session ID format: `<8hex>-<unix_timestamp>`
-- SQLite DB: `~/.config/brizz-code/state.db`
+- SQLite DB: `~/.config/fleet/state.db`
 - Sessions grouped by git repo root in sidebar with tree lines (├─/└─)
 - Status: Running, Waiting, Finished, Idle, Error, Starting
 - Status icons: ● (running/finished), ◐ (waiting), ○ (idle/starting), ✕ (error)
@@ -94,15 +94,15 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Status detection: hook-based (primary, no time expiry) via Claude Code hooks + pane capture (fallback, ANSI-stripped)
 - Agent team status: sub-agents don't fire hooks, so pane detection handles team states via structural checks (numbered menu `❯ 1.`+`2.`+`Esc to cancel`, box-drawing `│`+`Waiting for team lead`); hook=running is never overridden to waiting by pane (avoids false-positives from code in scrollback)
 - All blocking I/O (tmux, git, gh) runs in background worker goroutine, never in Bubble Tea Update()
-- Hook status files: `~/.config/brizz-code/hooks/{session_id}.json`
-- Hook handler: `brizz-code hook-handler` (invoked by Claude Code hooks, reads BRIZZCODE_INSTANCE_ID env)
+- Hook status files: `~/.config/fleet/hooks/{session_id}.json`
+- Hook handler: `fleet hook-handler` (invoked by Claude Code hooks, reads FLEET_INSTANCE_ID env)
 - Hooks auto-installed into `~/.claude/settings.json` on TUI launch
-- Debug log: `~/.config/brizz-code/debug.log` (slog, init in TUI and hook-handler)
-- Config file: `~/.config/brizz-code/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions, copy_claude_settings)
-- Workspace: built-in git worktree support (zero config), per-repo `.bc.json` overrides with custom shell commands
+- Debug log: `~/.config/fleet/debug.log` (slog, init in TUI and hook-handler)
+- Config file: `~/.config/fleet/config.json` (tick_interval_sec, default_project_path, editor, theme, auto_name_sessions, copy_claude_settings)
+- Workspace: built-in git worktree support (zero config), per-repo `.fleet.json` (or legacy `.bc.json`) overrides with custom shell commands
 - Workspace creation is non-blocking: dialog closes immediately, phantom "Creating..." entry with spinner appears in sidebar, user can keep navigating
 - Worktree creation copies `.claude/settings.local.json` from source repo (configurable via `copy_claude_settings`, default true)
-- `.bc.json` / `.bc.local.json` in repo root: `{"workspace": {"list": "cmd", "create": "cmd {{name}} {{branch}}", "destroy": "cmd {{name}}"}}`
+- `.fleet.json` / `.fleet.local.json` in repo root (legacy `.bc.json` / `.bc.local.json` still read): `{"workspace": {"list": "cmd", "create": "cmd {{name}} {{branch}}", "destroy": "cmd {{name}}"}}`
 - Claude session resume: captures Claude session_id from hooks, uses `claude --resume <id>` on restart
 - Editor: config.editor > $EDITOR > "code" (VS Code)
 - Themes: tokyo-night (default), catppuccin-mocha, rose-pine, nord, gruvbox — configurable via settings (S key)
@@ -116,10 +116,10 @@ chrome-extension/                # Chrome MV3 extension (service worker, manifes
 - Retitle: after 3 prompts, title regenerated from latest prompt (better reflects session scope)
 - Manual rename (R key) sets ManuallyRenamed flag, prevents auto-rename
 - Chrome tab control: `p` opens PR in Chrome via extension (reuses existing tab), falls back to `open <url>` if unavailable
-- Chrome extension architecture: TUI →[unix socket]→ native host (`brizz-code chrome-host`) →[stdio]→ Chrome service worker
-- Native messaging host: `brizz-code chrome-host` subcommand (also auto-detected when Chrome passes `chrome-extension://...` arg)
-- Unix socket: `~/.config/brizz-code/chrome.sock` (created by native host, mode 0600)
-- NMH manifest: auto-installed to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.brizzcode.tabcontrol.json` on TUI startup
+- Chrome extension architecture: TUI →[unix socket]→ native host (`fleet chrome-host`) →[stdio]→ Chrome service worker
+- Native messaging host: `fleet chrome-host` subcommand (also auto-detected when Chrome passes `chrome-extension://...` arg)
+- Unix socket: `~/.config/fleet/chrome.sock` (created by native host, mode 0600)
+- NMH manifest: auto-installed to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.brizzai.fleet.tabcontrol.json` on TUI startup
 - Chrome extension ID: `haphpcoecelhofejcklinnlbfijgdnih` (stable via `key` in manifest.json)
 - Extension commands: `open_or_focus`, `close_tab`, `create_tab_group`, `ping`
 - Service worker reconnects to native host on disconnect (2s delay)

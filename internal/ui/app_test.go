@@ -6,14 +6,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/brizzai/brizz-code/internal/config"
-	"github.com/brizzai/brizz-code/internal/git"
-	"github.com/brizzai/brizz-code/internal/session"
+	"github.com/brizzai/fleet/internal/config"
+	"github.com/brizzai/fleet/internal/git"
+	"github.com/brizzai/fleet/internal/session"
 )
 
 func TestHomeInitializes(t *testing.T) {
 	// Create temp dir for in-memory-like SQLite DB.
-	tmpDir, err := os.MkdirTemp("", "brizz-test-*")
+	tmpDir, err := os.MkdirTemp("", "fleet-test-*")
 	if err != nil {
 		t.Fatalf("create temp dir: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestHomeInitializes(t *testing.T) {
 // fatal that happens if View() reads h.gitInfoCache while the status worker writes
 // it. Run with `go test -race` — pre-fix this trips the race detector reliably.
 func TestViewGitInfoCacheRace(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "brizz-race-*")
+	tmpDir, err := os.MkdirTemp("", "fleet-race-*")
 	if err != nil {
 		t.Fatalf("create temp dir: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestViewGitInfoCacheRace(t *testing.T) {
 
 	// Seed a repo-header flatItem so RenderSidebar hits the gitInfo[item.RepoPath]
 	// read path at sidebar.go:183.
-	const repo = "/tmp/brizz-race-repo"
+	const repo = "/tmp/fleet-race-repo"
 	home.flatItems = []SidebarItem{{IsRepoHeader: true, RepoPath: repo, Expanded: false, SessionCount: 0}}
 
 	const iterations = 500

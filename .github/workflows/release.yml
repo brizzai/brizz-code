@@ -80,18 +80,18 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${TAG#v}"
           {
-            echo "## brizz-code ${TAG}"
+            echo "## fleet ${TAG}"
             echo ""
             echo "### Install / Update"
             echo ""
             echo '```bash'
-            echo "brew install brizzai/tap/brizz-code"
+            echo "brew install brizzai/tap/fleet"
             echo '```'
             echo ""
             echo "Or via shell script:"
             echo ""
             echo '```bash'
-            echo "curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash"
+            echo "curl -fsSL https://raw.githubusercontent.com/brizzai/fleet/master/install.sh | bash"
             echo '```'
             echo ""
             echo "---"

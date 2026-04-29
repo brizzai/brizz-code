@@ -1,14 +1,14 @@
-BINARY := brizz-code
+BINARY := fleet
 BUILD_DIR := build
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 .PHONY: build run clean test fmt install lint coverage deps vet setup
 
 build:
-	go build -v -ldflags "-s -w -X main.version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY) ./cmd/brizz-code
+	go build -v -ldflags "-s -w -X main.version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY) ./cmd/fleet
 
 run:
-	go run ./cmd/brizz-code
+	go run ./cmd/fleet
 
 clean:
 	rm -rf $(BUILD_DIR)

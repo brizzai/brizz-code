@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
+	"github.com/brizzai/fleet/internal/debuglog"
 )
 
 // --- Mock pane capturer ---

@@ -1,6 +1,6 @@
 <p align="center">
-  <img src=".github/assets/logo.svg" alt="brizz-code logo" width="80" />
-  <h1 align="center">brizz-code</h1>
+  <img src=".github/assets/logo.svg" alt="fleet logo" width="80" />
+  <h1 align="center">fleet</h1>
   <p align="center">
     <strong>Run 10 Claude Code agents. Stay sane.</strong>
   </p>
@@ -10,18 +10,18 @@
     See which agents need you. Jump in, direct, jump out.
   </p>
   <p align="center">
-    <a href="https://goreportcard.com/report/github.com/brizzai/brizz-code"><img src="https://goreportcard.com/badge/github.com/brizzai/brizz-code" alt="Go Report Card"></a>
-    <a href="https://github.com/brizzai/brizz-code/releases/latest"><img src="https://img.shields.io/github/v/release/brizzai/brizz-code" alt="GitHub release"></a>
+    <a href="https://goreportcard.com/report/github.com/brizzai/fleet"><img src="https://goreportcard.com/badge/github.com/brizzai/fleet" alt="Go Report Card"></a>
+    <a href="https://github.com/brizzai/fleet/releases/latest"><img src="https://img.shields.io/github/v/release/brizzai/fleet" alt="GitHub release"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
-    <a href="https://golang.org/doc/devel/release.html"><img src="https://img.shields.io/github/go-mod/go-version/brizzai/brizz-code" alt="Go version"></a>
-    <a href="https://github.com/brizzai/brizz-code/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/brizzai/brizz-code/ci.yml?branch=master" alt="Build Status"></a>
+    <a href="https://golang.org/doc/devel/release.html"><img src="https://img.shields.io/github/go-mod/go-version/brizzai/fleet" alt="Go version"></a>
+    <a href="https://github.com/brizzai/fleet/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/brizzai/fleet/ci.yml?branch=master" alt="Build Status"></a>
   </p>
 </p>
 
 <br />
 
 <p align="center">
-  <img src=".github/assets/demo.png" alt="brizz-code screenshot" width="900" />
+  <img src=".github/assets/demo.png" alt="fleet screenshot" width="900" />
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 <br />
 
-Your agents are coding. brizz-code keeps you in control.
+Your agents are coding. fleet keeps you in control.
 
 - 👀 **See** — real-time status across every repo
 - ⚡ **Act** — jump, approve, repeat
@@ -41,13 +41,13 @@ Your agents are coding. brizz-code keeps you in control.
 ### Homebrew (recommended)
 
 ```bash
-brew install brizzai/tap/brizz-code
+brew install brizzai/tap/fleet
 ```
 
 ### Shell script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/brizzai/brizz-code/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/brizzai/fleet/master/install.sh | bash
 ```
 
 Requires [`gh`](https://cli.github.com/).
@@ -55,7 +55,7 @@ Requires [`gh`](https://cli.github.com/).
 ### Go install
 
 ```bash
-go install github.com/brizzai/brizz-code/cmd/brizz-code@latest
+go install github.com/brizzai/fleet/cmd/fleet@latest
 ```
 
 Requires Go 1.26+.
@@ -70,7 +70,7 @@ Requires Go 1.26+.
 
 ```bash
 # Launch
-brizz-code
+fleet
 
 # 'a' — new session in current repo
 # 'n' — workspace picker with path autocomplete
@@ -95,7 +95,7 @@ Sessions live under their repo. Branch name, dirty state, and full PR status on 
 
 ### Worktrees
 
-**`w`** creates a new worktree with branch picker. Zero config — works with any repo. Each worktree gets its own isolated session. Custom workspace commands via `.bc.json` if you need them.
+**`w`** creates a new worktree with branch picker. Zero config — works with any repo. Each worktree gets its own isolated session. Custom workspace commands via `.fleet.json` if you need them.
 
 ### Fork Sessions
 
@@ -110,15 +110,15 @@ Sessions live under their repo. Branch name, dirty state, and full PR status on 
 - **Chrome tab control** — **`p`** opens PR in Chrome, reuses existing tab
 - **Bug reports** — **`!`** captures diagnostics and opens a pre-filled GitHub issue
 
-## Why brizz-code?
+## Why fleet?
 
-There are a dozen multi-agent session managers now. Most try to support every AI CLI under the sun. brizz-code takes the opposite approach: **go deep on Claude Code, and nothing else.**
+There are a dozen multi-agent session managers now. Most try to support every AI CLI under the sun. fleet takes the opposite approach: **go deep on Claude Code, and nothing else.**
 
 Every feature is designed around how Claude Code actually works — hooks, conversation resume, session IDs, prompt structure. No generic "send keystrokes and hope" abstraction layer.
 
 ### vs. the alternatives
 
-|                                     | brizz-code | claude-squad | ccmanager | agent-deck |
+|                                     | fleet | claude-squad | ccmanager | agent-deck |
 |-------------------------------------|:----------:|:------------:|:---------:|:----------:|
 | **Status detection**                | ✅ Hooks (real-time) | ✅ Pane scraping | ✅ Pane scraping | ✅ Hooks |
 | **PR state** (CI + reviews + threads) | ✅ | — | — | — |
@@ -131,7 +131,7 @@ Every feature is designed around how Claude Code actually works — hooks, conve
 | **Linux**                           | — | ✅ | ✅ | ✅ |
 | **No tmux dependency**              | — | — | ✅ | — |
 
-**The trade-off is intentional.** Claude-squad and ccmanager support 5+ agents — but treat them all the same. brizz-code knows what Claude Code *is*. It reads hook status files. It resumes conversations. It knows your PR has 2 unresolved threads. It names sessions from your actual prompt. That depth is only possible by going narrow.
+**The trade-off is intentional.** Claude-squad and ccmanager support 5+ agents — but treat them all the same. fleet knows what Claude Code *is*. It reads hook status files. It resumes conversations. It knows your PR has 2 unresolved threads. It names sessions from your actual prompt. That depth is only possible by going narrow.
 
 If you use Claude Code as your primary agent and want the tightest integration, this is it.
 

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/brizzai/brizz-code/internal/debuglog"
-	"github.com/brizzai/brizz-code/internal/hooks"
+	"github.com/brizzai/fleet/internal/debuglog"
+	"github.com/brizzai/fleet/internal/hooks"
 )
 
 // hookPayload represents the JSON payload Claude Code sends to hooks via stdin.
@@ -21,7 +21,7 @@ type hookPayload struct {
 	Prompt        string          `json:"prompt,omitempty"`
 }
 
-// mapEventToStatus maps a Claude Code hook event to a brizz-code status string.
+// mapEventToStatus maps a Claude Code hook event to a fleet status string.
 func mapEventToStatus(event string) string {
 	switch event {
 	case "UserPromptSubmit":
@@ -66,9 +66,9 @@ func handleHookHandler() {
 		return
 	}
 
-	instanceID := os.Getenv("BRIZZCODE_INSTANCE_ID")
+	instanceID := os.Getenv("FLEET_INSTANCE_ID")
 	if instanceID == "" {
-		log.Warn("hook-handler: no BRIZZCODE_INSTANCE_ID env var",
+		log.Warn("hook-handler: no FLEET_INSTANCE_ID env var",
 			"event", payload.HookEventName,
 			"claudeSession", payload.SessionID,
 			"source", payload.Source,
@@ -145,7 +145,7 @@ func handleHookHandler() {
 // handleHooksCmd handles the "hooks" CLI subcommand for manual hook management.
 func handleHooksCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: brizz-code hooks <install|uninstall|status>")
+		fmt.Fprintln(os.Stderr, "Usage: fleet hooks <install|uninstall|status>")
 		os.Exit(1)
 	}
 
@@ -173,7 +173,7 @@ func handleHooksCmd(args []string) {
 		if removed {
 			fmt.Println("Claude Code hooks removed successfully.")
 		} else {
-			fmt.Println("No brizz-code hooks found to remove.")
+			fmt.Println("No fleet hooks found to remove.")
 		}
 	case "status":
 		installed := hooks.AreHooksInstalled(configDir)
@@ -182,11 +182,11 @@ func handleHooksCmd(args []string) {
 			fmt.Printf("Config: %s/settings.json\n", configDir)
 		} else {
 			fmt.Println("Status: NOT INSTALLED")
-			fmt.Println("Run 'brizz-code hooks install' to install.")
+			fmt.Println("Run 'fleet hooks install' to install.")
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown hooks subcommand: %s\n", args[0])
-		fmt.Fprintln(os.Stderr, "Usage: brizz-code hooks <install|uninstall|status>")
+		fmt.Fprintln(os.Stderr, "Usage: fleet hooks <install|uninstall|status>")
 		os.Exit(1)
 	}
 }
