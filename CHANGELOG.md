@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-04-29
+
+### Added
+
+- AI-powered PR review config via CodeRabbit: `.coderabbit.yaml` tunes the reviewer for Go (chill tone, golangci-lint + gitleaks wired in, path instructions that flag Bubble Tea anti-patterns and public-repo workflow hazards). Once the CodeRabbit GitHub App is installed on the repo, every PR gets an auto-generated walkthrough and inline review comments. Free for public repos — contributors don't need anything set up on their side.
+
+### Improved
+
+- Worktree dialogs now guide you toward a valid git branch name as you type: spaces become `-`, and chars git forbids anywhere (`~ ^ : ? * [ \` and control chars) are dropped live. Rules that can't be fixed silently (leading `-`, `..`, trailing `.lock`, etc.) show a friendly inline error on submit instead of a cryptic `git worktree add` failure.
+
+### Changed
+
+- **Renamed `brizz-code` to `fleet`.** Binary, config dir, tmux prefix, env vars, Chrome native messaging host, and Homebrew formula all renamed:
+- Binary: `brizz-code` → `fleet`
+- Config dir: `~/.config/brizz-code/` → `~/.config/fleet/`
+- Tmux prefix: `brizzcode_` → `fleet_`
+- Env vars: `BRIZZCODE_INSTANCE_ID` → `FLEET_INSTANCE_ID`, `BRIZZ_DEBUG` → `FLEET_DEBUG`, `BRIZZ_TELEMETRY_DISABLED` → `FLEET_TELEMETRY_DISABLED`, `BRIZZ_DEMO_PREFIX` → `FLEET_DEMO_PREFIX`
+- Per-repo workspace config: `.fleet.json` / `.fleet.local.json` (legacy `.bc.json` / `.bc.local.json` still read for compatibility)
+- NMH manifest: `com.brizzai.fleet.tabcontrol.json`
+- Homebrew: `brew install brizzai/tap/fleet`
+**Auto-migration on first launch:** existing `~/.config/brizz-code/` is moved to `~/.config/fleet/`, live `brizzcode_*` tmux sessions are renamed to `fleet_*`, and stale `brizz-code hook-handler` entries are stripped from `~/.claude/settings.json`. Legacy `BRIZZ*` env vars are accepted as fallback for one release window so in-flight Claude processes survive the upgrade. The Chrome extension keeps the same extension ID (stable via `key` in manifest), so no reinstall is needed.
+To upgrade from `brizz-code`:
+```bash
+brew uninstall brizz-code
+brew install brizzai/tap/fleet
+```
+Or run `fleet` directly — the migration shim handles config moves, tmux session renames, and hook cleanup transparently.
+
+### Fixed
+
+- Status detection: sessions in extended thinking mode (with `· ↓ tokens · thinking with high effort` format) now correctly stay "running" instead of oscillating between running/finished every 10 seconds.
+- Status detection: hook events now reflect in the TUI within ~100ms (was 4–6s, waiting on the worker's round-robin). Stale "running" hooks no longer oscillate between idle/running/finished on pane-content changes (survey popups, cursor blinks, scrollback redraws).
+
 ## [1.3.0] - 2026-04-15
 
 ### Added
@@ -77,7 +110,8 @@ Initial open-source release.
 - `/ship` release workflow — comment `/ship` on any issue or PR to release
 - Changelog check on PRs with `/no-changelog` escape hatch
 
-[Unreleased]: https://github.com/brizzai/fleet/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/brizzai/fleet/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/brizzai/fleet/releases/tag/v2.0.0
 [1.3.0]: https://github.com/brizzai/fleet/releases/tag/v1.3.0
 [1.2.0]: https://github.com/brizzai/fleet/releases/tag/v1.2.0
 [1.1.0]: https://github.com/brizzai/fleet/releases/tag/v1.1.0
